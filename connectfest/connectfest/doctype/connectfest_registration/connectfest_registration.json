@@ -22,7 +22,17 @@
   "industry",
   "segment",
   "event_source_section",
-  "source_of_info"
+  "source_of_info",
+  "stall_package_section",
+  "stall_category",
+  "amount",
+  "payment_section",
+  "payment_status",
+  "razorpay_order_id",
+  "column_break_pay",
+  "razorpay_payment_id",
+  "razorpay_signature",
+  "payment_date"
  ],
  "fields": [
   {
@@ -130,6 +140,68 @@
    "label": "How did you know about this event?",
    "options": "Social Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther",
    "reqd": 1
+  },
+  {
+   "fieldname": "stall_package_section",
+   "fieldtype": "Section Break",
+   "label": "Stall Package"
+  },
+  {
+   "default": "Regular",
+   "fieldname": "stall_category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Stall Category",
+   "options": "Regular\nStandard\nPremium\nSilver",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount (INR)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Details"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Status",
+   "options": "Pending\nPaid\nFailed\nRefunded"
+  },
+  {
+   "fieldname": "razorpay_order_id",
+   "fieldtype": "Data",
+   "label": "Razorpay Order ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_pay",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "razorpay_payment_id",
+   "fieldtype": "Data",
+   "label": "Razorpay Payment ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "razorpay_signature",
+   "fieldtype": "Data",
+   "label": "Razorpay Signature",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_date",
+   "fieldtype": "Datetime",
+   "label": "Payment Date",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
