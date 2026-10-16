@@ -170,23 +170,11 @@ app_license = "MIT"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"connectfest.tasks.all"
-# 	],
-# 	"daily": [
-# 		"connectfest.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"connectfest.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"connectfest.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"connectfest.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"all": [
+		"connectfest.api.flush_registration_queue"
+	]
+}
 
 # Testing
 # -------

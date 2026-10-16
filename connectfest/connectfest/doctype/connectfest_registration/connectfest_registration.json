@@ -1,0 +1,166 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:CF-{#####}",
+ "creation": "2026-10-16 17:25:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "registration_id",
+  "full_name",
+  "company_name",
+  "location",
+  "column_break_contact",
+  "mobile_no",
+  "email",
+  "status",
+  "bni_details_section",
+  "is_bni_member",
+  "region_name",
+  "column_break_bni",
+  "chapter_name",
+  "industry",
+  "segment",
+  "event_source_section",
+  "source_of_info"
+ ],
+ "fields": [
+  {
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Registration ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Location",
+   "reqd": 0
+  },
+  {
+   "fieldname": "column_break_contact",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mobile_no",
+   "fieldtype": "Data",
+   "label": "Mobile Number"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "default": "Registered",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Registered\nAttended\nCancelled"
+  },
+  {
+   "fieldname": "bni_details_section",
+   "fieldtype": "Section Break",
+   "label": "BNI Membership Details"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_bni_member",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "BNI Member - Yes / No"
+  },
+  {
+   "depends_on": "eval:doc.is_bni_member == 1",
+   "fieldname": "region_name",
+   "fieldtype": "Data",
+   "label": "Region Name",
+   "mandatory_depends_on": "eval:doc.is_bni_member == 1"
+  },
+  {
+   "fieldname": "column_break_bni",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.is_bni_member == 1",
+   "fieldname": "chapter_name",
+   "fieldtype": "Data",
+   "label": "Chapter Name",
+   "mandatory_depends_on": "eval:doc.is_bni_member == 1"
+  },
+  {
+   "depends_on": "eval:doc.is_bni_member == 1",
+   "fieldname": "industry",
+   "fieldtype": "Data",
+   "label": "Industry"
+  },
+  {
+   "depends_on": "eval:doc.is_bni_member == 1",
+   "fieldname": "segment",
+   "fieldtype": "Data",
+   "label": "Segment"
+  },
+  {
+   "fieldname": "event_source_section",
+   "fieldtype": "Section Break",
+   "label": "Event Feedback"
+  },
+  {
+   "fieldname": "source_of_info",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "How did you know about this event?",
+   "options": "Social Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-16 17:25:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest Registration",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
