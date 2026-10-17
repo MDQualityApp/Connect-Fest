@@ -11,15 +11,20 @@ TEST_MASTER_OTPS = ["123456", "999999"]
 
 def is_otp_test_mode():
 	"""
-	Checks if ConnectFest is running in Test/Mock mode (mirroring Razorpay test mode).
+	Checks if ConnectFest is running with Razorpay test keys (starts with rzp_test_).
+	Allows test master OTPs (123456, 999999) for testing while on test credentials.
 	"""
 	try:
+		key_id = None
 		if frappe.db.exists("DocType", "ConnectFest Settings"):
-			from frappe.utils import cint
-			return cint(frappe.db.get_single_value("ConnectFest Settings", "mock_payments") or 1) == 1
+			key_id = frappe.db.get_single_value("ConnectFest Settings", "razorpay_key_id")
+		if not key_id:
+			key_id = frappe.conf.get("razorpay_key_id")
+		if not key_id or str(key_id).startswith("rzp_test_"):
+			return True
 	except Exception:
 		pass
-	return True
+	return False
 
 
 def normalize_mobile(mobile):

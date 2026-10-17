@@ -10,7 +10,6 @@
   "razorpay_key_secret",
   "column_break_rzp",
   "razorpay_webhook_secret",
-  "mock_payments",
   "currency",
   "pricing_section",
   "price_silver",
@@ -47,13 +46,6 @@
    "fieldname": "razorpay_webhook_secret",
    "fieldtype": "Password",
    "label": "Razorpay Webhook Secret"
-  },
-  {
-   "default": "1",
-   "description": "Allows testing order creation and payment verification when live Razorpay API keys are not yet configured",
-   "fieldname": "mock_payments",
-   "fieldtype": "Check",
-   "label": "Enable Mock / Test Mode"
   },
   {
    "default": "INR",

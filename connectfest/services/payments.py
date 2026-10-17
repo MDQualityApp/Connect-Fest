@@ -24,7 +24,6 @@ def get_razorpay_config():
 		settings = frappe.get_single("ConnectFest Settings")
 		key_id = settings.razorpay_key_id
 		key_secret = settings.get_password("razorpay_key_secret", raise_exception=False)
-		mock_mode = bool(cint(settings.mock_payments))
 	except Exception:
 		pass
 
@@ -33,8 +32,7 @@ def get_razorpay_config():
 	if not key_secret:
 		key_secret = frappe.conf.get("razorpay_key_secret")
 
-	if key_id and key_secret:
-		mock_mode = False
+	mock_mode = not bool(key_id and key_secret)
 
 	return {
 		"key_id": key_id or "rzp_test_ConnectFestMockKey",
@@ -133,14 +131,20 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 		frappe.local.response["http_status_code"] = 409
 		return {"status": "error", "message": f"Stall '{stall_num}' is already booked and confirmed by another exhibitor"}
 
-	category = stall_doc.tier
-	dynamic_prices = get_tier_pricing()
-	amount = flt(dynamic_prices.get(category, stall_doc.price))
-	amount_in_paise = int(amount * 100)
+	from connectfest.services.pricing import get_tier_details
+	tier_info = get_tier_details(stall_doc.tier)
+	base_amount = tier_info["price"]
+	gst_pct = tier_info.get("gst_percent", 18.0)
+	tax_amount = round(base_amount * (gst_pct / 100.0), 2)
+	total_amount = round(base_amount + tax_amount, 2)
+	amount_in_paise = int(total_amount * 100)
 
 	record["stall_number"] = stall_num
 	record["stall_category"] = category
-	record["amount"] = amount
+	record["amount"] = total_amount
+	record["base_amount"] = base_amount
+	record["tax_amount"] = tax_amount
+	record["gst_percent"] = gst_pct
 
 	cfg = get_razorpay_config()
 	order_id = None
@@ -156,6 +160,10 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 					"registration_id": reg_id,
 					"stall_number": stall_num,
 					"stall_category": category,
+					"base_amount": base_amount,
+					"gst_percent": gst_pct,
+					"tax_amount": tax_amount,
+					"total_amount": total_amount,
 					"full_name": record.get("full_name"),
 					"company_name": record.get("company_name"),
 				},
@@ -470,14 +478,19 @@ def preview_payment(**kwargs):
 		return {"status": "error", "message": f"Stall '{stall_num}' is already booked and confirmed by another exhibitor"}
 
 	category = stall_doc.tier
-	dynamic_prices = get_tier_pricing()
-	base_amount = flt(dynamic_prices.get(category, stall_doc.price))
-	tax_amount = 0.0
-	total_amount = base_amount + tax_amount
+	from connectfest.services.pricing import get_tier_details
+	tier_info = get_tier_details(category)
+	base_amount = tier_info["price"]
+	gst_pct = tier_info.get("gst_percent", 18.0)
+	tax_amount = round(base_amount * (gst_pct / 100.0), 2)
+	total_amount = round(base_amount + tax_amount, 2)
 
 	record["stall_number"] = stall_num
 	record["stall_category"] = category
-	record["amount"] = base_amount
+	record["amount"] = total_amount
+	record["base_amount"] = base_amount
+	record["tax_amount"] = tax_amount
+	record["gst_percent"] = gst_pct
 	set_cached_record(cache, f"{STALL_CACHE_PREFIX}{docname}", record)
 
 	return {
@@ -492,6 +505,8 @@ def preview_payment(**kwargs):
 			"stall_number": stall_num,
 			"stall_category": category,
 			"dimensions": stall_doc.dimensions,
+			"description": tier_info.get("description", ""),
+			"gst_percent": gst_pct,
 			"company_name": record.get("company_name"),
 			"full_name": record.get("full_name"),
 			"email": record.get("email"),
@@ -499,6 +514,7 @@ def preview_payment(**kwargs):
 		},
 		"pricing": {
 			"base_amount": base_amount,
+			"gst_percent": gst_pct,
 			"tax_amount": tax_amount,
 			"total_amount": total_amount,
 			"currency": "INR",

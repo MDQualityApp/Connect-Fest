@@ -31,9 +31,13 @@ from connectfest.services.common import (
 )
 from connectfest.services.pricing import (
 	get_tier_pricing,
+	get_all_tier_pricing as _get_all_tier_pricing,
 	DynamicStallPricing,
 	STALL_PRICING,
 	update_dynamic_pricing as _update_dynamic_pricing,
+	admin_create_tier_pricing as _admin_create_tier_pricing,
+	admin_update_tier_pricing as _admin_update_tier_pricing,
+	admin_delete_tier_pricing as _admin_delete_tier_pricing,
 )
 from connectfest.services.auth import (
 	ensure_frappe_user,
@@ -51,6 +55,12 @@ from connectfest.services.stalls import (
 	release_stall_hold as _release_stall_hold,
 	toggle_stall_block as _toggle_stall_block,
 	get_admin_dashboard_data as _get_admin_dashboard_data,
+	admin_get_stalls as _admin_get_stalls,
+	admin_create_stall as _admin_create_stall,
+	admin_get_stall as _admin_get_stall,
+	admin_update_stall as _admin_update_stall,
+	admin_delete_stall as _admin_delete_stall,
+	admin_restore_defaults as _admin_restore_defaults,
 )
 from connectfest.services.registration import (
 	register_stall as _register_stall,
@@ -260,6 +270,66 @@ def verify_and_update_contact(otp=None, **kwargs):
 # ==============================================================================
 # 5. ADMIN PRICING & QUEUE APIS
 # ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def get_all_tier_pricing(**kwargs):
+	"""Returns all active pricing tiers with Base Price, GST %, GST Amount, Total, and Plan Description."""
+	return _get_all_tier_pricing(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_tier_pricing(tier_name=None, price=None, gst_percent=18.0, description=None, **kwargs):
+	"""Admin API: Create a new dynamic pricing tier / plan with GST and description."""
+	return _admin_create_tier_pricing(tier_name=tier_name, price=price, gst_percent=gst_percent, description=description, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, description=None, is_active=None, **kwargs):
+	"""Admin API: Update an existing tier's price, GST percentage, description, or active status."""
+	return _admin_update_tier_pricing(tier_name=tier_name, price=price, gst_percent=gst_percent, description=description, is_active=is_active, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_tier_pricing(tier_name=None, **kwargs):
+	"""Admin API: Delete a pricing tier. Prevented if stalls are already booked!"""
+	return _admin_delete_tier_pricing(tier_name=tier_name, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kwargs):
+	"""Admin Stall Inventory & Buyer Report API: Status filter, buyer info for booked stalls, and blocked stalls."""
+	return _admin_get_stalls(status=status, tier=tier, search=search, page=page, limit=limit, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price=None, zone=None, **kwargs):
+	"""Admin API: Create a new exhibition stall."""
+	return _admin_create_stall(stall_number=stall_number, tier=tier, dimensions=dimensions, price=price, zone=zone, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_stall(stall_number=None, **kwargs):
+	"""Admin API: Get specific stall details with buyer info and hold status."""
+	return _admin_get_stall(stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_stall(stall_number=None, **kwargs):
+	"""Admin API: Update stall properties (tier, dimensions, price, status, block/unblock)."""
+	return _admin_update_stall(stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_stall(stall_number=None, **kwargs):
+	"""Admin API: Delete a stall. PREVENTED if stall is already booked!"""
+	return _admin_delete_stall(stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
+	"""Admin API: Explicitly restore pristine default pricing (4 tiers) and default 195 stalls on-demand."""
+	return _admin_restore_defaults(reset_pricing=reset_pricing, reset_stalls=reset_stalls, reset_booked=reset_booked, **kwargs)
+
+
 @frappe.whitelist(allow_guest=True)
 def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, **kwargs):
 	"""Admin dynamic price updates for all tiers."""

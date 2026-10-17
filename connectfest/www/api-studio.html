@@ -832,6 +832,16 @@
         <div class="section-title">5. Admin & Monitoring</div>
         <div class="endpoint-list" id="adminList"></div>
       </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">6. Admin Stall Management (CRUD & Buyers)</div>
+        <div class="endpoint-list" id="adminStallList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">7. Dynamic Stall Pricing & GST (CRUD)</div>
+        <div class="endpoint-list" id="pricingList"></div>
+      </div>
     </div>
 
     <!-- 2. MIDDLE: REQUEST EDITOR -->
@@ -1347,6 +1357,154 @@
           user_email: "karthik@titaniumlabs.com",
           enabled: 0
         }, null, 2)
+      },
+
+      // 6. ADMIN STALL MANAGEMENT & BUYER REPORTS
+      admin_get_stalls_all: {
+        id: "admin_get_stalls_all",
+        cat: "admin_stall",
+        title: "6.1 Admin All Stalls Inventory (Shows Blocked Stalls & Full Buyer Details)",
+        label: "Admin All Stalls (Overview)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_stalls`,
+        hasBody: false
+      },
+      admin_get_stalls_booked: {
+        id: "admin_get_stalls_booked",
+        cat: "admin_stall",
+        title: "6.2 Admin Stalls - Status Filter: Booked Stalls (Who Bought What)",
+        label: "Booked Stalls (Buyers)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_stalls?status=Booked`,
+        hasBody: false
+      },
+      admin_get_stalls_blocked: {
+        id: "admin_get_stalls_blocked",
+        cat: "admin_stall",
+        title: "6.3 Admin Stalls - Status Filter: Blocked Stalls (Reserved/VIP with Reasons)",
+        label: "Blocked Stalls (Admin)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_stalls?status=Blocked`,
+        hasBody: false
+      },
+      admin_create_stall: {
+        id: "admin_create_stall",
+        cat: "admin_stall",
+        title: "6.4 Admin Create New Stall (Stall Number, Tier, Dimensions, Price, Zone)",
+        label: "Create Stall",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_create_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-50",
+          tier: "Premium",
+          dimensions: "3 x 3 m",
+          price: 45000.0,
+          zone: "Zone C - Center Aisles"
+        }, null, 2)
+      },
+      admin_get_stall: {
+        id: "admin_get_stall",
+        cat: "admin_stall",
+        title: "6.5 Admin Get Stall Details (By Stall Number)",
+        label: "Get Stall (PR-02)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_stall?stall_number=PR-02`,
+        hasBody: false
+      },
+      admin_update_stall: {
+        id: "admin_update_stall",
+        cat: "admin_stall",
+        title: "6.6 Admin Update Stall (Tier, Price, Dimensions, Status)",
+        label: "Update Stall",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_update_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-50",
+          tier: "Premium",
+          price: 48000.0,
+          dimensions: "3.5 x 3 m"
+        }, null, 2)
+      },
+      admin_delete_stall: {
+        id: "admin_delete_stall",
+        cat: "admin_stall",
+        title: "6.7 Admin Delete Stall (Protected: Fails if Booked!)",
+        label: "Delete Stall (Protected)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-50"
+        }, null, 2)
+      },
+      admin_restore_defaults: {
+        id: "admin_restore_defaults",
+        cat: "admin_stall",
+        title: "6.8 Admin Restore Defaults (Re-seeds 4 Tiers & 195 Stalls On-Demand)",
+        label: "Restore Defaults (4 Tiers + 195 Stalls)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_restore_defaults`,
+        hasBody: true,
+        body: JSON.stringify({
+          reset_pricing: 1,
+          reset_stalls: 1,
+          reset_booked: 0
+        }, null, 2)
+      },
+
+      // 7. DYNAMIC STALL PRICING & GST (CRUD)
+      get_all_pricing_tiers: {
+        id: "get_all_pricing_tiers",
+        cat: "pricing",
+        title: "7.1 Get All Pricing Tiers (Public/Admin: Base, GST %, Total, Plan Description)",
+        label: "All Pricing Tiers & GST",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_all_tier_pricing`,
+        hasBody: false
+      },
+      admin_create_tier: {
+        id: "admin_create_tier",
+        cat: "pricing",
+        title: "7.2 Admin Create New Tier / Plan (Tier Name, Price, GST %, Description)",
+        label: "Create Pricing Tier",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_create_tier_pricing`,
+        hasBody: true,
+        body: JSON.stringify({
+          tier_name: "VIP Pavilion",
+          price: 150000.0,
+          gst_percent: 18.0,
+          description: "Grand Double Pavilion 8x4m, 6 Spotlights, 2x 32A 3-Phase Power, Prime Main Entrance"
+        }, null, 2)
+      },
+      admin_update_tier: {
+        id: "admin_update_tier",
+        cat: "pricing",
+        title: "7.3 Admin Update Tier & GST % (Syncs to Available Stalls)",
+        label: "Update Tier & GST",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_update_tier_pricing`,
+        hasBody: true,
+        body: JSON.stringify({
+          tier_name: "Premium",
+          price: 45000.0,
+          gst_percent: 18.0,
+          description: "Center Aisle Facing, 3x3m Booth, 2 Spotlights, 1x 15A Power socket, High Footfall"
+        }, null, 2)
+      },
+      admin_delete_tier: {
+        id: "admin_delete_tier",
+        cat: "pricing",
+        title: "7.4 Admin Delete Tier (Protected: Fails if Booked Stalls Exist!)",
+        label: "Delete Tier (Protected)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_tier_pricing`,
+        hasBody: true,
+        body: JSON.stringify({
+          tier_name: "VIP Pavilion"
+        }, null, 2)
       }
     };
 
@@ -1358,7 +1516,9 @@
         stall: document.getElementById('stallList'),
         payment: document.getElementById('paymentList'),
         pass: document.getElementById('passList'),
-        admin: document.getElementById('adminList')
+        admin: document.getElementById('adminList'),
+        admin_stall: document.getElementById('adminStallList'),
+        pricing: document.getElementById('pricingList')
       };
 
       Object.values(lists).forEach(l => { if (l) l.innerHTML = ''; });

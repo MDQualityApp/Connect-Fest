@@ -9,6 +9,7 @@
   "stall_number",
   "tier",
   "dimensions",
+  "zone",
   "price",
   "status",
   "admin_control_section",
@@ -36,16 +37,21 @@
   },
   {
    "fieldname": "tier",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Tier",
-   "options": "Silver\nPremium\nStandard\nRegular",
    "reqd": 1
   },
   {
    "fieldname": "dimensions",
    "fieldtype": "Data",
    "label": "Dimensions"
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Zone"
   },
   {
    "fieldname": "price",
@@ -133,7 +139,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-17 13:55:00",
+ "modified": "2026-10-17 19:30:00",
  "modified_by": "Administrator",
  "module": "ConnectFest",
  "name": "ConnectFest Stall",

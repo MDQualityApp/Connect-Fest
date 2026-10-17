@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:tier_name",
+ "creation": "2026-10-17 19:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "tier_name",
+  "price",
+  "gst_percent",
+  "is_active",
+  "description_section",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "tier_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tier / Plan Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Base Price (INR)",
+   "reqd": 1
+  },
+  {
+   "default": "18.0",
+   "fieldname": "gst_percent",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "GST Percentage (%)"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "description_section",
+   "fieldtype": "Section Break",
+   "label": "Plan Description & Amenities"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-17 19:00:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest Tier Pricing",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "price",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
