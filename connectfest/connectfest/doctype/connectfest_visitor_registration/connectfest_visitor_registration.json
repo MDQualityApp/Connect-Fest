@@ -13,7 +13,12 @@
   "mobile_no",
   "status_section",
   "status",
-  "source_of_info"
+  "source_of_info",
+  "which_day",
+  "pass_code",
+  "qr_payload",
+  "checked_in",
+  "checked_in_at"
  ],
  "fields": [
   {
@@ -67,6 +72,40 @@
    "fieldtype": "Select",
    "label": "How did you know about this event?",
    "options": "\nSocial Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther"
+  },
+  {
+   "default": "Both days",
+   "fieldname": "which_day",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Which Day?",
+   "options": "Day 1\nDay 2\nBoth days"
+  },
+  {
+   "fieldname": "pass_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pass Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qr_payload",
+   "fieldtype": "Code",
+   "label": "QR Payload",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_in",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Checked In"
+  },
+  {
+   "fieldname": "checked_in_at",
+   "fieldtype": "Datetime",
+   "label": "Checked In At",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,

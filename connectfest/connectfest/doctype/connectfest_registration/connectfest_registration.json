@@ -24,6 +24,7 @@
   "event_source_section",
   "source_of_info",
   "stall_package_section",
+  "stall_number",
   "stall_category",
   "amount",
   "payment_section",
@@ -145,6 +146,14 @@
    "fieldname": "stall_package_section",
    "fieldtype": "Section Break",
    "label": "Stall Package"
+  },
+  {
+   "fieldname": "stall_number",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stall Number",
+   "options": "ConnectFest Stall",
+   "reqd": 0
   },
   {
    "default": "Regular",

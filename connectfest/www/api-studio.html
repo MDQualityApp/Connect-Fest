@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConnectFest 2027 - Developer API Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080c14;
+      --sidebar-bg: #0b111e;
+      --card-bg: #0f172a;
+      --card-hover: #131d35;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(99, 102, 241, 0.5);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --code-bg: #050810;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* HEADER */
+    header {
+      background: rgba(11, 17, 30, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      color: white;
+      font-weight: 800;
+      font-size: 15px;
+      padding: 6px 12px;
+      border-radius: 9px;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+      letter-spacing: 0.5px;
+    }
+
+    .brand-text h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: #fff;
+    }
+
+    .brand-text span {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-header {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-header:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn-header-primary {
+      background: linear-gradient(135deg, #ff6c37, #ff4500);
+      border: none;
+      color: white;
+      box-shadow: 0 4px 12px rgba(255, 108, 55, 0.35);
+    }
+
+    .btn-header-primary:hover {
+      background: linear-gradient(135deg, #ff7e4f, #ff5714);
+      box-shadow: 0 6px 16px rgba(255, 108, 55, 0.5);
+    }
+
+    .host-pill {
+      background: rgba(6, 182, 212, 0.1);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    /* MAIN LAYOUT */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 310px 1fr 1fr;
+      flex: 1;
+      height: calc(100vh - 64px);
+      overflow: hidden;
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .search-box {
+      padding: 12px 14px;
+      position: sticky;
+      top: 0;
+      background: var(--sidebar-bg);
+      z-index: 10;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-input-wrap {
+      position: relative;
+    }
+
+    .search-input-wrap input {
+      width: 100%;
+      background: #060912;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px 8px 32px;
+      color: var(--text);
+      font-size: 12.5px;
+      outline: none;
+    }
+
+    .search-input-wrap input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+    }
+
+    .sidebar-section {
+      padding: 10px 10px 4px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .endpoint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .endpoint-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .endpoint-btn:hover {
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+    }
+
+    .endpoint-btn.active {
+      background: rgba(99, 102, 241, 0.14);
+      border-color: rgba(99, 102, 241, 0.3);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .badge-post { background: rgba(16, 185, 129, 0.18); color: #34d399; }
+    .badge-get { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
+
+    .tier-price {
+      margin-left: auto;
+      font-size: 10.5px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #fbbf24;
+      font-weight: 600;
+    }
+
+    /* MIDDLE: REQUEST EDITOR */
+    .panel-editor {
+      background: var(--card-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 20px;
+      gap: 14px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .url-bar {
+      display: flex;
+      align-items: center;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px 12px;
+      gap: 10px;
+    }
+
+    .method-select {
+      background: transparent;
+      border: none;
+      color: #818cf8;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .method-select option { background: #111827; color: #fff; }
+
+    .url-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #f1f5f9;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      outline: none;
+    }
+
+    .send-btn {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: white;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 9px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    .send-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.55);
+    }
+
+    .editor-wrapper {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 260px;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .editor-label {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .tool-link {
+      font-size: 11.5px;
+      color: #a5b4fc;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .tool-link:hover { background: rgba(255, 255, 255, 0.05); }
+
+    textarea.code-editor {
+      width: 100%;
+      flex: 1;
+      min-height: 320px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.55;
+      outline: none;
+      resize: vertical;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    textarea.code-editor:focus { border-color: var(--border-focus); }
+
+    /* RIGHT: RESPONSE PANEL */
+    .panel-response {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #060911;
+      overflow-y: auto;
+    }
+
+    .tab-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
+    .tab-btn.active { color: #fff; background: rgba(99, 102, 241, 0.15); }
+
+    .response-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      margin-left: auto;
+    }
+
+    .res-status {
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+
+    .res-status.success { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .res-status.error { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .res-time { color: var(--text-muted); }
+
+    /* VISUAL HIGHLIGHT CARD */
+    .summary-card {
+      background: linear-gradient(145deg, #0e172a, #0b1120);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    }
+
+    .summary-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .summary-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #93c5fd;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .summary-chips {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .chip-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .chip-label { font-size: 10.5px; color: var(--text-muted); }
+    .chip-value { font-size: 13px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+
+    .action-pay-btn {
+      margin-top: 4px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s;
+    }
+
+    .action-pay-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5); }
+
+    pre.response-box {
+      flex: 1;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* SYNTAX HIGHLIGHTING */
+    .json-key { color: #38bdf8; }
+    .json-string { color: #34d399; }
+    .json-number { color: #fbbf24; }
+    .json-boolean { color: #c084fc; }
+    .json-null { color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="logo-badge">CF27</div>
+      <div class="brand-text">
+        <h1>ConnectFest 2027 API Studio</h1>
+        <span>Modular Architecture &bull; 10,000+ RPS Defense &bull; Razorpay Gateway</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- POSTMAN DOWNLOAD BUTTONS -->
+      <a class="btn-header btn-header-primary" href="/assets/connectfest/ConnectFest_Postman_Collection.json" download="ConnectFest_Postman_Collection.json">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        📥 Postman Collection
+      </a>
+
+      <a class="btn-header" href="/assets/connectfest/ConnectFest_Postman_Environment.json" download="ConnectFest_Postman_Environment.json">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Environment
+      </a>
+
+      <button class="btn-header" onclick="copyPostmanLink()" title="Copy Link to import directly into Postman">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Copy Link
+      </button>
+
+      <div class="host-pill" id="hostPill" title="Click to Change Host" onclick="changeHost()" style="cursor: pointer;">
+        <span class="status-dot"></span>
+        <span id="hostLabel">Host: <strong>Detecting...</strong></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="search-box">
+        <div class="search-input-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="searchInput" placeholder="Search API endpoints..." oninput="filterEndpoints(this.value)" />
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">1. Registration & Attendees</div>
+        <div class="endpoint-list" id="regList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">2. Stalls & Seat Locking</div>
+        <div class="endpoint-list" id="stallList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">3. Nuqid 3-Step Checkout</div>
+        <div class="endpoint-list" id="paymentList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">4. Digital Pass & Dashboard</div>
+        <div class="endpoint-list" id="passList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">5. Admin & Monitoring</div>
+        <div class="endpoint-list" id="adminList"></div>
+      </div>
+    </div>
+
+    <!-- MIDDLE PANEL: REQUEST EDITOR -->
+    <div class="panel-editor">
+      <div class="panel-header">
+        <div class="panel-title" id="endpointTitle">Exhibitor Registration</div>
+        <div style="display: flex; gap: 8px;">
+          <button class="send-btn" id="sendBtn" onclick="sendRequest()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Send Request
+          </button>
+        </div>
+      </div>
+
+      <div class="url-bar">
+        <select class="method-select" id="currentMethod">
+          <option value="POST">POST</option>
+          <option value="GET">GET</option>
+          <option value="PUT">PUT</option>
+          <option value="DELETE">DELETE</option>
+        </select>
+        <input type="text" class="url-input" id="currentUrl" value="" />
+      </div>
+
+      <div class="editor-wrapper" id="editorSection">
+        <div class="editor-toolbar">
+          <span class="editor-label">Payload (JSON)</span>
+          <button class="tool-link" onclick="formatPayload()">Format JSON</button>
+        </div>
+        <textarea class="code-editor" id="requestBody" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: RESPONSE VIEW -->
+    <div class="panel-response">
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tabVisual" onclick="switchView('visual')">Visual Card</button>
+        <button class="tab-btn" id="tabRaw" onclick="switchView('raw')">Raw JSON</button>
+
+        <div class="response-meta" id="responseMeta" style="display: none;">
+          <span class="res-status" id="resStatus">200 OK</span>
+          <span class="res-time" id="resTime">Time: 4ms</span>
+          <button class="tool-link" onclick="copyResponse()">Copy</button>
+        </div>
+      </div>
+
+      <!-- VISUAL EXECUTION CARD -->
+      <div class="summary-card" id="summaryCard" style="display: none;">
+        <div class="summary-header">
+          <span class="summary-title" id="cardSummaryTitle">Execution Overview</span>
+          <span class="badge badge-post" id="cardStatusBadge">Confirmed</span>
+        </div>
+
+        <div class="summary-chips" id="summaryChips"></div>
+
+        <button class="action-pay-btn" id="quickCheckoutBtn" style="display: none;" onclick="triggerQuickCheckout()">
+          ⚡ Proceed to Nuqid Checkout Now
+        </button>
+        <button class="action-pay-btn" id="verifyActionBtn" style="display: none; background: linear-gradient(135deg, #6366f1, #4f46e5);" onclick="triggerQuickVerify()">
+          ⚡ Finalize & Confirm Payment Now
+        </button>
+      </div>
+
+      <pre class="response-box" id="responseBox">// Press "Send Request" (or Ctrl + Enter) to execute API...</pre>
+    </div>
+  </div>
+
+  <script>
+    let activeId = 'reg_basic';
+    let savedRegId = 'CF-2610-000001';
+    let savedOrderId = 'order_mock_test_123';
+    let savedStallNum = 'PR-08';
+    let savedPassCode = 'CF27-000001';
+    let currentRawData = null;
+    let currentView = 'visual';
+
+    // Auto-detect Host
+    let HOST = localStorage.getItem('cf_custom_host') || window.location.origin;
+    document.getElementById('hostLabel').innerHTML = `Host: <strong>${HOST.replace('http://', '').replace('https://', '')}</strong>`;
+
+    const DEFAULT_ENDPOINTS = {
+      // 1. REGISTRATION & ATTENDEES
+      reg_basic: {
+        id: "reg_basic",
+        cat: "reg",
+        title: "1.1 Exhibitor Registration (Basic Fields Only - Stall Optional)",
+        label: "Exhibitor Registration",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.register_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Manoj Kumar",
+          company_name: "Apex Logistics",
+          location: "Chennai",
+          source_of_info: "Social Media",
+          mobile_no: "9876543210",
+          email: "manoj@apexlogistics.com",
+          is_bni_member: 0,
+          industry: "Supply Chain",
+          segment: "Logistics",
+          sync: 1
+        }, null, 2)
+      },
+      reg_bni: {
+        id: "reg_bni",
+        cat: "reg",
+        title: "1.2 Exhibitor Registration (BNI Member)",
+        label: "BNI Exhibitor Reg",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.register_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Karthik Raja",
+          company_name: "Titanium Software Labs",
+          location: "Chennai",
+          is_bni_member: 1,
+          region_name: "Chennai Central",
+          chapter_name: "Titanium",
+          industry: "IT & Software",
+          segment: "Enterprise SaaS",
+          source_of_info: "BNI Chapter",
+          mobile_no: "9876501234",
+          email: "karthik@titaniumlabs.com",
+          sync: 1
+        }, null, 2)
+      },
+      visitor_reg: {
+        id: "visitor_reg",
+        cat: "reg",
+        title: "1.3 Visitor Free Pass Registration (Instant QR)",
+        label: "Visitor Free Pass",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.register_visitor`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Priya Dharshini",
+          email: "priya@example.com",
+          mobile_no: "9845123456",
+          which_day: "Both days",
+          source_of_info: "WhatsApp"
+        }, null, 2)
+      },
+      check_booking_status: {
+        id: "check_booking_status",
+        cat: "reg",
+        title: "1.4 Check User Booking Status",
+        label: "Check User Booking",
+        method: "GET",
+        getUrl: () => `${HOST}/api/method/connectfest.api.check_user_booking_status?email=karthik@titaniumlabs.com`,
+        hasBody: false
+      },
+
+      // 2. STALLS & SEAT LOCKING
+      get_stalls: {
+        id: "get_stalls",
+        cat: "stall",
+        title: "2.1 Floor Map Inventory (All 195 Stalls & Live Status)",
+        label: "Floor Map (195 Stalls)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_stalls`,
+        hasBody: false
+      },
+      select_stall: {
+        id: "select_stall",
+        cat: "stall",
+        title: "2.2 Select / Assign Stall to Registration (Before Payment)",
+        label: "Select Stall (PR-08)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.select_stall`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          registration_id: savedRegId,
+          stall_number: savedStallNum
+        }, null, 2)
+      },
+      hold_stall: {
+        id: "hold_stall",
+        cat: "stall",
+        title: "2.3 Hold Stall (10-Minute Atomic Redis Lock)",
+        label: "Hold Stall (10-Min)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.hold_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-08",
+          full_name: "Karthik Raja",
+          email: "karthik@titaniumlabs.com",
+          mobile_no: "9876501234",
+          company_name: "Titanium Software Labs"
+        }, null, 2)
+      },
+      release_hold: {
+        id: "release_hold",
+        cat: "stall",
+        title: "2.4 Release Stall Hold",
+        label: "Release Stall Hold",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.release_stall_hold`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-08"
+        }, null, 2)
+      },
+      admin_block: {
+        id: "admin_block",
+        cat: "stall",
+        title: "2.5 Admin Stall Block (Reserved / VIP)",
+        label: "Admin Block Stall",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.toggle_stall_block`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-15",
+          action: "block",
+          reason: "Reserved for Chief Sponsor"
+        }, null, 2)
+      },
+      admin_unblock: {
+        id: "admin_unblock",
+        cat: "stall",
+        title: "2.6 Admin Stall Unblock (Restore to Available)",
+        label: "Admin Unblock Stall",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.toggle_stall_block`,
+        hasBody: true,
+        body: JSON.stringify({
+          stall_number: "PR-15",
+          action: "unblock"
+        }, null, 2)
+      },
+
+      // 3. NUQID 3-STEP CHECKOUT (STALL MANDATORY AT PAYMENT)
+      preview_payment: {
+        id: "preview_payment",
+        cat: "payment",
+        title: "3.1 Nuqid: Preview Payment (Breakdown before Paying)",
+        label: "3.1 Preview Payment",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.preview_payment`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          reference_doctype: "ConnectFest Registration",
+          reference_docname: savedRegId,
+          stall_number: savedStallNum
+        }, null, 2)
+      },
+      checkout: {
+        id: "checkout",
+        cat: "payment",
+        title: "3.2 Nuqid: Checkout (Initiate Razorpay Order with Stall)",
+        label: "3.2 Checkout Order",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.checkout`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          reference_doctype: "ConnectFest Registration",
+          reference_docname: savedRegId,
+          stall_number: savedStallNum,
+          payment_gateway: "Razorpay"
+        }, null, 2)
+      },
+      finalize_payment: {
+        id: "finalize_payment",
+        cat: "payment",
+        title: "3.3 Nuqid: Finalize Payment (Verify Signature & Book Stall)",
+        label: "3.3 Finalize Payment",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.finalize_payment`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          reference_doctype: "ConnectFest Registration",
+          reference_docname: savedRegId,
+          razorpay_order_id: savedOrderId,
+          razorpay_payment_id: "pay_test_" + Math.floor(Math.random() * 900000 + 100000),
+          razorpay_signature: "mock_signature_valid"
+        }, null, 2)
+      },
+      create_order: {
+        id: "create_order",
+        cat: "payment",
+        title: "3.4 Create Razorpay Order Direct",
+        label: "Direct Razorpay Order",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.create_razorpay_order`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          registration_id: savedRegId,
+          stall_number: savedStallNum
+        }, null, 2)
+      },
+      verify_payment: {
+        id: "verify_payment",
+        cat: "payment",
+        title: "3.5 Verify Payment Signature Core",
+        label: "Verify Payment Core",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.verify_razorpay_payment`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          registration_id: savedRegId,
+          razorpay_order_id: savedOrderId,
+          razorpay_payment_id: "pay_test_" + Math.floor(Math.random() * 900000 + 100000),
+          razorpay_signature: "mock_signature_valid"
+        }, null, 2)
+      },
+
+      // 4. DIGITAL PASS & DASHBOARD
+      verify_gate_pass: {
+        id: "verify_gate_pass",
+        cat: "pass",
+        title: "4.1 Gate Entry QR Scanner (Instant Verification)",
+        label: "Gate QR Scanner",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.verify_gate_pass`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          pass_code: savedPassCode
+        }, null, 2)
+      },
+      my_dashboard: {
+        id: "my_dashboard",
+        cat: "pass",
+        title: "4.2 Attendee Dashboard (Shows Booked Stall, Receipt & Badge)",
+        label: "My Dashboard",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.get_my_dashboard`,
+        hasBody: true,
+        body: JSON.stringify({
+          email: "karthik@titaniumlabs.com"
+        }, null, 2)
+      },
+      login_attendee: {
+        id: "login_attendee",
+        cat: "pass",
+        title: "4.3 Attendee Login",
+        label: "Attendee Login",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.login_attendee`,
+        hasBody: true,
+        body: JSON.stringify({
+          email: "karthik@titaniumlabs.com"
+        }, null, 2)
+      },
+      get_profile: {
+        id: "get_profile",
+        cat: "pass",
+        title: "4.4 Get Current User Profile (Session or Token)",
+        label: "Current User Profile",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
+        hasBody: false
+      },
+      lookup_reg: {
+        id: "lookup_reg",
+        cat: "pass",
+        title: "4.5 Universal Registration Lookup by ID",
+        label: "Universal Lookup",
+        method: "GET",
+        getUrl: () => `${HOST}/api/method/connectfest.api.get_registration?registration_id=${savedRegId}`,
+        hasBody: false
+      },
+
+      // 5. ADMIN & MONITORING
+      update_pricing: {
+        id: "update_pricing",
+        cat: "admin",
+        title: "5.1 Dynamic Admin Pricing Update",
+        label: "Update Dynamic Pricing",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.update_dynamic_pricing`,
+        hasBody: true,
+        body: JSON.stringify({
+          silver: 100000.0,
+          premium: 45000.0,
+          standard: 35000.0,
+          regular: 25000.0
+        }, null, 2)
+      },
+      admin_dashboard: {
+        id: "admin_dashboard",
+        cat: "admin",
+        title: "5.2 Admin Dashboard Overview (Live Revenue & Occupancy)",
+        label: "Admin Dashboard Metrics",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_admin_dashboard_data`,
+        hasBody: false
+      },
+      queue_stats: {
+        id: "queue_stats",
+        cat: "admin",
+        title: "5.3 Queue Stats & Persisted Database Counts",
+        label: "Queue & DB Stats",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_queue_stats`,
+        hasBody: false
+      },
+      flush_queue: {
+        id: "flush_queue",
+        cat: "admin",
+        title: "5.4 Flush Redis Queue (Bulk Database Worker)",
+        label: "Flush Queue (Worker)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.flush_queue`,
+        hasBody: false
+      }
+    };
+
+    let endpoints = { ...DEFAULT_ENDPOINTS };
+
+    function renderSidebar(filter = '') {
+      const lists = {
+        reg: document.getElementById('regList'),
+        stall: document.getElementById('stallList'),
+        payment: document.getElementById('paymentList'),
+        pass: document.getElementById('passList'),
+        admin: document.getElementById('adminList')
+      };
+
+      Object.values(lists).forEach(l => { if (l) l.innerHTML = ''; });
+
+      Object.values(endpoints).forEach(item => {
+        const label = item.label || item.title;
+        if (filter && !label.toLowerCase().includes(filter.toLowerCase())) return;
+
+        const target = lists[item.cat];
+        if (!target) return;
+
+        const btn = document.createElement('button');
+        btn.className = `endpoint-btn ${item.id === activeId ? 'active' : ''}`;
+        btn.onclick = () => selectEndpoint(item.id);
+
+        let badgeClass = item.method === 'GET' ? 'badge-get' : 'badge-post';
+
+        btn.innerHTML = `
+          <span class="badge ${badgeClass}">${item.method}</span>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${label}</span>
+          ${item.price ? `<span class="tier-price">${item.price}</span>` : ''}
+        `;
+        target.appendChild(btn);
+      });
+    }
+
+    function selectEndpoint(id) {
+      activeId = id;
+      const item = endpoints[id];
+      if (!item) return;
+
+      renderSidebar(document.getElementById('searchInput').value);
+
+      document.getElementById('endpointTitle').innerText = item.title;
+      document.getElementById('currentMethod').value = item.method;
+      document.getElementById('currentUrl').value = item.getUrl ? item.getUrl() : item.url;
+
+      const editorSec = document.getElementById('editorSection');
+      if (item.hasBody || item.method !== 'GET') {
+        editorSec.style.display = 'flex';
+        document.getElementById('requestBody').value = item.getBody ? item.getBody() : (item.body || '{\n  \n}');
+      } else {
+        editorSec.style.display = 'none';
+      }
+    }
+
+    function filterEndpoints(q) {
+      renderSidebar(q);
+    }
+
+    function formatPayload() {
+      try {
+        const parsed = JSON.parse(document.getElementById('requestBody').value);
+        document.getElementById('requestBody').value = JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        alert('Invalid JSON: ' + e.message);
+      }
+    }
+
+    function changeHost() {
+      const newHost = prompt("Change API Server Host (e.g. http://localhost:8080 or https://uat.connectfest.com):", HOST);
+      if (newHost && newHost.trim()) {
+        HOST = newHost.trim().replace(/\/$/, "");
+        localStorage.setItem('cf_custom_host', HOST);
+        location.reload();
+      }
+    }
+
+    function copyPostmanLink() {
+      const url = `${HOST}/assets/connectfest/ConnectFest_Postman_Collection.json`;
+      navigator.clipboard.writeText(url);
+      alert('Postman Collection URL copied to clipboard!\n\nOpen Postman -> Import -> Paste this URL:\n' + url);
+    }
+
+    async function sendRequest() {
+      const btn = document.getElementById('sendBtn');
+      const resBox = document.getElementById('responseBox');
+      const resMeta = document.getElementById('responseMeta');
+      const resStatus = document.getElementById('resStatus');
+      const resTime = document.getElementById('resTime');
+      const summaryCard = document.getElementById('summaryCard');
+
+      btn.disabled = true;
+      btn.innerHTML = `<span style="opacity: 0.8;">Sending...</span>`;
+      resBox.innerHTML = '<span style="color: var(--text-muted);">Executing API request...</span>';
+
+      const method = document.getElementById('currentMethod').value;
+      const url = document.getElementById('currentUrl').value;
+      const hasBody = method !== 'GET';
+      const bodyText = document.getElementById('requestBody').value;
+
+      const startTime = performance.now();
+
+      try {
+        const options = {
+          method: method,
+          headers: {
+            'Accept': 'application/json'
+          }
+        };
+
+        if (hasBody) {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = bodyText;
+        }
+
+        const res = await fetch(url, options);
+        const duration = Math.round(performance.now() - startTime);
+
+        const data = await res.json().catch(() => null);
+        currentRawData = data;
+
+        resMeta.style.display = 'flex';
+        resStatus.innerText = `${res.status} ${res.statusText || (res.ok ? 'OK' : 'Error')}`;
+        resStatus.className = 'res-status ' + (res.ok ? 'success' : 'error');
+        resTime.innerText = `Time: ${duration}ms`;
+
+        renderResponse(data, res.ok);
+
+        // Auto-save key parameters for seamless chaining
+        if (data && data.message) {
+          const m = data.message;
+          if (m.registration_id) savedRegId = m.registration_id;
+          if (m.stall_number) savedStallNum = m.stall_number;
+          if (m.pass && m.pass.pass_code) savedPassCode = m.pass.pass_code;
+          if (m.razorpay_order_id) savedOrderId = m.razorpay_order_id;
+          else if (m.order && m.order.id) savedOrderId = m.order.id;
+          else if (m.razorpay_order && m.razorpay_order.id) savedOrderId = m.razorpay_order.id;
+        }
+
+      } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        resMeta.style.display = 'flex';
+        resStatus.innerText = 'Network Error';
+        resStatus.className = 'res-status error';
+        resTime.innerText = `Time: ${duration}ms`;
+        resBox.innerText = err.toString();
+        summaryCard.style.display = 'none';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Send Request`;
+      }
+    }
+
+    function renderResponse(data, isOk) {
+      const resBox = document.getElementById('responseBox');
+      const summaryCard = document.getElementById('summaryCard');
+      const chips = document.getElementById('summaryChips');
+      const verifyBtn = document.getElementById('verifyActionBtn');
+      const quickCheckoutBtn = document.getElementById('quickCheckoutBtn');
+
+      resBox.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+
+      if (isOk && data && data.message) {
+        const msg = data.message;
+        const rec = msg.data || msg;
+        chips.innerHTML = '';
+        summaryCard.style.display = 'flex';
+
+        if (msg.registration_id || rec.registration_id) {
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Registration ID</span><span class="chip-value">${msg.registration_id || rec.registration_id}</span></div>`;
+        }
+        if (msg.stall_number || rec.stall_number) {
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Stall Number</span><span class="chip-value" style="color: #38bdf8;">${msg.stall_number || rec.stall_number}</span></div>`;
+        }
+        if (rec.stall_category || msg.stall_category || msg.tier) {
+          const tier = rec.stall_category || msg.stall_category || msg.tier;
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Tier</span><span class="chip-value">${tier}</span></div>`;
+        }
+        if (rec.payment_status || msg.payment_status) {
+          const st = rec.payment_status || msg.payment_status;
+          const color = st === 'Paid' ? '#34d399' : '#fbbf24';
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Payment Status</span><span class="chip-value" style="color: ${color};">${st}</span></div>`;
+        }
+        if (msg.order_id || msg.razorpay_order_id || (msg.order && msg.order.id)) {
+          const ordId = msg.order_id || msg.razorpay_order_id || msg.order.id;
+          chips.innerHTML += `<div class="chip-item" style="grid-column: span 2;"><span class="chip-label">Razorpay Order ID</span><span class="chip-value">${ordId}</span></div>`;
+        }
+        if (msg.pass && msg.pass.pass_code) {
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Pass Code</span><span class="chip-value" style="color: #34d399;">${msg.pass.pass_code}</span></div>`;
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Access</span><span class="chip-value">${msg.pass.access || 'Both Days'}</span></div>`;
+        }
+
+        // Quick action buttons
+        if (activeId.startsWith('reg_') && !msg.payment_status) {
+          quickCheckoutBtn.style.display = 'flex';
+          verifyBtn.style.display = 'none';
+        } else if (activeId === 'checkout' || activeId === 'preview_payment' || activeId === 'create_order') {
+          quickCheckoutBtn.style.display = 'none';
+          verifyBtn.style.display = 'flex';
+        } else {
+          quickCheckoutBtn.style.display = 'none';
+          verifyBtn.style.display = 'none';
+        }
+      } else {
+        summaryCard.style.display = 'none';
+      }
+    }
+
+    function triggerQuickCheckout() {
+      selectEndpoint('checkout');
+      setTimeout(sendRequest, 100);
+    }
+
+    function triggerQuickVerify() {
+      selectEndpoint('finalize_payment');
+      setTimeout(sendRequest, 100);
+    }
+
+    function switchView(view) {
+      currentView = view;
+      document.getElementById('tabVisual').classList.toggle('active', view === 'visual');
+      document.getElementById('tabRaw').classList.toggle('active', view === 'raw');
+      document.getElementById('summaryCard').style.display = (view === 'visual' && currentRawData?.message) ? 'flex' : 'none';
+      document.getElementById('responseBox').style.display = 'block';
+    }
+
+    function syntaxHighlight(json) {
+      if (!json) return '';
+      json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+          } else {
+            cls = 'json-string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-boolean';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
+    }
+
+    function copyResponse() {
+      if (currentRawData) {
+        navigator.clipboard.writeText(JSON.stringify(currentRawData, null, 2));
+        alert('Response JSON copied to clipboard!');
+      }
+    }
+
+    // Initialize
+    renderSidebar();
+    selectEndpoint('reg_basic');
+  </script>
+</body>
+</html>

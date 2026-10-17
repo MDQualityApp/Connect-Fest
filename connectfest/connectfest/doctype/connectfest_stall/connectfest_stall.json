@@ -1,0 +1,164 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:stall_number",
+ "creation": "2026-10-17 13:55:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "stall_number",
+  "tier",
+  "dimensions",
+  "price",
+  "status",
+  "admin_control_section",
+  "is_blocked_by_admin",
+  "blocked_reason",
+  "booking_details_section",
+  "booked_by_registration",
+  "booked_by_name",
+  "column_break_booking",
+  "booked_by_company",
+  "booked_by_email",
+  "booked_by_mobile",
+  "hold_section",
+  "hold_token",
+  "hold_expires_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "stall_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Stall Number",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tier",
+   "options": "Silver\nPremium\nStandard\nRegular",
+   "reqd": 1
+  },
+  {
+   "fieldname": "dimensions",
+   "fieldtype": "Data",
+   "label": "Dimensions"
+  },
+  {
+   "fieldname": "price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Price (INR)",
+   "reqd": 1
+  },
+  {
+   "default": "Available",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Available\nHold\nBooked\nBlocked",
+   "reqd": 1
+  },
+  {
+   "fieldname": "admin_control_section",
+   "fieldtype": "Section Break",
+   "label": "Admin Controls"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_blocked_by_admin",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Blocked by Admin"
+  },
+  {
+   "depends_on": "eval:doc.is_blocked_by_admin == 1",
+   "fieldname": "blocked_reason",
+   "fieldtype": "Data",
+   "label": "Blocked Reason"
+  },
+  {
+   "fieldname": "booking_details_section",
+   "fieldtype": "Section Break",
+   "label": "Booking Information"
+  },
+  {
+   "fieldname": "booked_by_registration",
+   "fieldtype": "Data",
+   "label": "Registration ID"
+  },
+  {
+   "fieldname": "booked_by_name",
+   "fieldtype": "Data",
+   "label": "Booked By Name"
+  },
+  {
+   "fieldname": "column_break_booking",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "booked_by_company",
+   "fieldtype": "Data",
+   "label": "Company Name"
+  },
+  {
+   "fieldname": "booked_by_email",
+   "fieldtype": "Data",
+   "label": "Email"
+  },
+  {
+   "fieldname": "booked_by_mobile",
+   "fieldtype": "Data",
+   "label": "Mobile Number"
+  },
+  {
+   "fieldname": "hold_section",
+   "fieldtype": "Section Break",
+   "label": "Concurrency Hold"
+  },
+  {
+   "fieldname": "hold_token",
+   "fieldtype": "Data",
+   "label": "Hold Token"
+  },
+  {
+   "fieldname": "hold_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Hold Expires At"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-17 13:55:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest Stall",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "stall_number",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

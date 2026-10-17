@@ -11,7 +11,17 @@
   "column_break_rzp",
   "razorpay_webhook_secret",
   "mock_payments",
-  "currency"
+  "currency",
+  "pricing_section",
+  "price_silver",
+  "price_premium",
+  "column_break_pricing",
+  "price_standard",
+  "price_regular",
+  "event_section",
+  "event_name",
+  "event_dates",
+  "event_venue"
  ],
  "fields": [
   {
@@ -51,6 +61,62 @@
    "fieldtype": "Data",
    "label": "Currency",
    "read_only": 1
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Stall Tier Pricing (Dynamic)"
+  },
+  {
+   "default": "100000",
+   "fieldname": "price_silver",
+   "fieldtype": "Currency",
+   "label": "Silver Tier Price (INR)"
+  },
+  {
+   "default": "45000",
+   "fieldname": "price_premium",
+   "fieldtype": "Currency",
+   "label": "Premium Tier Price (INR)"
+  },
+  {
+   "fieldname": "column_break_pricing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "35000",
+   "fieldname": "price_standard",
+   "fieldtype": "Currency",
+   "label": "Standard Tier Price (INR)"
+  },
+  {
+   "default": "25000",
+   "fieldname": "price_regular",
+   "fieldtype": "Currency",
+   "label": "Regular Tier Price (INR)"
+  },
+  {
+   "fieldname": "event_section",
+   "fieldtype": "Section Break",
+   "label": "Event Configuration"
+  },
+  {
+   "default": "ConnectFest 2027",
+   "fieldname": "event_name",
+   "fieldtype": "Data",
+   "label": "Event Name"
+  },
+  {
+   "default": "20 & 21 Feb 2027",
+   "fieldname": "event_dates",
+   "fieldtype": "Data",
+   "label": "Event Dates"
+  },
+  {
+   "default": "Chennai Trade Centre, Nandambakkam",
+   "fieldname": "event_venue",
+   "fieldtype": "Data",
+   "label": "Venue"
   }
  ],
  "index_web_pages_for_search": 0,

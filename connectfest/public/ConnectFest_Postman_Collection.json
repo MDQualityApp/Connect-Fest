@@ -1,555 +1,524 @@
 {
-	"info": {
-		"_postman_id": "connectfest-api-collection-v2",
-		"name": "ConnectFest 2026 APIs (with Razorpay & Stall Tiers)",
-		"description": "High-throughput APIs for ConnectFest 2026 Event Management:\n- Stall Registrations with 4 Tiers: Regular (₹25,000), Standard (₹35,000), Premium (₹45,000), Silver (₹1,00,000)\n- Razorpay Payment Integration (Create Order & Verify Signature)\n- BNI / Non-BNI member validation rules\n- Visitor Registrations (Full Name, Email, Mobile Number)\n- High-Speed Ingestion (Redis Queue, 1,000+ RPS)\n- Universal Lookups & Background Bulk Ingestion",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"variable": [
-		{
-			"key": "baseUrl",
-			"value": "http://localhost:8080",
-			"type": "string"
-		},
-		{
-			"key": "registrationId",
-			"value": "CF-2610-000001",
-			"type": "string"
-		},
-		{
-			"key": "orderId",
-			"value": "order_mock_CF-2610-000001_1792155047",
-			"type": "string"
-		},
-		{
-			"key": "visitorId",
-			"value": "VIS-2610-000001",
-			"type": "string"
-		}
-	],
-	"item": [
-		{
-			"name": "1. Stall Registrations",
-			"description": "Endpoints for Stall Holder Registrations across 4 pricing tiers.",
-			"item": [
-				{
-					"name": "1.1 Register Stall - Regular Tier (₹25,000)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.registration_id) {",
-									"    pm.collectionVariables.set('registrationId', jsonData.message.registration_id);",
-									"    console.log('Saved registrationId: ' + jsonData.message.registration_id);",
-									"}",
-									"if (jsonData.message && jsonData.message.razorpay_order) {",
-									"    pm.collectionVariables.set('orderId', jsonData.message.razorpay_order.id);",
-									"    console.log('Saved orderId: ' + jsonData.message.razorpay_order.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Manoj Kumar\",\n  \"company_name\": \"Apex Logistics\",\n  \"stall_category\": \"Regular\",\n  \"is_bni_member\": \"No\",\n  \"source_of_info\": \"Social Media\",\n  \"mobile_no\": \"9876543210\",\n  \"email\": \"manoj@apexlogistics.com\",\n  \"create_order\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_stall"
-							]
-						},
-						"description": "Registers a Regular stall holder for ₹25,000 and automatically initiates a Razorpay order."
-					},
-					"response": []
-				},
-				{
-					"name": "1.2 Register Stall - Standard Tier (₹35,000)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.registration_id) {",
-									"    pm.collectionVariables.set('registrationId', jsonData.message.registration_id);",
-									"}",
-									"if (jsonData.message && jsonData.message.razorpay_order) {",
-									"    pm.collectionVariables.set('orderId', jsonData.message.razorpay_order.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Murugan Textile\",\n  \"company_name\": \"Murugan Weavers\",\n  \"stall_category\": \"Standard\",\n  \"is_bni_member\": \"No\",\n  \"source_of_info\": \"Word of Mouth\",\n  \"mobile_no\": \"9841234567\",\n  \"email\": \"murugan@weavers.com\",\n  \"create_order\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_stall"
-							]
-						},
-						"description": "Registers a Standard tier stall for ₹35,000."
-					},
-					"response": []
-				},
-				{
-					"name": "1.3 Register Stall - Premium Tier (₹45,000) [BNI Member]",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.registration_id) {",
-									"    pm.collectionVariables.set('registrationId', jsonData.message.registration_id);",
-									"}",
-									"if (jsonData.message && jsonData.message.razorpay_order) {",
-									"    pm.collectionVariables.set('orderId', jsonData.message.razorpay_order.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Karthik Raja\",\n  \"company_name\": \"Titanium Software Labs\",\n  \"stall_category\": \"Premium\",\n  \"is_bni_member\": \"Yes\",\n  \"region_name\": \"Chennai Central\",\n  \"chapter_name\": \"Titanium\",\n  \"industry\": \"IT & Software\",\n  \"segment\": \"Enterprise SaaS\",\n  \"source_of_info\": \"BNI Chapter\",\n  \"mobile_no\": \"9876501234\",\n  \"email\": \"karthik@titaniumlabs.com\",\n  \"create_order\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_stall"
-							]
-						},
-						"description": "Registers a BNI Member Premium stall holder for ₹45,000. Region and Chapter are mandatory."
-					},
-					"response": []
-				},
-				{
-					"name": "1.4 Register Stall - Silver Tier (₹1,00,000)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.registration_id) {",
-									"    pm.collectionVariables.set('registrationId', jsonData.message.registration_id);",
-									"}",
-									"if (jsonData.message && jsonData.message.razorpay_order) {",
-									"    pm.collectionVariables.set('orderId', jsonData.message.razorpay_order.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Vijay Sethupathi\",\n  \"company_name\": \"Cinema Productions\",\n  \"stall_category\": \"Silver\",\n  \"is_bni_member\": \"No\",\n  \"source_of_info\": \"Social Media\",\n  \"mobile_no\": \"9876598765\",\n  \"email\": \"vijay@cinemaproductions.com\",\n  \"create_order\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_stall"
-							]
-						},
-						"description": "Registers a Silver tier stall for ₹1,00,000."
-					},
-					"response": []
-				},
-				{
-					"name": "1.5 Register Stall - Direct Sync Mode (Bypass Queue)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Meenakshi Sundaram\",\n  \"company_name\": \"Sundaram Crafts\",\n  \"stall_category\": \"Regular\",\n  \"is_bni_member\": \"No\",\n  \"source_of_info\": \"Website\",\n  \"sync\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_stall"
-							]
-						},
-						"description": "Direct synchronous DB insert by passing `sync: 1`."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "2. Razorpay Payments",
-			"description": "Payment workflow: Create Order for a stall, and Verify Razorpay Payment Signature.",
-			"item": [
-				{
-					"name": "2.1 Create Razorpay Order",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.order && jsonData.message.order.id) {",
-									"    pm.collectionVariables.set('orderId', jsonData.message.order.id);",
-									"    console.log('Saved orderId: ' + jsonData.message.order.id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"registration_id\": \"{{registrationId}}\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.create_razorpay_order",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.create_razorpay_order"
-							]
-						},
-						"description": "Creates a Razorpay order with the amount corresponding to the stall tier (in paise):\n- Regular: 2500000 paise (₹25,000)\n- Standard: 3500000 paise (₹35,000)\n- Premium: 4500000 paise (₹45,000)\n- Silver: 10000000 paise (₹1,00,000)"
-					},
-					"response": []
-				},
-				{
-					"name": "2.2 Verify Razorpay Payment",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"registration_id\": \"{{registrationId}}\",\n  \"razorpay_order_id\": \"{{orderId}}\",\n  \"razorpay_payment_id\": \"pay_test_payment_12345\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.verify_razorpay_payment",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.verify_razorpay_payment"
-							]
-						},
-						"description": "Verifies the HMAC SHA256 payment signature and marks registration as 'Paid' and 'Confirmed'."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "3. Visitor Registrations",
-			"description": "Ultra-fast registration for event visitors & walk-ins.",
-			"item": [
-				{
-					"name": "3.1 Register Visitor (Queue Ingest)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData.message && jsonData.message.registration_id) {",
-									"    pm.collectionVariables.set('visitorId', jsonData.message.registration_id);",
-									"    console.log('Saved visitorId: ' + jsonData.message.registration_id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Priya Dharshini\",\n  \"email\": \"priya@example.com\",\n  \"mobile_no\": \"9845123456\",\n  \"source_of_info\": \"WhatsApp\"\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_visitor"
-							]
-						},
-						"description": "Registers a visitor with Name, Email, and Mobile Number. Sub-5ms response."
-					},
-					"response": []
-				},
-				{
-					"name": "3.2 Register Visitor - Direct Sync Mode",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"Ravi Varma\",\n  \"email\": \"ravi@example.com\",\n  \"mobile_no\": \"9789012345\",\n  \"sync\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.register_visitor"
-							]
-						},
-						"description": "Visitor registration with immediate database write."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "4. Lookups & Monitoring",
-			"description": "Lookup registration records by ID, check ingestion queue status, and trigger bulk worker flush.",
-			"item": [
-				{
-					"name": "4.1 Get Stall Registration Details (Universal)",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.get_registration?registration_id={{registrationId}}",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.get_registration"
-							],
-							"query": [
-								{
-									"key": "registration_id",
-									"value": "{{registrationId}}",
-									"description": "Supports both Stall ID (CF-...) and Visitor ID (VIS-...)"
-								}
-							]
-						},
-						"description": "Fetches registration details. First checks Redis memory cache (<1ms), then falls back to MariaDB."
-					},
-					"response": []
-				},
-				{
-					"name": "4.2 Get Visitor Details",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.get_registration?registration_id={{visitorId}}",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.get_registration"
-							],
-							"query": [
-								{
-									"key": "registration_id",
-									"value": "{{visitorId}}"
-								}
-							]
-						},
-						"description": "Fetches visitor details by visitor registration ID."
-					},
-					"response": []
-				},
-				{
-					"name": "4.3 Get Ingestion Queue Stats",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.get_queue_stats",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.get_queue_stats"
-							]
-						},
-						"description": "Returns pending items in Redis queue, active pricing tiers, and total persisted count in MariaDB."
-					},
-					"response": []
-				},
-				{
-					"name": "4.4 Manual Queue Flush (Trigger Bulk Worker)",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/method/connectfest.api.flush_queue",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"method",
-								"connectfest.api.flush_queue"
-							]
-						},
-						"description": "Manually drains Redis queues and executes chunked bulk inserts into MariaDB."
-					},
-					"response": []
-				}
-			]
-		}
-	]
+  "info": {
+    "_postman_id": "connectfest-2027-api-collection-v3",
+    "name": "ConnectFest 2027 Complete APIs (Stalls, Theatre Lock, Razorpay, Passes & Admin)",
+    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 195 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- Razorpay & Nuqid 3-Step Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "stallNumber",
+      "value": "SL-01",
+      "type": "string"
+    },
+    {
+      "key": "holdToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "registrationId",
+      "value": "CF-2610-000001",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "passCode",
+      "value": "CF27-000001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Stall Inventory & Theatre Seat Locking",
+      "description": "Endpoints for 195 stalls inventory and concurrency locking.",
+      "item": [
+        {
+          "name": "1.1 Get All 195 Stalls (Real-Time Map & Status)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_stalls",
+            "description": "Fetches all 195 stalls with tier summary, prices, dimensions, and real-time status (Available, Hold, Booked, Blocked)."
+          }
+        },
+        {
+          "name": "1.2 Get Stalls by Tier (e.g. Silver)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_stalls?tier=Silver",
+            "description": "Filters stalls by tier (Silver, Premium, Standard, Regular)."
+          }
+        },
+        {
+          "name": "1.3 Hold Stall (10-Min Concurrency Lock)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.message && res.message.hold_token) {",
+                  "    pm.collectionVariables.set(\"holdToken\", res.message.hold_token);",
+                  "    pm.collectionVariables.set(\"stallNumber\", res.message.stall_number);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stall_number\": \"SL-04\",\n  \"full_name\": \"Karthik Raja\",\n  \"email\": \"karthik@titanium.com\",\n  \"mobile_no\": \"9876500001\",\n  \"company_name\": \"Titanium Tech\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.hold_stall",
+            "description": "Locks a stall for 10 minutes (600s) using Redis atomic lock. Zero double-booking even under 10,000+ RPS."
+          }
+        },
+        {
+          "name": "1.4 Release Stall Hold",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stall_number\": \"{{stallNumber}}\",\n  \"hold_token\": \"{{holdToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.release_stall_hold",
+            "description": "Releases temporary stall hold if attendee abandons checkout or picks another stall."
+          }
+        },
+        {
+          "name": "1.5 Register Stall & Initiate Order (1 User = 1 Stall)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.message && res.message.registration_id) {",
+                  "    pm.collectionVariables.set(\"registrationId\", res.message.registration_id);",
+                  "}",
+                  "if (res.message && res.message.razorpay_order) {",
+                  "    pm.collectionVariables.set(\"orderId\", res.message.razorpay_order.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Murugan Textiles\",\n  \"company_name\": \"Murugan Weavers\",\n  \"stall_number\": \"PR-08\",\n  \"source_of_info\": \"Social Media\",\n  \"mobile_no\": \"9841234567\",\n  \"email\": \"murugan@weavers.com\",\n  \"create_order\": 1,\n  \"sync\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.register_stall",
+            "description": "Registers an exhibitor for a specific stall and creates the Razorpay order."
+          }
+        },
+        {
+          "name": "1.4 Select / Assign Stall to Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_id\": \"{{registrationId}}\",\n  \"stall_number\": \"PR-08\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.select_stall",
+            "description": "Explicitly selects or changes the stall for an exhibitor registration before payment."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Razorpay & Nuqid 3-Step Checkout",
+      "description": "Nuqid architecture payment lifecycle endpoints.",
+      "item": [
+        {
+          "name": "2.1 Nuqid: Preview Payment (Breakdown before Paying)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.preview_payment",
+            "description": "Previews pricing, stall tier, base amount, and breakdown before checkout."
+          }
+        },
+        {
+          "name": "2.2 Nuqid: Checkout (Initiate Order with Razorpay Test Keys)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.message && res.message.order_id) {",
+                  "    pm.collectionVariables.set(\"orderId\", res.message.order_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\",\n  \"payment_gateway\": \"Razorpay\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.checkout",
+            "description": "Creates Razorpay order and returns order_id & key_id for frontend popup."
+          }
+        },
+        {
+          "name": "2.3 Nuqid: Finalize Payment (Verify Signature & Confirm)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\",\n  \"razorpay_order_id\": \"{{orderId}}\",\n  \"razorpay_payment_id\": \"pay_test_998877\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.finalize_payment",
+            "description": "Verifies HMAC-SHA256 signature and atomically marks stall as Confirmed and Booked."
+          }
+        },
+        {
+          "name": "2.4 Standalone: Create Razorpay Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_id\": \"{{registrationId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.create_razorpay_order"
+          }
+        },
+        {
+          "name": "2.5 Standalone: Verify Razorpay Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_id\": \"{{registrationId}}\",\n  \"razorpay_order_id\": \"{{orderId}}\",\n  \"razorpay_payment_id\": \"pay_test_998877\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.verify_razorpay_payment"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Visitor Registration & Gate Pass QR",
+      "description": "Endpoints for Free Visitor Entrance passes matching Image 2.",
+      "item": [
+        {
+          "name": "3.1 Register Visitor (Day 1 / Day 2 / Both Days)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.message && res.message.pass && res.message.pass.pass_code) {",
+                  "    pm.collectionVariables.set(\"passCode\", res.message.pass.pass_code);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Priya Shankar\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Both days\",\n  \"source_of_info\": \"Website\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
+            "description": "Free registration for attendees with unique Pass Code CF27-XXXXXX and QR payload."
+          }
+        },
+        {
+          "name": "3.2 Duplicate Visitor Registration Check (Returns Existing Pass)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Priya Duplicate Attempt\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Day 1\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
+            "description": "Tests strict uniqueness. Re-returns original pass without creating duplicates."
+          }
+        },
+        {
+          "name": "3.3 Gate Entry QR Scanner (Valid Entrance)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pass_code\": \"{{passCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.verify_gate_pass",
+            "description": "Scans visitor QR code at Chennai Trade Centre entry gate and admits attendee."
+          }
+        },
+        {
+          "name": "3.4 Gate Scanner Duplicate Entry Denial",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pass_code\": \"{{passCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.verify_gate_pass",
+            "description": "Simulates duplicate badge sharing. Denied with timestamp of previous entry."
+          }
+        },
+        {
+          "name": "3.5 Check User Booking Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.check_user_booking_status",
+            "description": "Checks if a given email/mobile has an existing stall booking or visitor pass."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Admin Controls & Monitoring",
+      "description": "Admin operations and live monitoring endpoints.",
+      "item": [
+        {
+          "name": "4.1 Get Admin Dashboard Live Metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_admin_dashboard_data",
+            "description": "Real-time metrics: 195 stalls count, revenue, visitor registration and gate check-ins."
+          }
+        },
+        {
+          "name": "4.2 Admin: Block Stall (e.g. PR-11)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stall_number\": \"PR-11\",\n  \"action\": \"block\",\n  \"reason\": \"VIP Sponsor Reserved\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.toggle_stall_block",
+            "description": "Admin blocks a stall. Users cannot book or hold blocked stalls."
+          }
+        },
+        {
+          "name": "4.3 Admin: Unblock Stall",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stall_number\": \"PR-11\",\n  \"action\": \"unblock\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.toggle_stall_block",
+            "description": "Admin restores a stall to Available status."
+          }
+        },
+        {
+          "name": "4.4 Universal Registration Lookup",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_registration?registration_id={{registrationId}}"
+          }
+        },
+        {
+          "name": "4.5 Ingestion Queue Stats",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_queue_stats"
+          }
+        },
+        {
+          "name": "4.6 Manual Queue Flush",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.flush_queue"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Attendee Authentication & Dynamic Pricing",
+      "item": [
+        {
+          "name": "5.1 Admin: Update Dynamic Stall Pricing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"silver\": 100000,\n  \"premium\": 45000,\n  \"standard\": 35000,\n  \"regular\": 25000\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.update_dynamic_pricing",
+            "description": "Admin dynamically updates tier prices and syncs all available stalls on the floor map."
+          }
+        },
+        {
+          "name": "5.2 Auth: Get Current User Profile (Session Cookie / Token)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_current_user_profile",
+            "description": "Fetches profile and bookings of current logged-in user (supports both Frappe session cookie and Token auth)."
+          }
+        },
+        {
+          "name": "5.3 Dashboard: Attendee 'My Account' Dashboard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.get_my_dashboard",
+            "description": "Returns booked stall details, invoice receipt, and digital pass with QR code for the attendee."
+          }
+        },
+        {
+          "name": "5.4 Auth: Attendee Login & Dashboard Access",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.login_attendee",
+            "description": "Authenticates attendee and returns their booked stalls and visitor passes."
+          }
+        }
+      ]
+    }
+  ]
 }
