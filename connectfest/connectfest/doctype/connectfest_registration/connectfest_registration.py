@@ -19,6 +19,17 @@ class ConnectFestRegistration(Document):
 		self.set_pricing()
 
 	def validate(self):
+		# Strict Uniqueness on Email and Mobile
+		if self.email or self.mobile_no:
+			existing = frappe.db.sql("""
+				SELECT name, registration_id FROM `tabConnectFest Registration`
+				WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+				  AND name != %(name)s
+				LIMIT 1
+			""", {"email": self.email, "mobile": self.mobile_no, "name": self.name or ""}, as_dict=True)
+			if existing:
+				frappe.throw(frappe._("An exhibitor registration already exists with this Email or Mobile Number (Registration ID: {0}).").format(existing[0].registration_id or existing[0].name))
+
 		if self.payment_status == "Paid":
 			if not self.stall_number:
 				frappe.throw(frappe._("Stall Number (stall_number) is mandatory to confirm payment! Please select a valid stall."))
@@ -41,19 +52,24 @@ class ConnectFestRegistration(Document):
 				if not self.get(field):
 					frappe.throw(frappe._("{0} is mandatory for BNI Members").format(self.meta.get_label(field)))
 
+		if self.email:
+			from connectfest.services.auth import ensure_frappe_user
+			ensure_frappe_user(self.email, self.full_name, self.mobile_no, role="Website User")
+
 	def set_pricing(self):
 		if self.stall_number and frappe.db.exists("ConnectFest Stall", self.stall_number):
 			stall_doc = frappe.get_doc("ConnectFest Stall", self.stall_number)
 			self.stall_category = stall_doc.tier
-			from connectfest.api import get_tier_pricing
+			from connectfest.services.pricing import get_tier_pricing
 			dynamic_pricing = get_tier_pricing()
 			self.amount = dynamic_pricing.get(stall_doc.tier, stall_doc.price)
-		else:
-			if not self.stall_category:
-				self.stall_category = "Regular"
-			from connectfest.api import get_tier_pricing
+		elif self.stall_category:
+			from connectfest.services.pricing import get_tier_pricing
 			dynamic_pricing = get_tier_pricing()
-			self.amount = dynamic_pricing.get(self.stall_category, 25000.0)
+			self.amount = dynamic_pricing.get(self.stall_category, 0.0)
+		else:
+			self.stall_category = ""
+			self.amount = 0.0
 		if not self.payment_status:
 			self.payment_status = "Pending"
 

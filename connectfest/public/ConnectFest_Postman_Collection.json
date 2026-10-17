@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "connectfest-2027-api-collection-v3",
     "name": "ConnectFest 2027 Complete APIs (Stalls, Theatre Lock, Razorpay, Passes & Admin)",
-    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 195 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- Razorpay & Nuqid 3-Step Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
+    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 195 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- ConnectFest 3-Step Razorpay Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -165,11 +165,11 @@
       ]
     },
     {
-      "name": "2. Razorpay & Nuqid 3-Step Checkout",
-      "description": "Nuqid architecture payment lifecycle endpoints.",
+      "name": "2. ConnectFest 3-Step Razorpay Checkout",
+      "description": "ConnectFest payment lifecycle endpoints.",
       "item": [
         {
-          "name": "2.1 Nuqid: Preview Payment (Breakdown before Paying)",
+          "name": "2.1 ConnectFest: Preview Payment (Breakdown before Paying)",
           "request": {
             "method": "POST",
             "header": [
@@ -187,7 +187,7 @@
           }
         },
         {
-          "name": "2.2 Nuqid: Checkout (Initiate Order with Razorpay Test Keys)",
+          "name": "2.2 ConnectFest: Checkout Order (Initiate Order with Razorpay Test Keys)",
           "event": [
             {
               "listen": "test",
@@ -219,7 +219,7 @@
           }
         },
         {
-          "name": "2.3 Nuqid: Finalize Payment (Verify Signature & Confirm)",
+          "name": "2.3 ConnectFest: Finalize Payment (Verify Signature & Confirm)",
           "request": {
             "method": "POST",
             "header": [

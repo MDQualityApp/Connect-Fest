@@ -51,7 +51,33 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	data = extract_request_data(kwargs)
 	reg_id = (registration_id or data.get("registration_id") or "").strip()
 
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to initiate stall payment. Please log in with your registered mobile or email via OTP.",
+		}
+
+	# Auto-resolve registration_id for logged-in exhibitor if not explicitly provided
 	if not reg_id:
+		reg_id = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
+
+	# Check visitor restriction
+	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	if not reg_id:
+		if frappe.db.exists("ConnectFest Visitor Registration", {"email": sess_user}):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+			}
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "registration_id is required"}
 
@@ -71,6 +97,20 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	if not record:
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"Stall registration '{reg_id}' not found"}
+
+	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
+	from connectfest.services.auth import is_admin_user
+	if not is_admin_user(sess_user):
+		rec_email = (record.get("email") or "").strip().lower()
+		rec_mob = (record.get("mobile_no") or "").strip()
+		sess_lower = sess_user.strip().lower()
+		user_phone = (frappe.db.get_value("User", sess_user, "phone") or frappe.db.get_value("User", sess_user, "mobile_no") or "").strip()
+		if rec_email != sess_lower and (not user_phone or user_phone != rec_mob):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Access Denied: You cannot make payments for another attendee's registration."
+			}
 
 	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or record.get("stall_number") or "").strip()
 	if not stall_num:
@@ -188,12 +228,39 @@ def verify_razorpay_payment(**kwargs):
 	payment_id = (data.get("razorpay_payment_id") or "").strip()
 	signature = (data.get("razorpay_signature") or "").strip()
 
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to verify or finalize payment. Please log in with your registered mobile or email via OTP.",
+		}
+
 	if not (reg_id and order_id and payment_id and signature):
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
 			"message": "Missing required payment verification parameters: registration_id, razorpay_order_id, razorpay_payment_id, razorpay_signature",
 		}
+
+	# Check visitor restriction
+	if str(reg_id).startswith("VIS-") or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	# IDOR Prevention
+	from connectfest.services.auth import is_admin_user
+	if not is_admin_user(sess_user):
+		reg_email = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or frappe.db.get_value("ConnectFest Registration", reg_id, "email")
+		if reg_email and reg_email.lower() != sess_user.lower():
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Access Denied: You cannot verify payment for another attendee's registration."
+			}
 
 	cfg = get_razorpay_config()
 	is_verified = False
@@ -326,7 +393,33 @@ def preview_payment(**kwargs):
 	docname = (data.get("reference_docname") or data.get("registration_id") or data.get("docname") or "").strip()
 	doctype = (data.get("reference_doctype") or data.get("doctype") or "ConnectFest Registration").strip()
 
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to preview stall payment. Please log in with your registered mobile or email via OTP.",
+		}
+
+	# Auto-resolve reference_docname / registration_id for logged-in exhibitor if not explicitly provided
 	if not docname:
+		docname = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
+
+	# Check visitor restriction
+	if (docname and str(docname).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": docname}) or frappe.db.exists("ConnectFest Visitor Registration", docname):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	if not docname:
+		if frappe.db.exists("ConnectFest Visitor Registration", {"email": sess_user}):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+			}
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "reference_docname or registration_id is required"}
 
@@ -340,6 +433,20 @@ def preview_payment(**kwargs):
 	if not record:
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"Record '{docname}' not found for preview"}
+
+	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
+	from connectfest.services.auth import is_admin_user
+	if not is_admin_user(sess_user):
+		rec_email = (record.get("email") or "").strip().lower()
+		rec_mob = (record.get("mobile_no") or "").strip()
+		sess_lower = sess_user.strip().lower()
+		user_phone = (frappe.db.get_value("User", sess_user, "phone") or frappe.db.get_value("User", sess_user, "mobile_no") or "").strip()
+		if rec_email != sess_lower and (not user_phone or user_phone != rec_mob):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Access Denied: You cannot preview payments for another attendee's registration."
+			}
 
 	stall_num = (data.get("stall_number") or data.get("stall_no") or record.get("stall_number") or "").strip()
 	if not stall_num:

@@ -12,6 +12,17 @@ def get_stalls(**kwargs):
 	Returns all 195 stalls with zone, dimensions, live booking status, and pricing.
 	"""
 	try:
+		from frappe.utils import cint
+		data = extract_request_data(kwargs)
+		filter_tier = (data.get("tier") or data.get("stall_category") or "").strip()
+		filter_status = (data.get("status") or "").strip().capitalize()
+		search_term = (data.get("search") or data.get("query") or "").strip().lower()
+
+		raw_page = data.get("page")
+		raw_limit = data.get("limit") or data.get("page_size")
+		page = max(1, cint(raw_page)) if raw_page else 1
+		limit = cint(raw_limit) if raw_limit and str(raw_limit).lower() != "all" else 0
+
 		stalls = frappe.get_all(
 			"ConnectFest Stall",
 			fields=[
@@ -84,6 +95,32 @@ def get_stalls(**kwargs):
 
 		frappe.db.commit()
 
+		# Apply Filters
+		filtered_stalls = []
+		for s in stalls:
+			if filter_tier and (s.tier or "").lower() != filter_tier.lower():
+				continue
+			if filter_status and (s.status or "").lower() != filter_status.lower():
+				continue
+			if search_term:
+				match_num = search_term in (s.stall_number or "").lower()
+				match_comp = search_term in (s.get("booked_by_company") or "").lower()
+				match_name = search_term in (s.get("booked_by_name") or "").lower()
+				if not (match_num or match_comp or match_name):
+					continue
+			filtered_stalls.append(s)
+
+		# Apply Pagination
+		filtered_count = len(filtered_stalls)
+		if limit > 0:
+			start = (page - 1) * limit
+			end = start + limit
+			paginated_stalls = filtered_stalls[start:end]
+			total_pages = max(1, (filtered_count + limit - 1) // limit)
+		else:
+			paginated_stalls = filtered_stalls
+			total_pages = 1
+
 		facilities_overview = [
 			{"name": "Power Supply", "detail": "5A/15A socket in every stall", "included": True},
 			{"name": "Exhibitor Badges", "detail": "2 badges per stall", "included": True},
@@ -93,12 +130,25 @@ def get_stalls(**kwargs):
 
 		return {
 			"status": "success",
+			"filters_applied": {
+				"tier": filter_tier or None,
+				"status": filter_status or None,
+				"search": search_term or None,
+			},
+			"pagination": {
+				"current_page": page,
+				"page_size": limit if limit > 0 else filtered_count,
+				"total_matching": filtered_count,
+				"total_pages": total_pages,
+				"has_next": page < total_pages if limit > 0 else False,
+				"has_prev": page > 1,
+			},
 			"total_stalls": total_stalls,
 			"total_booked": total_booked,
 			"total_revenue": total_revenue,
 			"tier_summary": tier_summary,
 			"facilities_overview": facilities_overview,
-			"stalls": stalls,
+			"stalls": paginated_stalls,
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Get Stalls Error", frappe.get_traceback())

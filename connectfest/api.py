@@ -39,6 +39,11 @@ from connectfest.services.auth import (
 	ensure_frappe_user,
 	get_current_user_profile as _get_current_user_profile,
 	login_attendee as _login_attendee,
+	logout as _logout,
+	admin_login as _admin_login,
+	admin_toggle_user_status as _admin_toggle_user_status,
+	request_contact_update as _request_contact_update,
+	verify_and_update_contact as _verify_and_update_contact,
 )
 from connectfest.services.stalls import (
 	get_stalls as _get_stalls,
@@ -71,6 +76,10 @@ from connectfest.services.queue import (
 	flush_registration_queue,
 	get_queue_stats as _get_queue_stats,
 	flush_queue as _flush_queue,
+)
+from connectfest.services.otp import (
+	send_otp as _send_otp,
+	verify_otp as _verify_otp,
 )
 
 
@@ -201,9 +210,51 @@ def get_current_user_profile(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def login_attendee(email=None, password=None, **kwargs):
-	"""Attendee login endpoint."""
-	return _login_attendee(email=email, password=password, **kwargs)
+def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
+	"""Attendee login endpoint by email or mobile number."""
+	return _login_attendee(email=email, mobile_no=mobile_no, password=password, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def send_otp(mobile_no=None, **kwargs):
+	"""Generates and sends 6-digit OTP to mobile number (5 min validity)."""
+	return _send_otp(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_otp(mobile_no=None, otp=None, **kwargs):
+	"""Verifies OTP, logs attendee into Frappe session, and returns dashboard."""
+	return _verify_otp(mobile_no=mobile_no, otp=otp, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def logout(**kwargs):
+	"""Logs out the current session user and clears authentication cookies."""
+	return _logout()
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_login(email=None, password=None, otp=None, **kwargs):
+	"""Dedicated Admin Login with Two-Factor Authentication (Password + 2FA OTP)."""
+	return _admin_login(email=email, password=password, otp=otp, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=1, **kwargs):
+	"""Admin API to enable or disable attendee User accounts."""
+	return _admin_toggle_user_status(user_email=user_email, mobile_no=mobile_no, enabled=enabled, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
+	"""Initiates phone number or email address update with 2-minute OTP verification."""
+	return _request_contact_update(new_mobile_no=new_mobile_no, new_email=new_email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_and_update_contact(otp=None, **kwargs):
+	"""Verifies OTP and updates mobile number and/or email in Frappe User and Registration records."""
+	return _verify_and_update_contact(otp=otp, **kwargs)
 
 
 # ==============================================================================

@@ -156,13 +156,13 @@
    "reqd": 0
   },
   {
-   "default": "Regular",
+   "default": "",
    "fieldname": "stall_category",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Stall Category",
-   "options": "Regular\nStandard\nPremium\nSilver",
-   "reqd": 1
+   "options": "\nRegular\nStandard\nPremium\nSilver",
+   "reqd": 0
   },
   {
    "fieldname": "amount",

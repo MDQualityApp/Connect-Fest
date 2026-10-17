@@ -42,7 +42,7 @@ def register_stall(**kwargs):
 	industry = (data.get("industry") or "").strip()
 	segment = (data.get("segment") or "").strip()
 
-	raw_category = (data.get("stall_category") or data.get("category") or data.get("tier") or "Regular").strip().capitalize()
+	raw_category = (data.get("stall_category") or data.get("category") or data.get("tier") or "").strip().capitalize()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
 	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
 	email = (data.get("email") or "").strip()
@@ -56,25 +56,46 @@ def register_stall(**kwargs):
 		errors.append("Name (full_name) is required")
 	if not company_name:
 		errors.append("Company Name (company_name) is required")
+	if not mobile_no:
+		errors.append("Mobile Number (mobile_no) is required")
+	elif len("".join(filter(str.isdigit, mobile_no))) != 10:
+		errors.append("Valid 10-digit Mobile Number is required")
+	if not email:
+		errors.append("Email Address (email) is required")
+	elif "@" not in email:
+		errors.append("Valid Email Address is required")
 	if not source_of_info:
 		errors.append("How did you know about this event? (source_of_info) is required")
 
-	# Enforce One User = One Stall Rule for Paid Bookings
+	# Enforce Strict Uniqueness on Email and Mobile
 	if email or mobile_no:
-		existing_paid = frappe.db.sql("""
-			SELECT registration_id, stall_number, stall_category FROM `tabConnectFest Registration`
-			WHERE (email = %(email)s OR mobile_no = %(mobile)s) AND payment_status = 'Paid'
-			LIMIT 1
+		existing = frappe.db.sql("""
+			SELECT name, registration_id, full_name, company_name, email, mobile_no,
+			       stall_number, stall_category, amount, payment_status, status
+			FROM `tabConnectFest Registration`
+			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+			ORDER BY creation DESC LIMIT 1
 		""", {"email": email, "mobile": mobile_no}, as_dict=True)
-		if existing_paid:
-			st_name = existing_paid[0].stall_number or existing_paid[0].stall_category
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": f"Each exhibitor can book only 1 stall! You already have an active booked stall: {st_name} (Registration ID: {existing_paid[0].registration_id})."
-			}
+		if existing:
+			ex = existing[0]
+			if ex.payment_status == "Paid":
+				st_name = ex.stall_number or ex.stall_category
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Each exhibitor can book only 1 stall! You already have an active booked stall: {st_name} (Registration ID: {ex.registration_id})."
+				}
+			else:
+				# Return existing pending registration without creating duplicate!
+				ensure_frappe_user(email, full_name or ex.full_name, mobile_no or ex.mobile_no, role="Website User")
+				return {
+					"status": "already_registered",
+					"message": f"An exhibitor registration already exists with this email or mobile number! (Registration ID: {ex.registration_id}). Please proceed to select your stall and complete payment.",
+					"registration_id": ex.registration_id,
+					"data": ex,
+				}
 
-	# Stall Specific Validation (if stall_number is provided)
+	# Stall Specific Validation (if stall_number or category is provided)
 	dynamic_prices = get_tier_pricing()
 	if stall_number:
 		if not frappe.db.exists("ConnectFest Stall", stall_number):
@@ -86,14 +107,18 @@ def register_stall(**kwargs):
 			elif stall_doc.status == "Booked":
 				errors.append(f"Stall '{stall_number}' is already booked and confirmed by another exhibitor")
 			else:
-				raw_category = stall_doc.tier
-				amount = dynamic_prices.get(raw_category, stall_doc.price)
+				stall_category = stall_doc.tier
+				amount = dynamic_prices.get(stall_category, stall_doc.price)
+	elif raw_category:
+		if raw_category not in STALL_PRICING:
+			valid_tiers = ", ".join(STALL_PRICING.keys())
+			errors.append(f"Invalid stall_category '{raw_category}'. Allowed: {valid_tiers}")
+		stall_category = raw_category
+		amount = dynamic_prices.get(stall_category, 0.0)
 	else:
-		amount = dynamic_prices.get(raw_category, 25000.0)
-
-	if raw_category not in STALL_PRICING:
-		valid_tiers = ", ".join(STALL_PRICING.keys())
-		errors.append(f"Invalid stall_category '{raw_category}'. Allowed: {valid_tiers}")
+		# Initial registration without choosing a stall yet
+		stall_category = ""
+		amount = 0.0
 
 	if is_bni_member:
 		if not region_name:
@@ -104,8 +129,6 @@ def register_stall(**kwargs):
 	if errors:
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
-
-	stall_category = raw_category
 
 	matched_source = None
 	for src in VALID_SOURCES:
@@ -134,7 +157,7 @@ def register_stall(**kwargs):
 		"segment": segment,
 		"source_of_info": matched_source,
 		"stall_number": stall_number or None,
-		"stall_category": stall_category,
+		"stall_category": stall_category or None,
 		"amount": amount,
 		"payment_status": "Pending",
 		"razorpay_order_id": "",
@@ -150,77 +173,41 @@ def register_stall(**kwargs):
 		"idx": 0,
 	}
 
-	# Automatically ensure Frappe user exists for exhibitors
+	# Ensure Frappe User account exists
 	ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 
-	record_json = json.dumps(record)
-
-	# Direct Synchronous Mode
-	if sync_mode:
-		try:
-			doc = frappe.get_doc({"doctype": "ConnectFest Registration", **record})
-			doc.flags.ignore_permissions = True
-			doc.insert()
-			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}", record)
-			response_data = {
-				"status": "success",
-				"type": "stall",
-				"message": "Registration received successfully! Please proceed to select stall and payment.",
-				"registration_id": reg_id,
-				"data": record,
-			}
-			if create_order:
-				from connectfest.services.payments import create_razorpay_order
-				order_info = create_razorpay_order(registration_id=reg_id, stall_number=stall_number)
-				response_data["razorpay_order"] = order_info.get("order")
-			return response_data
-		except Exception as e:
-			frappe.log_error("ConnectFest Stall Sync Error", str(e))
-			frappe.local.response["http_status_code"] = 500
-			return {"status": "error", "message": str(e)}
-
-	# In-Memory Queue High-Throughput Ingestion (1,000+ RPS)
+	# Direct Reliable Insert into Database & Redis Cache
 	try:
-		raw_queue_key = cache.make_key(STALL_QUEUE_KEY)
-		raw_cache_key = cache.make_key(f"{STALL_CACHE_PREFIX}{reg_id}")
-		pipe = cache.pipeline()
-		pipe.rpush(raw_queue_key, record_json)
-		pipe.setex(raw_cache_key, 86400, record_json)
-		results = pipe.execute()
-		queue_len = results[0]
+		doc = frappe.get_doc({"doctype": "ConnectFest Registration", **record})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		frappe.db.commit()
 
-		if queue_len >= 50:
-			trigger_async_flush()
+		actual_reg_id = doc.registration_id or doc.name
+		record["name"] = doc.name
+		record["registration_id"] = actual_reg_id
+		set_cached_record(cache, f"{STALL_CACHE_PREFIX}{actual_reg_id}", record)
+		if doc.name != actual_reg_id:
+			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
 
 		response_data = {
 			"status": "success",
 			"type": "stall",
-			"message": "Registration received successfully! Please select your stall and proceed to payment.",
-			"registration_id": reg_id,
+			"message": "Exhibitor registration successful! Please proceed to select stall.",
+			"registration_id": actual_reg_id,
 			"data": record,
 		}
 
-		if create_order:
+		if create_order and stall_number:
 			from connectfest.services.payments import create_razorpay_order
-			order_info = create_razorpay_order(registration_id=reg_id, stall_number=stall_number)
+			order_info = create_razorpay_order(registration_id=actual_reg_id, stall_number=stall_number)
 			response_data["razorpay_order"] = order_info.get("order")
 
 		return response_data
 	except Exception as e:
-		try:
-			doc = frappe.get_doc({"doctype": "ConnectFest Registration", **record})
-			doc.flags.ignore_permissions = True
-			doc.insert()
-			return {
-				"status": "success",
-				"type": "stall",
-				"message": "Registration successful (fallback)",
-				"registration_id": reg_id,
-				"data": record,
-			}
-		except Exception as db_err:
-			frappe.local.response["http_status_code"] = 500
-			return {"status": "error", "message": str(db_err)}
+		frappe.log_error("ConnectFest Stall Insert Error", frappe.get_traceback())
+		frappe.local.response["http_status_code"] = 500
+		return {"status": "error", "message": str(e)}
 
 
 def select_stall(registration_id=None, stall_number=None, **kwargs):
@@ -233,7 +220,33 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	reg_id = (registration_id or data.get("registration_id") or "").strip()
 	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
 
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to select stall. Please log in using your registered mobile number or email via OTP.",
+		}
+
+	# Auto-resolve registration_id for logged-in exhibitor if not explicitly provided
 	if not reg_id:
+		reg_id = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
+
+	# Check visitor restriction
+	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	if not reg_id:
+		if frappe.db.exists("ConnectFest Visitor Registration", {"email": sess_user}):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+			}
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "registration_id is required"}
 
@@ -265,6 +278,20 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"Registration '{reg_id}' not found"}
 
+	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
+	from connectfest.services.auth import is_admin_user
+	if not is_admin_user(sess_user):
+		rec_email = (record.get("email") or "").strip().lower()
+		rec_mob = (record.get("mobile_no") or "").strip()
+		sess_lower = sess_user.strip().lower()
+		user_phone = (frappe.db.get_value("User", sess_user, "phone") or frappe.db.get_value("User", sess_user, "mobile_no") or "").strip()
+		if rec_email != sess_lower and (not user_phone or user_phone != rec_mob):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Access Denied: You cannot select or modify stalls for another attendee's registration."
+			}
+
 	# Release previously held stall if different
 	old_stall = record.get("stall_number")
 	if old_stall and old_stall != stall_num:
@@ -288,10 +315,16 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	record["amount"] = price
 	set_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}", record)
 
-	if frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
+	db_target = None
+	if frappe.db.exists("ConnectFest Registration", reg_id):
+		db_target = reg_id
+	elif frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
+		db_target = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "name")
+
+	if db_target:
 		frappe.db.set_value(
 			"ConnectFest Registration",
-			{"registration_id": reg_id},
+			db_target,
 			{
 				"stall_number": stall_num,
 				"stall_category": tier,

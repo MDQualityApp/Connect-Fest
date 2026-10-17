@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="postman-dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,7 +8,48 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root {
+    /* THEME DEFINITIONS */
+    :root, [data-theme="postman-dark"] {
+      --bg: #212121;
+      --sidebar-bg: #1c1c1c;
+      --card-bg: #282828;
+      --card-hover: #323232;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-focus: #ff6c37;
+      --primary: #ff6c37;
+      --primary-hover: #e05520;
+      --accent: #ff8552;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f5f5f5;
+      --text-muted: #9e9e9e;
+      --code-bg: #171717;
+      --header-bg: #1c1c1c;
+      --scrollbar-thumb: #424242;
+    }
+
+    [data-theme="postman-light"] {
+      --bg: #f8fafc;
+      --sidebar-bg: #ffffff;
+      --card-bg: #ffffff;
+      --card-hover: #f1f5f9;
+      --border: #e2e8f0;
+      --border-focus: #ff6c37;
+      --primary: #ff6c37;
+      --primary-hover: #e05520;
+      --accent: #2563eb;
+      --success: #059669;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --code-bg: #f1f5f9;
+      --header-bg: #ffffff;
+      --scrollbar-thumb: #cbd5e1;
+    }
+
+    [data-theme="cyber-midnight"] {
       --bg: #080c14;
       --sidebar-bg: #0b111e;
       --card-bg: #0f172a;
@@ -24,31 +65,105 @@
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --code-bg: #050810;
+      --header-bg: #0b111e;
+      --scrollbar-thumb: #1e293b;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [data-theme="dracula"] {
+      --bg: #282a36;
+      --sidebar-bg: #21222c;
+      --card-bg: #343746;
+      --card-hover: #44475a;
+      --border: rgba(255, 255, 255, 0.12);
+      --border-focus: #bd93f9;
+      --primary: #bd93f9;
+      --primary-hover: #a371f7;
+      --accent: #ff79c6;
+      --success: #50fa7b;
+      --warning: #f1fa8c;
+      --danger: #ff5555;
+      --text: #f8f8f2;
+      --text-muted: #6272a4;
+      --code-bg: #1e1f29;
+      --header-bg: #21222c;
+      --scrollbar-thumb: #44475a;
+    }
+
+    [data-theme="monokai-emerald"] {
+      --bg: #141b18;
+      --sidebar-bg: #0f1613;
+      --card-bg: #1a2420;
+      --card-hover: #22302b;
+      --border: rgba(255, 255, 255, 0.09);
+      --border-focus: #10b981;
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --accent: #34d399;
+      --success: #10b981;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --text: #f0fdf4;
+      --text-muted: #6ee7b7;
+      --code-bg: #0a0f0d;
+      --header-bg: #0f1613;
+      --scrollbar-thumb: #22302b;
+    }
+
+    html, body {
+      height: 100%;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
 
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
       display: flex;
       flex-direction: column;
+      height: 100vh;
+      max-height: 100vh;
       overflow: hidden;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    /* SCROLLBAR CUSTOMIZATION */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--primary);
     }
 
     /* HEADER */
     header {
-      background: rgba(11, 17, 30, 0.85);
-      backdrop-filter: blur(16px);
+      background: var(--header-bg);
       border-bottom: 1px solid var(--border);
-      padding: 10px 24px;
+      padding: 10px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       height: 64px;
       z-index: 50;
+      flex-shrink: 0;
     }
 
     .brand {
@@ -58,21 +173,21 @@
     }
 
     .logo-badge {
-      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      background: linear-gradient(135deg, var(--primary), var(--accent));
       color: white;
       font-weight: 800;
-      font-size: 15px;
+      font-size: 14.5px;
       padding: 6px 12px;
       border-radius: 9px;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+      box-shadow: 0 4px 14px rgba(255, 108, 55, 0.35);
       letter-spacing: 0.5px;
     }
 
     .brand-text h1 {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 700;
       letter-spacing: -0.2px;
-      color: #fff;
+      color: var(--text);
     }
 
     .brand-text span {
@@ -86,50 +201,75 @@
       gap: 10px;
     }
 
+    /* THEME SWITCHER DROPDOWN */
+    .theme-picker-wrap {
+      position: relative;
+    }
+
+    .theme-select {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .theme-select option {
+      background: var(--card-bg);
+      color: var(--text);
+    }
+
     .btn-header {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 7px 14px;
+      padding: 7px 13px;
       border-radius: 8px;
-      font-size: 12.5px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 6px;
       transition: all 0.2s ease;
       text-decoration: none;
     }
 
     .btn-header:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
       transform: translateY(-1px);
     }
 
     .btn-header-primary {
-      background: linear-gradient(135deg, #ff6c37, #ff4500);
+      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
       border: none;
       color: white;
       box-shadow: 0 4px 12px rgba(255, 108, 55, 0.35);
     }
 
     .btn-header-primary:hover {
-      background: linear-gradient(135deg, #ff7e4f, #ff5714);
+      filter: brightness(1.1);
       box-shadow: 0 6px 16px rgba(255, 108, 55, 0.5);
     }
 
     .host-pill {
-      background: rgba(6, 182, 212, 0.1);
-      border: 1px solid rgba(6, 182, 212, 0.3);
-      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 5px 11px;
       border-radius: 20px;
-      font-size: 12px;
+      font-size: 11.5px;
       display: flex;
       align-items: center;
       gap: 6px;
       color: var(--accent);
+      cursor: pointer;
     }
 
     .status-dot {
@@ -140,22 +280,37 @@
       box-shadow: 0 0 8px var(--success);
     }
 
-    /* MAIN LAYOUT */
+    /* MAIN THREE-COLUMN FLEX CONTAINER */
     .main-layout {
-      display: grid;
-      grid-template-columns: 310px 1fr 1fr;
-      flex: 1;
+      display: flex;
+      flex-direction: row;
+      flex: 1 1 0%;
       height: calc(100vh - 64px);
+      max-height: calc(100vh - 64px);
+      min-height: 0;
       overflow: hidden;
+      width: 100%;
     }
 
-    /* SIDEBAR */
+    /* 1. SIDEBAR - INDEPENDENT SCROLLBAR */
     .sidebar {
+      width: 320px;
+      min-width: 320px;
+      max-width: 320px;
+      flex-shrink: 0;
+      height: 100%;
+      max-height: 100%;
+      min-height: 0;
       background: var(--sidebar-bg);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      overflow-y: auto;
+      overflow-y: scroll !important;
+      overflow-x: hidden;
+      padding-bottom: 90px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) var(--sidebar-bg);
+      overscroll-behavior: contain;
     }
 
     .search-box {
@@ -173,7 +328,7 @@
 
     .search-input-wrap input {
       width: 100%;
-      background: #060912;
+      background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 12px 8px 32px;
@@ -226,7 +381,7 @@
       border: 1px solid transparent;
       border-radius: 7px;
       color: var(--text-muted);
-      font-size: 12.5px;
+      font-size: 12px;
       font-weight: 500;
       text-align: left;
       cursor: pointer;
@@ -234,14 +389,14 @@
     }
 
     .endpoint-btn:hover {
-      background: rgba(255, 255, 255, 0.04);
-      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
     }
 
     .endpoint-btn.active {
-      background: rgba(99, 102, 241, 0.14);
-      border-color: rgba(99, 102, 241, 0.3);
-      color: #fff;
+      background: rgba(255, 108, 55, 0.14);
+      border-color: rgba(255, 108, 55, 0.35);
+      color: var(--text);
       font-weight: 600;
     }
 
@@ -266,15 +421,24 @@
       font-weight: 600;
     }
 
-    /* MIDDLE: REQUEST EDITOR */
+    /* 2. MIDDLE: REQUEST EDITOR - INDEPENDENT SCROLLBAR */
     .panel-editor {
+      flex: 1 1 0%;
+      min-width: 0;
+      height: 100%;
+      max-height: 100%;
+      min-height: 0;
       background: var(--card-bg);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      overflow-y: auto;
+      overflow-y: auto !important;
+      overflow-x: hidden;
       padding: 20px;
       gap: 14px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) var(--card-bg);
+      overscroll-behavior: contain;
     }
 
     .panel-header {
@@ -284,9 +448,9 @@
     }
 
     .panel-title {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 700;
-      color: #fff;
+      color: var(--text);
     }
 
     .url-bar {
@@ -302,7 +466,7 @@
     .method-select {
       background: transparent;
       border: none;
-      color: #818cf8;
+      color: var(--primary);
       font-family: 'JetBrains Mono', monospace;
       font-weight: 700;
       font-size: 13px;
@@ -310,20 +474,20 @@
       cursor: pointer;
     }
 
-    .method-select option { background: #111827; color: #fff; }
+    .method-select option { background: var(--card-bg); color: var(--text); }
 
     .url-input {
       flex: 1;
       background: transparent;
       border: none;
-      color: #f1f5f9;
+      color: var(--text);
       font-family: 'JetBrains Mono', monospace;
       font-size: 12.5px;
       outline: none;
     }
 
     .send-btn {
-      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
       color: white;
       border: none;
       padding: 9px 18px;
@@ -334,13 +498,13 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      box-shadow: 0 4px 14px rgba(255, 108, 55, 0.35);
       transition: all 0.2s ease;
     }
 
     .send-btn:hover {
       transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.55);
+      box-shadow: 0 6px 20px rgba(255, 108, 55, 0.5);
     }
 
     .editor-wrapper {
@@ -367,7 +531,7 @@
 
     .tool-link {
       font-size: 11.5px;
-      color: #a5b4fc;
+      color: var(--primary);
       background: none;
       border: none;
       cursor: pointer;
@@ -385,25 +549,34 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 14px;
-      color: #e2e8f0;
+      color: var(--text);
       font-family: 'JetBrains Mono', monospace;
       font-size: 12.5px;
       line-height: 1.55;
       outline: none;
       resize: vertical;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
     }
 
     textarea.code-editor:focus { border-color: var(--border-focus); }
 
-    /* RIGHT: RESPONSE PANEL */
+    /* 3. RIGHT: RESPONSE PANEL - INDEPENDENT SCROLLBAR */
     .panel-response {
+      flex: 1 1 0%;
+      min-width: 0;
+      height: 100%;
+      max-height: 100%;
+      min-height: 0;
       padding: 20px;
       display: flex;
       flex-direction: column;
       gap: 14px;
-      background: #060911;
-      overflow-y: auto;
+      background: var(--code-bg);
+      overflow-y: auto !important;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) var(--code-bg);
+      overscroll-behavior: contain;
     }
 
     .tab-bar {
@@ -412,6 +585,7 @@
       gap: 6px;
       border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
+      flex-shrink: 0;
     }
 
     .tab-btn {
@@ -426,8 +600,8 @@
       transition: all 0.15s;
     }
 
-    .tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
-    .tab-btn.active { color: #fff; background: rgba(99, 102, 241, 0.15); }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+    .tab-btn.active { color: var(--text); background: rgba(255, 108, 55, 0.18); font-weight: 700; }
 
     .response-meta {
       display: flex;
@@ -444,20 +618,21 @@
       font-weight: 700;
     }
 
-    .res-status.success { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-    .res-status.error { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .res-status.success { background: rgba(16, 185, 129, 0.18); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .res-status.error { background: rgba(239, 68, 68, 0.18); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
     .res-time { color: var(--text-muted); }
 
-    /* VISUAL HIGHLIGHT CARD */
+    /* VISUAL CARD */
     .summary-card {
-      background: linear-gradient(145deg, #0e172a, #0b1120);
-      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      flex-shrink: 0;
     }
 
     .summary-header {
@@ -467,9 +642,9 @@
     }
 
     .summary-title {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 700;
-      color: #93c5fd;
+      color: var(--primary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -481,7 +656,7 @@
     }
 
     .chip-item {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 7px;
       padding: 8px 10px;
@@ -491,11 +666,24 @@
     }
 
     .chip-label { font-size: 10.5px; color: var(--text-muted); }
-    .chip-value { font-size: 13px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+    .chip-value { font-size: 12.5px; font-weight: 700; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+
+    .privacy-badge {
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #818cf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      grid-column: span 2;
+    }
 
     .action-pay-btn {
       margin-top: 4px;
-      background: linear-gradient(135deg, #10b981, #059669);
+      background: linear-gradient(135deg, var(--primary), var(--primary-hover));
       color: white;
       border: none;
       padding: 10px;
@@ -507,19 +695,19 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+      box-shadow: 0 4px 14px rgba(255, 108, 55, 0.35);
       transition: all 0.2s;
     }
 
-    .action-pay-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5); }
+    .action-pay-btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
 
     pre.response-box {
       flex: 1;
-      background: var(--code-bg);
+      background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 16px;
-      color: #e2e8f0;
+      color: var(--text);
       font-family: 'JetBrains Mono', monospace;
       font-size: 12px;
       line-height: 1.6;
@@ -534,6 +722,33 @@
     .json-number { color: #fbbf24; }
     .json-boolean { color: #c084fc; }
     .json-null { color: #94a3b8; }
+
+    /* RESPONSIVE MEDIA QUERIES */
+    @media (max-width: 900px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+      }
+      .main-layout {
+        flex-direction: column;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+      }
+      .sidebar {
+        width: 100%;
+        max-width: 100%;
+        height: 380px;
+        max-height: 380px;
+      }
+      .panel-editor, .panel-response {
+        width: 100%;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+      }
+    }
   </style>
 </head>
 <body>
@@ -544,18 +759,29 @@
       <div class="logo-badge">CF27</div>
       <div class="brand-text">
         <h1>ConnectFest 2027 API Studio</h1>
-        <span>Modular Architecture &bull; 10,000+ RPS Defense &bull; Razorpay Gateway</span>
+        <span>Modular Architecture &bull; 10,000+ RPS Defense &bull; Privacy Shield Active</span>
       </div>
     </div>
 
     <div class="header-actions">
+      <!-- THEME PICKER -->
+      <div class="theme-picker-wrap">
+        <select class="theme-select" id="themePicker" onchange="changeTheme(this.value)">
+          <option value="postman-dark">🎨 Postman Dark</option>
+          <option value="postman-light">☀️ Postman Light</option>
+          <option value="cyber-midnight">🌌 Cyber Midnight</option>
+          <option value="dracula">🔮 Dracula Night</option>
+          <option value="monokai-emerald">🌲 Monokai Emerald</option>
+        </select>
+      </div>
+
       <!-- POSTMAN DOWNLOAD BUTTONS -->
-      <a class="btn-header btn-header-primary" href="/assets/connectfest/ConnectFest_Postman_Collection.json" download="ConnectFest_Postman_Collection.json">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      <a class="btn-header btn-header-primary" id="dlCollectionBtn" href="/assets/connectfest/ConnectFest_Postman_Collection.json" download="ConnectFest_Postman_Collection.json">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         📥 Postman Collection
       </a>
 
-      <a class="btn-header" href="/assets/connectfest/ConnectFest_Postman_Environment.json" download="ConnectFest_Postman_Environment.json">
+      <a class="btn-header" id="dlEnvBtn" href="/assets/connectfest/ConnectFest_Postman_Environment.json" download="ConnectFest_Postman_Environment.json">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         Environment
       </a>
@@ -565,7 +791,7 @@
         Copy Link
       </button>
 
-      <div class="host-pill" id="hostPill" title="Click to Change Host" onclick="changeHost()" style="cursor: pointer;">
+      <div class="host-pill" id="hostPill" title="Click to Change Server Host" onclick="changeHost()">
         <span class="status-dot"></span>
         <span id="hostLabel">Host: <strong>Detecting...</strong></span>
       </div>
@@ -573,8 +799,8 @@
   </header>
 
   <div class="main-layout">
-    <!-- SIDEBAR -->
-    <div class="sidebar">
+    <!-- 1. SIDEBAR -->
+    <div class="sidebar" id="sidebarList">
       <div class="search-box">
         <div class="search-input-wrap">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -593,7 +819,7 @@
       </div>
 
       <div class="sidebar-section">
-        <div class="section-title">3. Nuqid 3-Step Checkout</div>
+        <div class="section-title">3. ConnectFest 3-Step Checkout</div>
         <div class="endpoint-list" id="paymentList"></div>
       </div>
 
@@ -608,7 +834,7 @@
       </div>
     </div>
 
-    <!-- MIDDLE PANEL: REQUEST EDITOR -->
+    <!-- 2. MIDDLE: REQUEST EDITOR -->
     <div class="panel-editor">
       <div class="panel-header">
         <div class="panel-title" id="endpointTitle">Exhibitor Registration</div>
@@ -639,7 +865,7 @@
       </div>
     </div>
 
-    <!-- RIGHT PANEL: RESPONSE VIEW -->
+    <!-- 3. RIGHT: RESPONSE PANEL -->
     <div class="panel-response">
       <div class="tab-bar">
         <button class="tab-btn active" id="tabVisual" onclick="switchView('visual')">Visual Card</button>
@@ -661,11 +887,14 @@
 
         <div class="summary-chips" id="summaryChips"></div>
 
-        <button class="action-pay-btn" id="quickCheckoutBtn" style="display: none;" onclick="triggerQuickCheckout()">
-          ⚡ Proceed to Nuqid Checkout Now
+        <button class="action-pay-btn" id="quickSelectStallBtn" style="display: none;" onclick="triggerQuickSelectStall()">
+          ⚡ Step 2: Select & Lock Stall Now
         </button>
-        <button class="action-pay-btn" id="verifyActionBtn" style="display: none; background: linear-gradient(135deg, #6366f1, #4f46e5);" onclick="triggerQuickVerify()">
-          ⚡ Finalize & Confirm Payment Now
+        <button class="action-pay-btn" id="quickCheckoutBtn" style="display: none;" onclick="triggerQuickCheckout()">
+          ⚡ Step 3: Proceed to Checkout Order
+        </button>
+        <button class="action-pay-btn" id="verifyActionBtn" style="display: none;" onclick="triggerQuickVerify()">
+          ⚡ Finalize & Confirm Booking
         </button>
       </div>
 
@@ -682,10 +911,25 @@
     let currentRawData = null;
     let currentView = 'visual';
 
-    // Auto-detect Host
+    // Auto-detect Host & Support Live Subpaths e.g. /connectfest/api-studio or /api-studio
     let HOST = localStorage.getItem('cf_custom_host') || window.location.origin;
     document.getElementById('hostLabel').innerHTML = `Host: <strong>${HOST.replace('http://', '').replace('https://', '')}</strong>`;
 
+    // Dynamic Postman download links that work both locally and in live production
+    document.getElementById('dlCollectionBtn').href = `${HOST}/assets/connectfest/ConnectFest_Postman_Collection.json`;
+    document.getElementById('dlEnvBtn').href = `${HOST}/assets/connectfest/ConnectFest_Postman_Environment.json`;
+
+    // Theme Management
+    function changeTheme(themeName) {
+      document.documentElement.setAttribute('data-theme', themeName);
+      localStorage.setItem('cf_api_studio_theme', themeName);
+    }
+
+    const savedTheme = localStorage.getItem('cf_api_studio_theme') || 'postman-dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.getElementById('themePicker').value = savedTheme;
+
+    // SIMPLIFIED, UNCONFUSED ENDPOINTS: NO NUQID MENTIONS!
     const DEFAULT_ENDPOINTS = {
       // 1. REGISTRATION & ATTENDEES
       reg_basic: {
@@ -706,13 +950,13 @@
           is_bni_member: 0,
           industry: "Supply Chain",
           segment: "Logistics",
-          sync: 1
+          sync: 0
         }, null, 2)
       },
       reg_bni: {
         id: "reg_bni",
         cat: "reg",
-        title: "1.2 Exhibitor Registration (BNI Member)",
+        title: "1.2 Exhibitor Registration (BNI Member with Chapter)",
         label: "BNI Exhibitor Reg",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.register_stall`,
@@ -729,13 +973,13 @@
           source_of_info: "BNI Chapter",
           mobile_no: "9876501234",
           email: "karthik@titaniumlabs.com",
-          sync: 1
+          sync: 0
         }, null, 2)
       },
       visitor_reg: {
         id: "visitor_reg",
         cat: "reg",
-        title: "1.3 Visitor Free Pass Registration (Instant QR)",
+        title: "1.3 Visitor Free Pass Registration (Instant QR Pass)",
         label: "Visitor Free Pass",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.register_visitor`,
@@ -752,7 +996,7 @@
         id: "check_booking_status",
         cat: "reg",
         title: "1.4 Check User Booking Status",
-        label: "Check User Booking",
+        label: "Check Booking Status",
         method: "GET",
         getUrl: () => `${HOST}/api/method/connectfest.api.check_user_booking_status?email=karthik@titaniumlabs.com`,
         hasBody: false
@@ -766,6 +1010,15 @@
         label: "Floor Map (195 Stalls)",
         method: "GET",
         url: `${HOST}/api/method/connectfest.api.get_stalls`,
+        hasBody: false
+      },
+      get_stalls_filtered: {
+        id: "get_stalls_filtered",
+        cat: "stall",
+        title: "2.1b Filter & Paginate Stalls (Public: Tier, Status, Page, Limit)",
+        label: "Filter Stalls (Paginated)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_stalls?tier=Premium&status=Available&page=1&limit=10`,
         hasBody: false
       },
       select_stall: {
@@ -837,41 +1090,41 @@
         }, null, 2)
       },
 
-      // 3. NUQID 3-STEP CHECKOUT (STALL MANDATORY AT PAYMENT)
+      // 3. CONNECTFEST 3-STEP CHECKOUT (STALL MANDATORY AT PAYMENT)
       preview_payment: {
         id: "preview_payment",
         cat: "payment",
-        title: "3.1 Nuqid: Preview Payment (Breakdown before Paying)",
+        title: "3.1 ConnectFest: Preview Payment Breakdown",
         label: "3.1 Preview Payment",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.preview_payment`,
         hasBody: true,
         getBody: () => JSON.stringify({
           reference_doctype: "ConnectFest Registration",
-          reference_docname: savedRegId,
-          stall_number: savedStallNum
+          reference_docname: savedRegId || "REG-CF27-0001",
+          stall_number: savedStallNum || "PR-08"
         }, null, 2)
       },
       checkout: {
         id: "checkout",
         cat: "payment",
-        title: "3.2 Nuqid: Checkout (Initiate Razorpay Order with Stall)",
-        label: "3.2 Checkout Order",
+        title: "3.2 ConnectFest: Checkout & Create Razorpay Order",
+        label: "3.2 Checkout & Pay",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.checkout`,
         hasBody: true,
         getBody: () => JSON.stringify({
           reference_doctype: "ConnectFest Registration",
-          reference_docname: savedRegId,
-          stall_number: savedStallNum,
+          reference_docname: savedRegId || "REG-CF27-0001",
+          stall_number: savedStallNum || "PR-08",
           payment_gateway: "Razorpay"
         }, null, 2)
       },
       finalize_payment: {
         id: "finalize_payment",
         cat: "payment",
-        title: "3.3 Nuqid: Finalize Payment (Verify Signature & Book Stall)",
-        label: "3.3 Finalize Payment",
+        title: "3.3 ConnectFest: Finalize Payment & Confirm Booking",
+        label: "3.3 Finalize & Confirm",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.finalize_payment`,
         hasBody: true,
@@ -883,40 +1136,12 @@
           razorpay_signature: "mock_signature_valid"
         }, null, 2)
       },
-      create_order: {
-        id: "create_order",
-        cat: "payment",
-        title: "3.4 Create Razorpay Order Direct",
-        label: "Direct Razorpay Order",
-        method: "POST",
-        url: `${HOST}/api/method/connectfest.api.create_razorpay_order`,
-        hasBody: true,
-        getBody: () => JSON.stringify({
-          registration_id: savedRegId,
-          stall_number: savedStallNum
-        }, null, 2)
-      },
-      verify_payment: {
-        id: "verify_payment",
-        cat: "payment",
-        title: "3.5 Verify Payment Signature Core",
-        label: "Verify Payment Core",
-        method: "POST",
-        url: `${HOST}/api/method/connectfest.api.verify_razorpay_payment`,
-        hasBody: true,
-        getBody: () => JSON.stringify({
-          registration_id: savedRegId,
-          razorpay_order_id: savedOrderId,
-          razorpay_payment_id: "pay_test_" + Math.floor(Math.random() * 900000 + 100000),
-          razorpay_signature: "mock_signature_valid"
-        }, null, 2)
-      },
 
-      // 4. DIGITAL PASS & DASHBOARD
+      // 4. DIGITAL PASS & DASHBOARD (PRIVACY SHIELD ACTIVE)
       verify_gate_pass: {
         id: "verify_gate_pass",
         cat: "pass",
-        title: "4.1 Gate Entry QR Scanner (Instant Verification)",
+        title: "4.1 Gate Entry QR Scanner (Fast 1-Scan Verification)",
         label: "Gate QR Scanner",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.verify_gate_pass`,
@@ -925,11 +1150,24 @@
           pass_code: savedPassCode
         }, null, 2)
       },
-      my_dashboard: {
-        id: "my_dashboard",
+      my_dashboard_secure: {
+        id: "my_dashboard_secure",
         cat: "pass",
-        title: "4.2 Attendee Dashboard (Shows Booked Stall, Receipt & Badge)",
-        label: "My Dashboard",
+        title: "4.2 Attendee Dashboard (Full Access with Registration ID)",
+        label: "Dashboard (Full Access)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.get_my_dashboard`,
+        hasBody: true,
+        getBody: () => JSON.stringify({
+          registration_id: savedRegId,
+          email: "karthik@titaniumlabs.com"
+        }, null, 2)
+      },
+      my_dashboard_public: {
+        id: "my_dashboard_public",
+        cat: "pass",
+        title: "4.3 Attendee Dashboard (Public Query - Privacy Masked)",
+        label: "Dashboard (Public Masked)",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.get_my_dashboard`,
         hasBody: true,
@@ -940,31 +1178,90 @@
       login_attendee: {
         id: "login_attendee",
         cat: "pass",
-        title: "4.3 Attendee Login",
+        title: "4.4 Attendee Login",
         label: "Attendee Login",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.login_attendee`,
         hasBody: true,
         body: JSON.stringify({
-          email: "karthik@titaniumlabs.com"
+          mobile_no: "9876543210"
         }, null, 2)
       },
-      get_profile: {
-        id: "get_profile",
+      send_otp: {
+        id: "send_otp",
         cat: "pass",
-        title: "4.4 Get Current User Profile (Session or Token)",
-        label: "Current User Profile",
-        method: "GET",
-        url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
-        hasBody: false
+        title: "4.5 Mobile OTP: Send 6-Digit OTP",
+        label: "Send Mobile OTP",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.send_otp`,
+        hasBody: true,
+        body: JSON.stringify({
+          mobile_no: "9876543210"
+        }, null, 2)
+      },
+      verify_otp: {
+        id: "verify_otp",
+        cat: "pass",
+        title: "4.6 Mobile OTP: Verify & Login",
+        label: "Verify Mobile OTP",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.verify_otp`,
+        hasBody: true,
+        body: JSON.stringify({
+          mobile_no: "9876543210",
+          otp: "123456"
+        }, null, 2)
       },
       lookup_reg: {
         id: "lookup_reg",
         cat: "pass",
         title: "4.5 Universal Registration Lookup by ID",
-        label: "Universal Lookup",
+        label: "Universal Reg Lookup",
         method: "GET",
-        getUrl: () => `${HOST}/api/method/connectfest.api.get_registration?registration_id=${savedRegId}`,
+        getUrl: () => `${HOST}/api/method/connectfest.api.get_registration?registration_id=${savedRegId || 'REG-CF27-0001'}`,
+        hasBody: false
+      },
+      get_current_user_profile: {
+        id: "get_current_user_profile",
+        cat: "pass",
+        title: "4.7 Current Logged-in User Profile (Anti-IDOR)",
+        label: "Current User Profile",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
+        hasBody: false
+      },
+      request_contact_update: {
+        id: "request_contact_update",
+        cat: "pass",
+        title: "4.8 Request Contact Update (2-Min OTP Verification)",
+        label: "Request Contact Update",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.request_contact_update`,
+        hasBody: true,
+        body: JSON.stringify({
+          new_mobile_no: "9876599999",
+          new_email: "newemail@titaniumlabs.com"
+        }, null, 2)
+      },
+      verify_contact_update: {
+        id: "verify_contact_update",
+        cat: "pass",
+        title: "4.9 Verify Contact Update OTP (2-Min Validity)",
+        label: "Verify Contact Update",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.verify_and_update_contact`,
+        hasBody: true,
+        body: JSON.stringify({
+          otp: "123456"
+        }, null, 2)
+      },
+      logout: {
+        id: "logout",
+        cat: "pass",
+        title: "4.10 Logout Attendee / Admin Session",
+        label: "Logout Session",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.logout`,
         hasBody: false
       },
 
@@ -988,7 +1285,7 @@
         id: "admin_dashboard",
         cat: "admin",
         title: "5.2 Admin Dashboard Overview (Live Revenue & Occupancy)",
-        label: "Admin Dashboard Metrics",
+        label: "Admin Dashboard Overview",
         method: "GET",
         url: `${HOST}/api/method/connectfest.api.get_admin_dashboard_data`,
         hasBody: false
@@ -1010,6 +1307,46 @@
         method: "GET",
         url: `${HOST}/api/method/connectfest.api.flush_queue`,
         hasBody: false
+      },
+      admin_login_step1: {
+        id: "admin_login_step1",
+        cat: "admin",
+        title: "5.5 Admin 2FA Login - Step 1: Verify Password & Request 2FA OTP",
+        label: "Admin Login (Step 1: Creds)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_login`,
+        hasBody: true,
+        body: JSON.stringify({
+          email: "Administrator",
+          password: "admin"
+        }, null, 2)
+      },
+      admin_login_step2: {
+        id: "admin_login_step2",
+        cat: "admin",
+        title: "5.6 Admin 2FA Login - Step 2: Verify 2FA OTP (2-Min Expiry)",
+        label: "Admin Login (Step 2: 2FA)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_login`,
+        hasBody: true,
+        body: JSON.stringify({
+          email: "Administrator",
+          password: "admin",
+          otp: "123456"
+        }, null, 2)
+      },
+      admin_toggle_user: {
+        id: "admin_toggle_user",
+        cat: "admin",
+        title: "5.7 Admin Toggle User Account Status (Enable / Disable)",
+        label: "Toggle User (Enable/Disable)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_toggle_user_status`,
+        hasBody: true,
+        body: JSON.stringify({
+          user_email: "karthik@titaniumlabs.com",
+          enabled: 0
+        }, null, 2)
       }
     };
 
@@ -1082,7 +1419,7 @@
     }
 
     function changeHost() {
-      const newHost = prompt("Change API Server Host (e.g. http://localhost:8080 or https://uat.connectfest.com):", HOST);
+      const newHost = prompt("Change API Server Host (e.g. http://localhost:8080 or https://connectfest.com):", HOST);
       if (newHost && newHost.trim()) {
         HOST = newHost.trim().replace(/\/$/, "");
         localStorage.setItem('cf_custom_host', HOST);
@@ -1172,6 +1509,7 @@
       const chips = document.getElementById('summaryChips');
       const verifyBtn = document.getElementById('verifyActionBtn');
       const quickCheckoutBtn = document.getElementById('quickCheckoutBtn');
+      const quickSelectBtn = document.getElementById('quickSelectStallBtn');
 
       resBox.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
 
@@ -1185,7 +1523,7 @@
           chips.innerHTML += `<div class="chip-item"><span class="chip-label">Registration ID</span><span class="chip-value">${msg.registration_id || rec.registration_id}</span></div>`;
         }
         if (msg.stall_number || rec.stall_number) {
-          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Stall Number</span><span class="chip-value" style="color: #38bdf8;">${msg.stall_number || rec.stall_number}</span></div>`;
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Stall Number</span><span class="chip-value" style="color: var(--primary);">${msg.stall_number || rec.stall_number}</span></div>`;
         }
         if (rec.stall_category || msg.stall_category || msg.tier) {
           const tier = rec.stall_category || msg.stall_category || msg.tier;
@@ -1193,32 +1531,47 @@
         }
         if (rec.payment_status || msg.payment_status) {
           const st = rec.payment_status || msg.payment_status;
-          const color = st === 'Paid' ? '#34d399' : '#fbbf24';
+          const color = st === 'Paid' ? '#10b981' : '#f59e0b';
           chips.innerHTML += `<div class="chip-item"><span class="chip-label">Payment Status</span><span class="chip-value" style="color: ${color};">${st}</span></div>`;
         }
         if (msg.order_id || msg.razorpay_order_id || (msg.order && msg.order.id)) {
           const ordId = msg.order_id || msg.razorpay_order_id || msg.order.id;
           chips.innerHTML += `<div class="chip-item" style="grid-column: span 2;"><span class="chip-label">Razorpay Order ID</span><span class="chip-value">${ordId}</span></div>`;
         }
+        if (msg.security_notice) {
+          chips.innerHTML += `<div class="privacy-badge">🔒 ${msg.security_notice}</div>`;
+        }
         if (msg.pass && msg.pass.pass_code) {
-          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Pass Code</span><span class="chip-value" style="color: #34d399;">${msg.pass.pass_code}</span></div>`;
+          chips.innerHTML += `<div class="chip-item"><span class="chip-label">Pass Code</span><span class="chip-value" style="color: #10b981;">${msg.pass.pass_code}</span></div>`;
           chips.innerHTML += `<div class="chip-item"><span class="chip-label">Access</span><span class="chip-value">${msg.pass.access || 'Both Days'}</span></div>`;
         }
 
-        // Quick action buttons
-        if (activeId.startsWith('reg_') && !msg.payment_status) {
+        // Action chaining
+        if (activeId.startsWith('reg_') && !msg.stall_number) {
+          quickSelectBtn.style.display = 'flex';
+          quickCheckoutBtn.style.display = 'none';
+          verifyBtn.style.display = 'none';
+        } else if (activeId === 'select_stall' || activeId === 'preview_payment') {
+          quickSelectBtn.style.display = 'none';
           quickCheckoutBtn.style.display = 'flex';
           verifyBtn.style.display = 'none';
-        } else if (activeId === 'checkout' || activeId === 'preview_payment' || activeId === 'create_order') {
+        } else if (activeId === 'checkout' || activeId === 'create_order') {
+          quickSelectBtn.style.display = 'none';
           quickCheckoutBtn.style.display = 'none';
           verifyBtn.style.display = 'flex';
         } else {
+          quickSelectBtn.style.display = 'none';
           quickCheckoutBtn.style.display = 'none';
           verifyBtn.style.display = 'none';
         }
       } else {
         summaryCard.style.display = 'none';
       }
+    }
+
+    function triggerQuickSelectStall() {
+      selectEndpoint('select_stall');
+      setTimeout(sendRequest, 100);
     }
 
     function triggerQuickCheckout() {
@@ -1269,6 +1622,14 @@
     // Initialize
     renderSidebar();
     selectEndpoint('reg_basic');
+
+    // Passive wheel handler ensuring instant mouse wheel scrolling in all browsers
+    const sidebarEl = document.getElementById('sidebarList');
+    if (sidebarEl) {
+      sidebarEl.addEventListener('wheel', (e) => {
+        sidebarEl.scrollTop += e.deltaY;
+      }, { passive: true });
+    }
   </script>
 </body>
 </html>

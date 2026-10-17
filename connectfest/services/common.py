@@ -84,3 +84,51 @@ def generate_visitor_id(cache):
 		seq = int(time.time() * 1000) % 1000000
 	ym = now_datetime().strftime("%y%m")
 	return f"VIS-{ym}-{seq:06d}"
+
+
+def generate_security_pin():
+	"""Generates a secure 6-digit access PIN for attendees to safeguard their dashboard."""
+	import random
+	return f"{random.randint(100000, 999999)}"
+
+
+def mask_phone(phone):
+	"""Masks phone number e.g. 9845123456 -> 98******56."""
+	if not phone:
+		return ""
+	s = str(phone).strip()
+	if len(s) >= 8:
+		return s[:2] + ("*" * (len(s) - 4)) + s[-2:]
+	return s[:1] + ("*" * max(1, len(s) - 2)) + s[-1:]
+
+
+def mask_email(email):
+	"""Masks email address e.g. manoj@apex.com -> m***j@apex.com."""
+	if not email or "@" not in email:
+		return email or ""
+	user, domain = email.split("@", 1)
+	if len(user) <= 2:
+		masked_user = user[:1] + "*"
+	else:
+		masked_user = user[0] + ("*" * (len(user) - 2)) + user[-1]
+	return f"{masked_user}@{domain}"
+
+
+def check_rate_limit(action="lookup", limit=30, window_secs=60):
+	"""
+	Redis-based sliding window rate limiter against brute-force scanning.
+	Returns True if allowed, False if exceeded.
+	"""
+	try:
+		ip = getattr(frappe.local, "request_ip", None) or "127.0.0.1"
+		cache = frappe.cache()
+		key = cache.make_key(f"connectfest:ratelimit:{action}:{ip}")
+		current = cache.incr(key)
+		if current == 1:
+			cache.expire(key, window_secs)
+		if current > limit:
+			return False
+		return True
+	except Exception:
+		return True
+
