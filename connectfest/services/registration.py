@@ -14,6 +14,7 @@ from connectfest.services.common import (
 	set_cached_record,
 	generate_stall_id,
 	generate_visitor_id,
+	save_image_from_base64_or_url,
 )
 from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
@@ -34,6 +35,10 @@ def register_stall(**kwargs):
 
 	full_name = (data.get("full_name") or data.get("name") or "").strip()
 	company_name = (data.get("company_name") or "").strip()
+	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
+	email = (data.get("email") or "").strip()
+	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
+	company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
 	location = (data.get("location") or "").strip()
 	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
 
@@ -44,8 +49,6 @@ def register_stall(**kwargs):
 
 	raw_category = (data.get("stall_category") or data.get("category") or data.get("tier") or "").strip().capitalize()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
-	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
-	email = (data.get("email") or "").strip()
 	stall_number = (data.get("stall_number") or data.get("stall_no") or "").strip()
 	sync_mode = parse_boolean(data.get("sync", 0))
 	create_order = parse_boolean(data.get("create_order", 0))
@@ -69,6 +72,7 @@ def register_stall(**kwargs):
 
 	# Enforce Strict Uniqueness on Email and Mobile
 	if email or mobile_no:
+		# 1. Check existing exhibitor registrations
 		existing = frappe.db.sql("""
 			SELECT name, registration_id, full_name, company_name, email, mobile_no,
 			       stall_number, stall_category, amount, payment_status, status
@@ -78,6 +82,28 @@ def register_stall(**kwargs):
 		""", {"email": email, "mobile": mobile_no}, as_dict=True)
 		if existing:
 			ex = existing[0]
+			ex_email = (ex.get("email") or "").strip().lower()
+			ex_mobile = (ex.get("mobile_no") or "").strip()
+			req_email = (email or "").strip().lower()
+			req_mobile = (mobile_no or "").strip()
+
+			# Conflict A: Mobile number already registered to a DIFFERENT email!
+			if req_mobile and ex_mobile == req_mobile and ex_email != req_email:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Mobile number '{req_mobile}' is already registered with another account ({ex_email})! Each mobile number can only be used once."
+				}
+
+			# Conflict B: Email already registered with a DIFFERENT mobile number!
+			if req_email and ex_email == req_email and req_mobile and ex_mobile != req_mobile:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Email address '{req_email}' is already registered with mobile number {ex_mobile}! Please use your registered mobile number."
+				}
+
+			# Both match: Exact same attendee returning
 			if ex.payment_status == "Paid":
 				st_name = ex.stall_number or ex.stall_category
 				frappe.local.response["http_status_code"] = 400
@@ -87,12 +113,58 @@ def register_stall(**kwargs):
 				}
 			else:
 				# Return existing pending registration without creating duplicate!
-				ensure_frappe_user(email, full_name or ex.full_name, mobile_no or ex.mobile_no, role="Website User")
+				ensure_frappe_user(ex_email, ex.full_name or full_name, ex_mobile, role="Website User")
+				if company_logo and not ex.get("company_logo"):
+					frappe.db.set_value("ConnectFest Registration", ex.name, "company_logo", company_logo)
+					frappe.db.commit()
+					ex["company_logo"] = company_logo
 				return {
 					"status": "already_registered",
-					"message": f"An exhibitor registration already exists with this email or mobile number! (Registration ID: {ex.registration_id}). Please proceed to select your stall and complete payment.",
+					"message": f"An exhibitor registration already exists with this email and mobile number! (Registration ID: {ex.registration_id}). Please proceed to select your stall and complete payment.",
 					"registration_id": ex.registration_id,
 					"data": ex,
+				}
+
+		# 2. Check if already registered in Visitor Registration with this mobile or email
+		vis = frappe.db.sql("""
+			SELECT registration_id, email, mobile_no
+			FROM `tabConnectFest Visitor Registration`
+			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+			LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
+		if vis:
+			v = vis[0]
+			v_email = (v.get("email") or "").strip().lower()
+			v_mobile = (v.get("mobile_no") or "").strip()
+			if mobile_no and v_mobile == mobile_no and v_email != email.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Mobile number '{mobile_no}' is already registered as a Visitor under {v_email}! Each mobile number can only be used once."
+				}
+			if email.lower() == v_email and mobile_no and v_mobile != mobile_no:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Email '{email}' is already registered as a Visitor with mobile number {v_mobile}! Please use your registered mobile number."
+				}
+
+			# Exact match or conflict in Visitor Registration - strictly block duplicate role
+			field_matched = "email and mobile number" if (email.lower() == v_email and mobile_no == v_mobile) else ("email" if email.lower() == v_email else "mobile number")
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"This {field_matched} is already registered as a Visitor! (Pass ID: {v.registration_id}). Each attendee can only be an Exhibitor or a Visitor, not both."
+			}
+
+		# 3. Check if mobile_no or phone is already bound to another User in Frappe
+		if mobile_no:
+			user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
+			if user_with_mob and user_with_mob.lower() != email.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Mobile number '{mobile_no}' is already registered with another account ({user_with_mob})! Each mobile number can only be used once."
 				}
 
 	# Stall Specific Validation (if stall_number or category is provided)
@@ -147,6 +219,7 @@ def register_stall(**kwargs):
 		"registration_id": reg_id,
 		"full_name": full_name,
 		"company_name": company_name,
+		"company_logo": company_logo,
 		"location": location,
 		"mobile_no": mobile_no,
 		"email": email,
@@ -175,6 +248,11 @@ def register_stall(**kwargs):
 
 	# Ensure Frappe User account exists
 	ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+	if company_logo:
+		try:
+			frappe.db.set_value("User", email, "user_image", company_logo)
+		except Exception:
+			pass
 
 	# Direct Reliable Insert into Database & Redis Cache
 	try:
@@ -388,10 +466,29 @@ def register_visitor(**kwargs):
 
 	if existing:
 		rec = existing[0]
-		field_matched = "email" if rec.email.lower() == email else "mobile number"
+		rec_email = (rec.email or "").strip().lower()
+		rec_mobile = (rec.mobile_no or "").strip()
+
+		# Conflict A: Mobile matches, but email is different!
+		if mobile_no and rec_mobile == mobile_no and rec_email != email.lower():
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Mobile number '{mobile_no}' is already registered with another visitor ({rec_email})! Each mobile number can only be used once."
+			}
+
+		# Conflict B: Email matches, but mobile is different!
+		if rec_email == email.lower() and mobile_no and rec_mobile != mobile_no:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Email address '{email}' is already registered with mobile number {rec_mobile}! Please use your registered mobile number."
+			}
+
+		ensure_frappe_user(rec_email, rec.full_name or full_name, rec_mobile, role="Website User")
 		return {
 			"status": "already_registered",
-			"message": f"You are already registered for ConnectFest 2027 with this {field_matched}! Here is your entrance pass.",
+			"message": "You are already registered for ConnectFest 2027! Here is your entrance pass.",
 			"registration_id": rec.registration_id,
 			"data": rec,
 			"pass": {
@@ -408,6 +505,40 @@ def register_visitor(**kwargs):
 				"checked_in": rec.checked_in,
 			},
 		}
+
+	# Check if already registered as an exhibitor with this email or mobile
+	exhibitor = frappe.db.sql("""
+		SELECT registration_id, email, mobile_no
+		FROM `tabConnectFest Registration`
+		WHERE email = %(email)s OR mobile_no = %(mobile)s
+		LIMIT 1
+	""", {"email": email, "mobile": mobile_no}, as_dict=True)
+	if exhibitor:
+		ex = exhibitor[0]
+		ex_email = (ex.get("email") or "").strip().lower()
+		ex_mobile = (ex.get("mobile_no") or "").strip()
+		if mobile_no and ex_mobile == mobile_no and ex_email != email.lower():
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Mobile number '{mobile_no}' is already registered with an Exhibitor ({ex_email})! Each mobile number can only be used once."
+			}
+		field_matched = "email" if ex_email == email.lower() else "mobile number"
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": f"This {field_matched} is already registered as an Exhibitor! (Registration ID: {ex.registration_id}). Exhibitors get automated badge access.",
+		}
+
+	# Check if mobile_no is bound to another active User
+	if mobile_no:
+		user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
+		if user_with_mob and user_with_mob.lower() != email.lower():
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Mobile number '{mobile_no}' is already registered with another account ({user_with_mob})! Each mobile number can only be used once.",
+			}
 
 	cache = frappe.cache()
 	reg_id = generate_visitor_id(cache)

@@ -9,6 +9,7 @@
   "registration_id",
   "full_name",
   "company_name",
+  "company_logo",
   "location",
   "column_break_contact",
   "mobile_no",
@@ -56,6 +57,12 @@
    "in_list_view": 1,
    "label": "Company Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "company_logo",
+   "fieldtype": "Attach Image",
+   "in_list_view": 1,
+   "label": "Company Logo"
   },
   {
    "fieldname": "location",

@@ -48,6 +48,7 @@ from connectfest.services.auth import (
 	admin_toggle_user_status as _admin_toggle_user_status,
 	request_contact_update as _request_contact_update,
 	verify_and_update_contact as _verify_and_update_contact,
+	update_profile as _update_profile,
 )
 from connectfest.services.stalls import (
 	get_stalls as _get_stalls,
@@ -220,6 +221,12 @@ def get_current_user_profile(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def me(**kwargs):
+	"""Alias for get_current_user_profile."""
+	return _get_current_user_profile(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 	"""Attendee login endpoint by email or mobile number."""
 	return _login_attendee(email=email, mobile_no=mobile_no, password=password, **kwargs)
@@ -265,6 +272,12 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 def verify_and_update_contact(otp=None, **kwargs):
 	"""Verifies OTP and updates mobile number and/or email in Frappe User and Registration records."""
 	return _verify_and_update_contact(otp=otp, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_profile(**kwargs):
+	"""Updates attendee profile details (name, company, logo, location, industry, segment, etc.) for the logged-in user."""
+	return _update_profile(**kwargs)
 
 
 # ==============================================================================

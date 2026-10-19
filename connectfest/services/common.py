@@ -132,3 +132,48 @@ def check_rate_limit(action="lookup", limit=30, window_secs=60):
 	except Exception:
 		return True
 
+
+def save_image_from_base64_or_url(image_data, file_name_prefix="logo"):
+	"""
+	Safely saves base64 data URLs as public files in Frappe and returns the file_url (/files/...).
+	If already a valid URL or path, validates against XSS (no javascript:) and returns sanitized URL.
+	"""
+	if not image_data or not isinstance(image_data, str):
+		return ""
+	val = image_data.strip()
+	if not val:
+		return ""
+
+	lower_val = val.lower()
+	if lower_val.startswith("javascript:") or lower_val.startswith("vbscript:") or "<script" in lower_val:
+		return ""
+
+	if val.startswith("data:image/"):
+		import base64
+		import uuid
+		from frappe.utils.file_manager import save_file
+		try:
+			header, encoded = val.split(",", 1)
+			ext = "png"
+			if "jpeg" in header or "jpg" in header:
+				ext = "jpg"
+			elif "webp" in header:
+				ext = "webp"
+			elif "svg" in header:
+				ext = "svg"
+			elif "gif" in header:
+				ext = "gif"
+			raw_bytes = base64.b64decode(encoded)
+			if len(raw_bytes) > 5 * 1024 * 1024:
+				return ""
+			fname = f"{file_name_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
+			saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
+			return saved.file_url
+		except Exception as e:
+			frappe.log_error("Image Save Error", frappe.get_traceback())
+			return ""
+
+	if len(val) > 500:
+		return ""
+	return val
+

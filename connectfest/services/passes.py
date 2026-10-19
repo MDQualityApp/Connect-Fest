@@ -197,8 +197,9 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		where_str = " OR ".join(where_clauses) if where_clauses else "1=0"
 
 		stalls = frappe.db.sql(f"""
-			SELECT registration_id, full_name, company_name, email, mobile_no,
-			       stall_number, stall_category, amount, payment_status,
+			SELECT registration_id, full_name, company_name, company_logo, location,
+			       mobile_no, email, is_bni_member, region_name, chapter_name,
+			       industry, segment, stall_number, stall_category, amount, payment_status,
 			       razorpay_order_id, razorpay_payment_id, payment_date, status, creation
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
@@ -257,6 +258,13 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				"registration_id": sb.registration_id,
 				"full_name": sb.full_name,
 				"company_name": sb.company_name,
+				"company_logo": sb.company_logo or "",
+				"location": sb.location or "",
+				"industry": sb.industry or "",
+				"segment": sb.segment or "",
+				"is_bni_member": bool(sb.is_bni_member),
+				"region_name": sb.region_name or "",
+				"chapter_name": sb.chapter_name or "",
 				"email": sb.email if is_authorized else mask_email(sb.email),
 				"mobile_no": sb.mobile_no if is_authorized else mask_phone(sb.mobile_no),
 				"stall_number": sb.stall_number,

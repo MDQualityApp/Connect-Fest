@@ -5,12 +5,35 @@ from connectfest.services.common import extract_request_data
 def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 	"""
 	Ensures a Frappe User exists for visitors and exhibitors so they can log in.
+	Safely handles unique key constraints on mobile_no.
 	"""
 	if not email or "@" not in email:
 		return None
 	clean_email = email.strip().lower()
+	clean_mob = (mobile_no or "").strip()
 	try:
 		if not frappe.db.exists("User", clean_email):
+			# Handle unique mobile_no constraint in tabUser
+			mob_for_user = clean_mob
+			phone_for_user = clean_mob
+			if clean_mob:
+				existing_user_with_mob = frappe.db.get_value("User", {"mobile_no": clean_mob}, "name") or frappe.db.get_value("User", {"phone": clean_mob}, "name")
+				if existing_user_with_mob and existing_user_with_mob != clean_email:
+					# Check if old user has an active ConnectFest registration with this mobile
+					has_reg = (
+						frappe.db.exists("ConnectFest Registration", {"email": existing_user_with_mob})
+						or frappe.db.exists("ConnectFest Visitor Registration", {"email": existing_user_with_mob})
+					)
+					if not has_reg:
+						# Stale / test user has this mobile; release it
+						frappe.db.set_value("User", existing_user_with_mob, "mobile_no", None)
+						frappe.db.set_value("User", existing_user_with_mob, "phone", None)
+						frappe.db.commit()
+					else:
+						# Another active user already owns this mobile! Never assign to a different email
+						mob_for_user = ""
+						phone_for_user = ""
+
 			# Ensure role exists in tabRole
 			if role and not frappe.db.exists("Role", role):
 				try:
@@ -36,8 +59,8 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 				"email": clean_email,
 				"first_name": first_name,
 				"last_name": last_name,
-				"phone": mobile_no or "",
-				"mobile_no": mobile_no or "",
+				"phone": phone_for_user,
+				"mobile_no": mob_for_user or "",
 				"enabled": 1,
 				"send_welcome_email": 0,
 				"user_type": "Website User",
@@ -45,9 +68,36 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			})
 			user.flags.ignore_permissions = True
 			user.flags.ignore_password_policy = True
-			user.insert(ignore_if_duplicate=True)
+			try:
+				user.insert(ignore_if_duplicate=True)
+			except Exception as insert_err:
+				# If duplicate mobile_no collision still occurs, retry inserting with blank mobile_no
+				if "mobile_no" in str(insert_err):
+					user.mobile_no = ""
+					user.insert(ignore_if_duplicate=True)
+				else:
+					raise insert_err
 			frappe.db.commit()
 			return user.name
+		else:
+			# User already exists - ensure enabled and update phone if missing
+			u_doc = frappe.get_doc("User", clean_email)
+			changed = False
+			if not u_doc.enabled:
+				u_doc.enabled = 1
+				changed = True
+			if clean_mob:
+				if not u_doc.phone:
+					u_doc.phone = clean_mob
+					changed = True
+				if not u_doc.mobile_no and not frappe.db.exists("User", {"mobile_no": clean_mob}):
+					u_doc.mobile_no = clean_mob
+					changed = True
+			if changed:
+				u_doc.flags.ignore_permissions = True
+				u_doc.flags.ignore_password_policy = True
+				u_doc.save()
+				frappe.db.commit()
 		return clean_email
 	except Exception as e:
 		frappe.clear_messages()
@@ -494,3 +544,213 @@ def verify_and_update_contact(otp=None, **kwargs):
 		frappe.log_error("ConnectFest Contact Verify Error", frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
+
+
+def update_profile(**kwargs):
+	"""
+	Secure Edit Profile API for logged-in attendees (Exhibitors & Visitors).
+	Security Highlights:
+	- Anti-IDOR: Non-admin users are strictly locked to editing frappe.session.user only.
+	- Identity Lock: Direct modification of 'email' or 'mobile_no' is blocked; must use request_contact_update with OTP.
+	- Financial & Booking Lock: Fields like payment_status, amount, stall_number, status cannot be modified.
+	- Input Sanitization: All text fields are stripped of HTML/script tags to prevent stored XSS.
+	- Safe Image Upload: Base64 logo data URLs are converted to secure Frappe files; URLs are vetted against javascript: schemes.
+	- Rate Limiting: 20 requests/minute per session user to thwart automated abuse.
+	"""
+	from connectfest.services.common import (
+		check_rate_limit,
+		parse_boolean,
+		save_image_from_base64_or_url,
+		set_cached_record,
+		STALL_CACHE_PREFIX,
+	)
+	from connectfest.services.passes import get_my_dashboard
+	from frappe.utils import strip_html
+
+	try:
+		# 1. Authentication Check
+		sess_user = getattr(frappe.session, "user", None)
+		if not sess_user or sess_user == "Guest":
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"message": "Authentication required! Please log in with OTP or credentials to edit your profile.",
+			}
+
+		# 2. Rate Limit (20 req/min)
+		if not check_rate_limit(f"update_profile:{sess_user}", limit=20, window_secs=60):
+			frappe.local.response["http_status_code"] = 429
+			return {
+				"status": "error",
+				"message": "Too many profile update requests. Please wait a minute before trying again.",
+			}
+
+		data = extract_request_data(kwargs)
+		is_admin = is_admin_user(sess_user)
+
+		# 3. Anti-IDOR Protection: Disallow modifying other users unless Admin
+		target_user = sess_user
+		requested_user = (data.get("email") or data.get("user") or data.get("user_email") or "").strip().lower()
+		if requested_user and requested_user != sess_user.lower():
+			if not is_admin:
+				frappe.local.response["http_status_code"] = 403
+				return {
+					"status": "forbidden",
+					"message": "Access Denied: You are not authorized to modify another attendee's profile!",
+				}
+			target_user = requested_user
+
+		if not frappe.db.exists("User", target_user):
+			frappe.local.response["http_status_code"] = 404
+			return {"status": "not_found", "message": f"User account '{target_user}' does not exist."}
+
+		# 4. Identity Lock: Disallow direct changes to email or mobile_no
+		target_user_doc = frappe.get_doc("User", target_user)
+		current_mob = (target_user_doc.mobile_no or target_user_doc.phone or "").strip()
+
+		attempted_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
+		if attempted_mob and attempted_mob != current_mob and not is_admin:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Direct mobile number updates are blocked for security! Please use the OTP-verified contact update API (connectfest.api.request_contact_update).",
+			}
+
+		# 5. Extract and Sanitize Whitelisted Profile Fields
+		updated_fields = {}
+		updates_exhibitor = {}
+		updates_user = {}
+
+		# Full Name
+		raw_name = data.get("full_name") or data.get("name")
+		if raw_name is not None:
+			clean_name = strip_html(str(raw_name)).strip()[:140]
+			if clean_name:
+				parts = clean_name.split(" ", 1)
+				first_name = parts[0]
+				last_name = parts[1] if len(parts) > 1 else ""
+				updates_user["first_name"] = first_name
+				updates_user["last_name"] = last_name
+				updates_exhibitor["full_name"] = clean_name
+				updated_fields["full_name"] = clean_name
+
+		# Company Name
+		raw_company = data.get("company_name")
+		if raw_company is not None:
+			clean_company = strip_html(str(raw_company)).strip()[:140]
+			updates_exhibitor["company_name"] = clean_company
+			updated_fields["company_name"] = clean_company
+
+		# Company Logo
+		raw_logo = data.get("company_logo") if data.get("company_logo") is not None else data.get("logo")
+		if raw_logo is not None:
+			saved_logo_url = save_image_from_base64_or_url(str(raw_logo), file_name_prefix=f"logo_{target_user.split('@')[0][:8]}")
+			if saved_logo_url:
+				updates_exhibitor["company_logo"] = saved_logo_url
+				updates_user["user_image"] = saved_logo_url
+				updated_fields["company_logo"] = saved_logo_url
+
+		# Location / City
+		raw_loc = data.get("location")
+		if raw_loc is not None:
+			clean_loc = strip_html(str(raw_loc)).strip()[:140]
+			updates_exhibitor["location"] = clean_loc
+			updated_fields["location"] = clean_loc
+
+		# Industry & Segment
+		raw_ind = data.get("industry")
+		if raw_ind is not None:
+			clean_ind = strip_html(str(raw_ind)).strip()[:100]
+			updates_exhibitor["industry"] = clean_ind
+			updated_fields["industry"] = clean_ind
+
+		raw_seg = data.get("segment")
+		if raw_seg is not None:
+			clean_seg = strip_html(str(raw_seg)).strip()[:100]
+			updates_exhibitor["segment"] = clean_seg
+			updated_fields["segment"] = clean_seg
+
+		# BNI Details
+		if "is_bni_member" in data:
+			bni_val = parse_boolean(data.get("is_bni_member"))
+			updates_exhibitor["is_bni_member"] = bni_val
+			updated_fields["is_bni_member"] = bool(bni_val)
+
+		raw_reg = data.get("region_name")
+		if raw_reg is not None:
+			clean_reg = strip_html(str(raw_reg)).strip()[:100]
+			updates_exhibitor["region_name"] = clean_reg
+			updated_fields["region_name"] = clean_reg
+
+		raw_chap = data.get("chapter_name")
+		if raw_chap is not None:
+			clean_chap = strip_html(str(raw_chap)).strip()[:100]
+			updates_exhibitor["chapter_name"] = clean_chap
+			updated_fields["chapter_name"] = clean_chap
+
+		# Visitor Day Choice (if visitor)
+		visitor_day = data.get("which_day")
+		valid_days = ["20 Feb", "21 Feb", "Both days"]
+		update_visitor_day = None
+		if visitor_day and str(visitor_day).strip() in valid_days:
+			update_visitor_day = str(visitor_day).strip()
+			updated_fields["which_day"] = update_visitor_day
+
+		if not updated_fields:
+			return {
+				"status": "unchanged",
+				"message": "No valid profile fields provided for update.",
+				"user": target_user,
+			}
+
+		# 6. Apply Updates to User Record
+		if updates_user:
+			for k, v in updates_user.items():
+				frappe.db.set_value("User", target_user, k, v)
+
+		# 7. Apply Updates to ConnectFest Exhibitor Registration(s)
+		if updates_exhibitor:
+			cache = frappe.cache()
+			ex_regs = frappe.db.get_all(
+				"ConnectFest Registration",
+				filters={"email": target_user},
+				fields=["name", "registration_id"]
+			)
+			for ex in ex_regs:
+				for k, v in updates_exhibitor.items():
+					frappe.db.set_value("ConnectFest Registration", ex.name, k, v)
+				# Update Cache
+				cached_record = frappe.get_doc("ConnectFest Registration", ex.name).as_dict()
+				set_cached_record(cache, f"{STALL_CACHE_PREFIX}{ex.registration_id}", cached_record)
+				if ex.name != ex.registration_id:
+					set_cached_record(cache, f"{STALL_CACHE_PREFIX}{ex.name}", cached_record)
+
+		# 8. Apply Updates to Visitor Registration(s)
+		if "full_name" in updated_fields or update_visitor_day:
+			vis_regs = frappe.db.get_all(
+				"ConnectFest Visitor Registration",
+				filters={"email": target_user},
+				fields=["name", "registration_id"]
+			)
+			for vr in vis_regs:
+				if "full_name" in updated_fields:
+					frappe.db.set_value("ConnectFest Visitor Registration", vr.name, "full_name", updated_fields["full_name"])
+				if update_visitor_day:
+					frappe.db.set_value("ConnectFest Visitor Registration", vr.name, "which_day", update_visitor_day)
+
+		frappe.db.commit()
+
+		# 9. Return Refreshed Dashboard
+		refreshed_dashboard = get_my_dashboard(email=target_user)
+
+		return {
+			"status": "success",
+			"message": "Profile updated successfully!",
+			"user": target_user,
+			"updated_fields": updated_fields,
+			"dashboard": refreshed_dashboard,
+		}
+	except Exception as e:
+		frappe.log_error("ConnectFest Profile Update Error", frappe.get_traceback())
+		frappe.local.response["http_status_code"] = 500
+		return {"status": "error", "message": "Something went wrong while updating profile. Please try again."}

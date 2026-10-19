@@ -953,6 +953,7 @@
         body: JSON.stringify({
           full_name: "Manoj Kumar",
           company_name: "Apex Logistics",
+          company_logo: "https://connectfest.in/assets/apex-logo.png",
           location: "Chennai",
           source_of_info: "Social Media",
           mobile_no: "9876543210",
@@ -974,6 +975,7 @@
         body: JSON.stringify({
           full_name: "Karthik Raja",
           company_name: "Titanium Software Labs",
+          company_logo: "https://connectfest.in/assets/titanium-logo.png",
           location: "Chennai",
           is_bni_member: 1,
           region_name: "Chennai Central",
@@ -1240,10 +1242,30 @@
         url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
         hasBody: false
       },
+      update_profile: {
+        id: "update_profile",
+        cat: "pass",
+        title: "4.8 Edit User Profile (Logged-in Attendee / Highly Secure Anti-IDOR)",
+        label: "Edit User Profile",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.update_profile`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Sakthivel Murugan",
+          company_name: "Sakthi Tech Solutions",
+          company_logo: "https://connectfest.in/assets/sakthi-logo.png",
+          location: "Chennai",
+          industry: "Information Technology",
+          segment: "Software Services",
+          is_bni_member: 1,
+          region_name: "Chennai Central",
+          chapter_name: "Titanium"
+        }, null, 2)
+      },
       request_contact_update: {
         id: "request_contact_update",
         cat: "pass",
-        title: "4.8 Request Contact Update (2-Min OTP Verification)",
+        title: "4.9 Request Contact Update (2-Min OTP Verification)",
         label: "Request Contact Update",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.request_contact_update`,
@@ -1256,7 +1278,7 @@
       verify_contact_update: {
         id: "verify_contact_update",
         cat: "pass",
-        title: "4.9 Verify Contact Update OTP (2-Min Validity)",
+        title: "4.10 Verify Contact Update OTP (2-Min Validity)",
         label: "Verify Contact Update",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.verify_and_update_contact`,
@@ -1268,7 +1290,7 @@
       logout: {
         id: "logout",
         cat: "pass",
-        title: "4.10 Logout Attendee / Admin Session",
+        title: "4.11 Logout Attendee / Admin Session",
         label: "Logout Session",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.logout`,
