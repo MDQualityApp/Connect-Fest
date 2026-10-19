@@ -1,5 +1,6 @@
 import json
 import time
+import functools
 import frappe
 from frappe.utils import now_datetime, cint, flt
 
@@ -176,4 +177,55 @@ def save_image_from_base64_or_url(image_data, file_name_prefix="logo"):
 	if len(val) > 500:
 		return ""
 	return val
+
+
+def handle_api_errors(title_or_fn="ConnectFest Error"):
+	"""
+	Decorator that catches any unhandled exceptions in API service functions.
+	- Logs the complete Python traceback to Frappe's Error Log (`tabError Log`) so admins can view it in desk.
+	- Sets HTTP status code to 500.
+	- Returns a safe, user-friendly JSON error response:
+	  {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+	- Prevents leaking internal database errors or stack traces to end users.
+	Can be used as @handle_api_errors or @handle_api_errors("Custom Title")
+	"""
+	if callable(title_or_fn):
+		fn = title_or_fn
+		title = f"ConnectFest API Error: {fn.__name__}"
+
+		@functools.wraps(fn)
+		def wrapper(*args, **kwargs):
+			try:
+				return fn(*args, **kwargs)
+			except Exception:
+				frappe.log_error(title=title, message=frappe.get_traceback())
+				if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
+					frappe.local.response["http_status_code"] = 500
+				return {
+					"status": "error",
+					"message": "Something went wrong. Please try again or contact event support.",
+				}
+
+		return wrapper
+
+	title = title_or_fn or "ConnectFest Error"
+
+	def decorator(fn):
+		@functools.wraps(fn)
+		def wrapper(*args, **kwargs):
+			try:
+				return fn(*args, **kwargs)
+			except Exception:
+				frappe.log_error(title=title, message=frappe.get_traceback())
+				if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
+					frappe.local.response["http_status_code"] = 500
+				return {
+					"status": "error",
+					"message": "Something went wrong. Please try again or contact event support.",
+				}
+
+		return wrapper
+
+	return decorator
+
 

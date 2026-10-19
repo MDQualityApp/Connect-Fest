@@ -10,6 +10,7 @@ from connectfest.services.common import (
 	extract_request_data,
 	get_cached_record,
 	set_cached_record,
+	handle_api_errors,
 )
 from connectfest.services.pricing import get_tier_pricing
 
@@ -41,6 +42,7 @@ def get_razorpay_config():
 	}
 
 
+@handle_api_errors("ConnectFest Create Razorpay Order Error")
 def create_razorpay_order(registration_id=None, stall_number=None, stall_category=None, **kwargs):
 	"""
 	Creates a Razorpay Order for a stall registration based on its specific stall tier.
@@ -132,11 +134,13 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 		return {"status": "error", "message": f"Stall '{stall_num}' is already booked and confirmed by another exhibitor"}
 
 	from connectfest.services.pricing import get_tier_details
+	category = (stall_category or stall_doc.tier or "Regular").strip()
 	tier_info = get_tier_details(stall_doc.tier)
 	base_amount = tier_info["price"]
 	gst_pct = tier_info.get("gst_percent", 18.0)
 	tax_amount = round(base_amount * (gst_pct / 100.0), 2)
 	total_amount = round(base_amount + tax_amount, 2)
+	amount = total_amount
 	amount_in_paise = int(total_amount * 100)
 
 	record["stall_number"] = stall_num
@@ -224,6 +228,7 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	}
 
 
+@handle_api_errors("ConnectFest Verify Razorpay Payment Error")
 def verify_razorpay_payment(**kwargs):
 	"""
 	Verifies Razorpay payment signature and marks the stall registration as Paid & Confirmed.
@@ -243,6 +248,10 @@ def verify_razorpay_payment(**kwargs):
 			"status": "unauthorized",
 			"message": "Login required to verify or finalize payment. Please log in with your registered mobile or email via OTP.",
 		}
+
+	# Auto-resolve registration_id for logged-in exhibitor if omitted
+	if not reg_id and sess_user:
+		reg_id = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
 
 	if not (reg_id and order_id and payment_id and signature):
 		frappe.local.response["http_status_code"] = 400
@@ -384,13 +393,14 @@ def verify_razorpay_payment(**kwargs):
 		"registration_id": reg_id,
 		"stall_number": stall_num,
 		"payment_status": "Paid",
-		"status": "Confirmed",
+		"booking_status": "Confirmed",
 		"razorpay_order_id": order_id,
 		"razorpay_payment_id": payment_id,
 		"payment_date": now_str,
 	}
 
 
+@handle_api_errors("ConnectFest Payment Preview Error")
 def preview_payment(**kwargs):
 	"""
 	Nuqid-style Preview Payment API.
@@ -524,6 +534,7 @@ def preview_payment(**kwargs):
 	}
 
 
+@handle_api_errors("ConnectFest Checkout Error")
 def checkout(**kwargs):
 	"""
 	Nuqid-style Checkout API.
@@ -565,6 +576,7 @@ def checkout(**kwargs):
 	}
 
 
+@handle_api_errors("ConnectFest Finalize Payment Error")
 def finalize_payment(**kwargs):
 	"""
 	Nuqid-style Finalize Payment API.
@@ -586,7 +598,7 @@ def finalize_payment(**kwargs):
 		"registration_id": docname,
 		"stall_number": verify_res.get("stall_number"),
 		"payment_status": "Paid",
-		"status": "Confirmed",
+		"booking_status": "Confirmed",
 		"razorpay_order_id": data.get("razorpay_order_id"),
 		"razorpay_payment_id": data.get("razorpay_payment_id"),
 		"payment_date": verify_res.get("payment_date"),

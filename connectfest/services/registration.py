@@ -15,12 +15,14 @@ from connectfest.services.common import (
 	generate_stall_id,
 	generate_visitor_id,
 	save_image_from_base64_or_url,
+	handle_api_errors,
 )
 from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
 from connectfest.services.queue import trigger_async_flush
 
 
+@handle_api_errors("ConnectFest Exhibitor Registration Error")
 def register_stall(**kwargs):
 	"""
 	Exhibitor Registration API.
@@ -283,11 +285,12 @@ def register_stall(**kwargs):
 
 		return response_data
 	except Exception as e:
-		frappe.log_error("ConnectFest Stall Insert Error", frappe.get_traceback())
+		frappe.log_error(title="ConnectFest Stall Insert Error", message=frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
-		return {"status": "error", "message": str(e)}
+		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 
+@handle_api_errors("ConnectFest Select Stall Error")
 def select_stall(registration_id=None, stall_number=None, **kwargs):
 	"""
 	Allows a registered exhibitor to explicitly choose or change their stall before payment.
@@ -427,6 +430,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	}
 
 
+@handle_api_errors("ConnectFest Visitor Registration Error")
 def register_visitor(**kwargs):
 	"""
 	Visitor Registration API.
@@ -604,11 +608,12 @@ def register_visitor(**kwargs):
 			"pass": pass_info,
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Visitor Insert Error", frappe.get_traceback())
+		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 
+@handle_api_errors("ConnectFest Check Booking Status Error")
 def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 	"""Check if an email or mobile has an existing stall booking or visitor pass."""
 	data = extract_request_data(kwargs)
