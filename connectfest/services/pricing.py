@@ -62,16 +62,19 @@ def get_all_tier_pricing(**kwargs):
 	100% Dynamic: If an admin deletes a tier, it is not returned. No fake hardcoded fallbacks!
 	Fast: Cached in Redis.
 	"""
-	cache = frappe.cache()
-	cache_key = cache.make_key(PRICING_CACHE_ALL_KEY)
-	cached = cache.get(cache_key)
-	if cached:
-		try:
-			if isinstance(cached, bytes):
-				cached = cached.decode("utf-8")
-			return json.loads(cached)
-		except Exception:
-			pass
+	try:
+		cache = frappe.cache()
+		cache_key = cache.make_key(PRICING_CACHE_ALL_KEY)
+		cached = cache.get(cache_key)
+		if cached:
+			try:
+				if isinstance(cached, bytes):
+					cached = cached.decode("utf-8")
+				return json.loads(cached)
+			except Exception:
+				pass
+	except Exception:
+		pass
 
 	tiers = frappe.get_all(
 		"ConnectFest Tier Pricing",
@@ -118,16 +121,19 @@ def get_tier_pricing():
 	Returns dynamic dictionary mapping {tier_name: price} from Frappe DocType.
 	Cached in Redis for high-speed lookups.
 	"""
-	cache = frappe.cache()
-	cache_key = cache.make_key(PRICING_CACHE_DICT_KEY)
-	cached = cache.get(cache_key)
-	if cached:
-		try:
-			if isinstance(cached, bytes):
-				cached = cached.decode("utf-8")
-			return json.loads(cached)
-		except Exception:
-			pass
+	try:
+		cache = frappe.cache()
+		cache_key = cache.make_key(PRICING_CACHE_DICT_KEY)
+		cached = cache.get(cache_key)
+		if cached:
+			try:
+				if isinstance(cached, bytes):
+					cached = cached.decode("utf-8")
+				return json.loads(cached)
+			except Exception:
+				pass
+	except Exception:
+		pass
 
 	try:
 		tiers = frappe.get_all(

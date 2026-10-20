@@ -772,6 +772,135 @@ DEFAULT_STALLS_SPEC = [
 ]
 
 
+def seed_default_stalls(preserve_booked=True):
+	"""
+	Universal Stall & Tier Seeding Function.
+	Executed automatically during `bench migrate` (via after_migrate hook & migration patch)
+	and during app installation.
+	- Ensures all 195 standard stalls (SL-01..20, PR-01..45, ST-01..60, RG-01..70) exist with zones & dimensions.
+	- Preserves booked stalls & customer registrations.
+	- Seeds default 4 tier pricing records in 'ConnectFest Tier Pricing' if empty or missing.
+	- Seeds default event settings in 'ConnectFest Settings'.
+	- 100% Idempotent and safe to run multiple times.
+	"""
+	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+	sess_user = getattr(getattr(frappe, "session", None), "user", None) or "Administrator"
+
+	# 1. Seed Dynamic Tier Pricing (ConnectFest Tier Pricing) if missing
+	if frappe.db.table_exists("ConnectFest Tier Pricing"):
+		from connectfest.services.pricing import DEFAULT_TIERS_TEMPLATE, invalidate_pricing_cache
+		for dt in DEFAULT_TIERS_TEMPLATE:
+			if not frappe.db.exists("ConnectFest Tier Pricing", {"tier_name": dt["tier_name"]}):
+				doc = frappe.new_doc("ConnectFest Tier Pricing")
+				doc.tier_name = dt["tier_name"]
+				doc.price = dt["price"]
+				doc.gst_percent = dt["gst_percent"]
+				doc.description = dt["description"]
+				doc.is_active = 1
+				doc.insert(ignore_permissions=True)
+		invalidate_pricing_cache()
+
+	# 2. Seed Default Settings if missing
+	if frappe.db.table_exists("ConnectFest Settings"):
+		try:
+			settings = frappe.get_single("ConnectFest Settings")
+			updated = False
+			if not settings.price_silver:
+				settings.price_silver = 100000.0
+				updated = True
+			if not settings.price_premium:
+				settings.price_premium = 45000.0
+				updated = True
+			if not settings.price_standard:
+				settings.price_standard = 35000.0
+				updated = True
+			if not settings.price_regular:
+				settings.price_regular = 25000.0
+				updated = True
+			if not settings.event_name:
+				settings.event_name = "ConnectFest 2027"
+				updated = True
+			if not settings.event_dates:
+				settings.event_dates = "20 & 21 Feb 2027"
+				updated = True
+			if not settings.event_venue:
+				settings.event_venue = "Chennai Trade Centre, Nandambakkam"
+				updated = True
+			if updated:
+				settings.save(ignore_permissions=True)
+		except Exception:
+			pass
+
+	# 3. Seed / Verify all 195 Default Stalls
+	if not frappe.db.table_exists("ConnectFest Stall"):
+		return {"status": "skipped", "message": "ConnectFest Stall table not found"}
+
+	pricing = get_tier_pricing()
+
+	created_count = 0
+	updated_count = 0
+
+	for spec in DEFAULT_STALLS_SPEC:
+		prefix = spec["prefix"]
+		count = spec["count"]
+		tier = spec["tier"]
+		dims = spec["dimensions"]
+		zone = spec.get("zone")
+		default_price = flt(pricing.get(tier, spec["price"]))
+
+		for i in range(1, count + 1):
+			stall_num = f"{prefix}-{i:02d}"
+			existing = frappe.db.sql(
+				"SELECT name, status, booked_by_registration, zone, dimensions FROM `tabConnectFest Stall` WHERE stall_number = %s",
+				(stall_num,),
+				as_dict=True
+			)
+
+			if not existing:
+				# Insert brand new stall
+				frappe.db.sql("""
+					INSERT INTO `tabConnectFest Stall`
+					(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, creation, modified, modified_by, owner)
+					VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s)
+				""", (stall_num, stall_num, tier, dims, zone, default_price, now_str, now_str, sess_user, sess_user))
+				created_count += 1
+			else:
+				curr = existing[0]
+				is_booked = curr.get("status") == "Booked" or bool(curr.get("booked_by_registration"))
+				if not is_booked:
+					# Safe to update dimensions, zone, tier, price if needed
+					frappe.db.sql("""
+						UPDATE `tabConnectFest Stall`
+						SET tier = %s, dimensions = %s, zone = %s, price = %s, modified = %s
+						WHERE stall_number = %s
+					""", (tier, dims, zone, default_price, now_str, stall_num))
+					updated_count += 1
+				else:
+					# Stall is booked: only backfill zone/dimensions if completely empty
+					if not curr.get("zone") or not curr.get("dimensions"):
+						frappe.db.sql("""
+							UPDATE `tabConnectFest Stall`
+							SET zone = COALESCE(NULLIF(zone, ''), %s),
+								dimensions = COALESCE(NULLIF(dimensions, ''), %s)
+							WHERE stall_number = %s
+						""", (zone, dims, stall_num))
+
+	frappe.db.commit()
+
+	total_stalls = frappe.db.count("ConnectFest Stall")
+	try:
+		print(f"ConnectFest: Seeded/Verified stalls (Total: {total_stalls}, Newly Created: {created_count}, Updated: {updated_count})")
+	except Exception:
+		pass
+
+	return {
+		"status": "success",
+		"total_stalls": total_stalls,
+		"newly_created": created_count,
+		"updated": updated_count,
+	}
+
+
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
 	"""
 	Admin Restore API:
@@ -809,8 +938,6 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 
 	# 2. Restore Stalls
 	if r_stalls:
-		now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
-
 		# Clear hold locks in redis
 		try:
 			cache = frappe.cache()
@@ -833,36 +960,9 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 			""")
 			result["booked_stalls_preserved"] = booked_count
 
-		# Re-seed all 195 default stalls
-		created_count = 0
-		for spec in DEFAULT_STALLS_SPEC:
-			prefix = spec["prefix"]
-			count = spec["count"]
-			tier = spec["tier"]
-			dims = spec["dimensions"]
-			price = spec["price"]
-			zone = spec.get("zone")
-
-			for i in range(1, count + 1):
-				stall_num = f"{prefix}-{i:02d}"
-				existing = frappe.db.sql("SELECT name FROM `tabConnectFest Stall` WHERE stall_number = %s", (stall_num,), as_dict=True)
-				if existing:
-					frappe.db.sql("""
-						UPDATE `tabConnectFest Stall`
-						SET tier = %s, dimensions = %s, zone = %s, price = %s, modified = %s
-						WHERE stall_number = %s AND status != 'Booked'
-					""", (tier, dims, zone, price, now_str, stall_num))
-				else:
-					frappe.db.sql("""
-						INSERT INTO `tabConnectFest Stall`
-						(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, creation, modified, modified_by, owner)
-						VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s)
-					""", (stall_num, stall_num, tier, dims, zone, price, now_str, now_str, sess_user, sess_user))
-					created_count += 1
-
-		frappe.db.commit()
-		result["stalls_restored"] = frappe.db.count("ConnectFest Stall")
-		result["newly_created"] = created_count
+		seed_res = seed_default_stalls(preserve_booked=not r_booked)
+		result["stalls_restored"] = seed_res.get("total_stalls", 0)
+		result["newly_created"] = seed_res.get("newly_created", 0)
 
 	return result
 

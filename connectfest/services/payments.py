@@ -2,7 +2,10 @@ import hmac
 import hashlib
 import json
 import time
-import razorpay
+try:
+	import razorpay
+except ImportError:
+	razorpay = None
 import frappe
 from frappe.utils import now_datetime, cint, flt
 from connectfest.services.common import (
@@ -165,6 +168,8 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	order_id = None
 
 	if not cfg["mock_mode"]:
+		if not razorpay:
+			frappe.throw("Python package 'razorpay' is not installed. Please install it on the server using 'bench pip install razorpay'.")
 		try:
 			client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
 			order_data = {
@@ -306,6 +311,8 @@ def verify_razorpay_payment(**kwargs):
 	if signature == "mock_signature_valid":
 		is_verified = True
 	elif not cfg["mock_mode"]:
+		if not razorpay:
+			frappe.throw("Python package 'razorpay' is not installed. Please install it on the server using 'bench pip install razorpay'.")
 		try:
 			client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
 			client.utility.verify_payment_signature(
@@ -411,22 +418,25 @@ def verify_razorpay_payment(**kwargs):
 			amount_in_paise = int(paid_amount_rupees * 100) if paid_amount_rupees else None
 
 			if not cfg["mock_mode"] and payment_id:
-				try:
-					client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
-					ref_payload = {
-						"notes": {
-							"reason": conflict_reason,
-							"registration_id": reg_id,
-							"stall_number": stall_num,
+				if not razorpay:
+					frappe.log_error("Razorpay Auto Refund Error", "Python package 'razorpay' is not installed.")
+				else:
+					try:
+						client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
+						ref_payload = {
+							"notes": {
+								"reason": conflict_reason,
+								"registration_id": reg_id,
+								"stall_number": stall_num,
+							}
 						}
-					}
-					if amount_in_paise:
-						ref_payload["amount"] = amount_in_paise
-					ref_resp = client.payment.refund(payment_id, ref_payload)
-					refund_id = ref_resp.get("id")
-					refund_success = True
-				except Exception as ref_err:
-					frappe.log_error("Razorpay Auto Refund Error", str(ref_err))
+						if amount_in_paise:
+							ref_payload["amount"] = amount_in_paise
+						ref_resp = client.payment.refund(payment_id, ref_payload)
+						refund_id = ref_resp.get("id")
+						refund_success = True
+					except Exception as ref_err:
+						frappe.log_error("Razorpay Auto Refund Error", str(ref_err))
 			else:
 				refund_id = f"rfnd_mock_{int(time.time())}"
 				refund_success = True

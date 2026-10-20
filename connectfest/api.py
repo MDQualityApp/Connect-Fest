@@ -62,6 +62,7 @@ from connectfest.services.stalls import (
 	admin_update_stall as _admin_update_stall,
 	admin_delete_stall as _admin_delete_stall,
 	admin_restore_defaults as _admin_restore_defaults,
+	seed_default_stalls as _seed_default_stalls,
 )
 from connectfest.services.registration import (
 	register_stall as _register_stall,
@@ -343,6 +344,12 @@ def admin_delete_stall(stall_number=None, **kwargs):
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
 	"""Admin API: Explicitly restore pristine default pricing (4 tiers) and default 195 stalls on-demand."""
 	return _admin_restore_defaults(reset_pricing=reset_pricing, reset_stalls=reset_stalls, reset_booked=reset_booked, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def seed_stalls():
+	"""Seeding API: Populates or verifies 195 stalls and pricing tiers while preserving bookings."""
+	return _seed_default_stalls(preserve_booked=True)
 
 
 @frappe.whitelist(allow_guest=True)
