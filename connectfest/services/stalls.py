@@ -2,7 +2,7 @@ import uuid
 from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime, flt, cint
-from connectfest.services.common import extract_request_data, STALL_LOCK_PREFIX
+from connectfest.services.common import extract_request_data, parse_boolean, STALL_LOCK_PREFIX
 from connectfest.services.pricing import get_tier_pricing
 
 
@@ -289,10 +289,11 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
 
 
-def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
+def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **kwargs):
 	"""
 	Admin API to block/unblock stalls.
 	Eg: Stall 11 block -> User cannot buy.
+	Prevents blocking if an attendee is actively in checkout (10-minute hold active)!
 	"""
 	from connectfest.services.auth import check_admin_permission
 	err = check_admin_permission("stall block/unblock controls")
@@ -304,6 +305,7 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
 	raw_act = action if action is not None else data.get("action", "block")
 	act = str(raw_act or "block").strip().lower()
 	resn = (reason or data.get("reason") or ("Reserved by Administration" if act == "block" else "")).strip()
+	is_force = parse_boolean(force if force is not None else data.get("force", 0))
 
 	if not stall_num or not frappe.db.exists("ConnectFest Stall", stall_num):
 		frappe.local.response["http_status_code"] = 404
@@ -314,7 +316,34 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
 	if act == "block":
 		if stall.status == "Booked":
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": f"Cannot block stall {stall_num} - already paid and booked by {stall.booked_by_name}."}
+			return {"status": "error", "message": f"Cannot block stall {stall_num} - already paid and booked by {stall.booked_by_name or stall.booked_by_registration}."}
+
+		# Guard against blocking stalls currently on active 10-minute Hold!
+		now_dt = now_datetime()
+		cache = frappe.cache()
+		has_redis_lock = bool(cache.get(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}")))
+		has_db_hold = (stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at > now_dt)
+
+		if (has_redis_lock or has_db_hold) and not is_force:
+			buyer = stall.booked_by_name or stall.booked_by_company or stall.booked_by_email or stall.booked_by_mobile or "an exhibitor"
+			remaining_mins = 10
+			if stall.hold_expires_at and stall.hold_expires_at > now_dt:
+				remaining_secs = max(1, int((stall.hold_expires_at - now_dt).total_seconds()))
+				remaining_mins = max(1, (remaining_secs + 59) // 60)
+
+			frappe.local.response["http_status_code"] = 409
+			return {
+				"status": "error",
+				"message": f"Cannot block stall {stall_num}: Exhibitor '{buyer}' is currently completing payment! (Hold expires in ~{remaining_mins} minutes). Please wait until payment completes or hold expires.",
+				"stall_status": "Hold",
+				"held_by": buyer,
+				"held_by_name": stall.booked_by_name,
+				"held_by_company": stall.booked_by_company,
+				"held_by_email": stall.booked_by_email,
+				"held_by_mobile": stall.booked_by_mobile,
+				"hold_expires_in_minutes": remaining_mins,
+			}
+
 		stall.is_blocked_by_admin = 1
 		stall.status = "Blocked"
 		stall.blocked_reason = resn

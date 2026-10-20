@@ -383,6 +383,77 @@ def verify_razorpay_payment(**kwargs):
 		}
 
 	if stall_num and frappe.db.exists("ConnectFest Stall", stall_num):
+		stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
+
+		# Check for Late Payment Conflict (Hold expired and stall was taken/blocked during delay):
+		is_booked_by_other = (stall_doc.status == "Booked" and stall_doc.booked_by_registration and stall_doc.booked_by_registration != reg_id)
+		is_blocked = bool(stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked")
+
+		if is_booked_by_other or is_blocked:
+			conflict_reason = f"Stall {stall_num} was reserved by administration" if is_blocked else f"Stall {stall_num} was booked by another exhibitor ({stall_doc.booked_by_name or stall_doc.booked_by_registration}) after hold expiration"
+
+			# 1. Update Registration status as Conflict
+			frappe.db.set_value(
+				"ConnectFest Registration",
+				{"registration_id": reg_id},
+				{
+					"payment_status": "Paid - Conflict",
+					"status": "Pending Reallocation / Refund",
+					"stall_number": None,
+				}
+			)
+			frappe.db.commit()
+
+			# 2. Trigger Razorpay Automatic Refund
+			refund_id = None
+			refund_success = False
+			paid_amount_rupees = flt(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "amount"))
+			amount_in_paise = int(paid_amount_rupees * 100) if paid_amount_rupees else None
+
+			if not cfg["mock_mode"] and payment_id:
+				try:
+					client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
+					ref_payload = {
+						"notes": {
+							"reason": conflict_reason,
+							"registration_id": reg_id,
+							"stall_number": stall_num,
+						}
+					}
+					if amount_in_paise:
+						ref_payload["amount"] = amount_in_paise
+					ref_resp = client.payment.refund(payment_id, ref_payload)
+					refund_id = ref_resp.get("id")
+					refund_success = True
+				except Exception as ref_err:
+					frappe.log_error("Razorpay Auto Refund Error", str(ref_err))
+			else:
+				refund_id = f"rfnd_mock_{int(time.time())}"
+				refund_success = True
+
+			if refund_success:
+				frappe.db.set_value(
+					"ConnectFest Registration",
+					{"registration_id": reg_id},
+					{
+						"payment_status": "Refunded",
+						"status": "Refunded (Stall Conflict)",
+					}
+				)
+				frappe.db.commit()
+
+			frappe.local.response["http_status_code"] = 409
+			return {
+				"status": "conflict_refunded" if refund_success else "conflict_pending_admin",
+				"message": f"Stall {stall_num} is no longer available ({conflict_reason}). " + (f"Your payment of ₹{paid_amount_rupees:,.2f} has been automatically refunded (Refund ID: {refund_id})." if refund_success else "Our event desk will reallocate another stall of the same tier or process a 100% refund."),
+				"registration_id": reg_id,
+				"requested_stall": stall_num,
+				"conflict_reason": conflict_reason,
+				"refund_initiated": refund_success,
+				"refund_id": refund_id,
+				"razorpay_payment_id": payment_id,
+			}
+
 		fn = (cached_item.get("full_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "full_name")
 		cp = (cached_item.get("company_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "company_name")
 		em = (cached_item.get("email") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")

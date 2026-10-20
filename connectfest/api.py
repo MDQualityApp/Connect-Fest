@@ -182,9 +182,9 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
+def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **kwargs):
 	"""Admin API to block/unblock stalls."""
-	return _toggle_stall_block(stall_number=stall_number, action=action, reason=reason, **kwargs)
+	return _toggle_stall_block(stall_number=stall_number, action=action, reason=reason, force=force, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
