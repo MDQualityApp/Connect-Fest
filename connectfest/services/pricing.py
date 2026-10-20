@@ -421,7 +421,7 @@ def admin_delete_tier_pricing(tier_name=None, **kwargs):
 				"message": f"Cannot delete tier '{doc_name}' because there are {booked_count} already booked stalls using this tier!"
 			}
 
-		frappe.delete_doc("ConnectFest Tier Pricing", doc_name, ignore_permissions=True)
+		frappe.db.delete("ConnectFest Tier Pricing", {"name": doc_name})
 		frappe.db.commit()
 
 		invalidate_pricing_cache()
@@ -442,9 +442,7 @@ def restore_default_pricing():
 	Restores the pristine 4 default tiers (Silver, Premium, Standard, Regular) via Frappe DocType.
 	Only executed when explicitly requested by Admin!
 	"""
-	existing_tiers = frappe.get_all("ConnectFest Tier Pricing", pluck="name")
-	for et in existing_tiers:
-		frappe.delete_doc("ConnectFest Tier Pricing", et, ignore_permissions=True)
+	frappe.db.delete("ConnectFest Tier Pricing")
 
 	for dt in DEFAULT_TIERS_TEMPLATE:
 		doc = frappe.new_doc("ConnectFest Tier Pricing")

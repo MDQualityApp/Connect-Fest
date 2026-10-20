@@ -754,7 +754,7 @@ def admin_delete_stall(stall_number=None, **kwargs):
 	except Exception:
 		pass
 
-	frappe.delete_doc("ConnectFest Stall", s_num, ignore_permissions=True)
+	frappe.db.delete("ConnectFest Stall", {"name": s_num})
 	frappe.db.commit()
 
 	return {
