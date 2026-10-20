@@ -154,6 +154,11 @@ def _flush_single_queue(cache, queue_key_name, doctype, db_fields, batch_size):
 
 def get_queue_stats():
 	"""Monitor queue lengths and total database counts for both Stalls and Visitors."""
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("queue statistics")
+	if err:
+		return err
+
 	cache = frappe.cache()
 	try:
 		pending_stalls = cache.llen(STALL_QUEUE_KEY)
@@ -181,6 +186,11 @@ def get_queue_stats():
 
 def flush_queue():
 	"""Manually flush both stall and visitor queues."""
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("queue flush")
+	if err:
+		return err
+
 	stalls_flushed, visitors_flushed = flush_registration_queue()
 	return {
 		"status": "success",

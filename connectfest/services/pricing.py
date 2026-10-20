@@ -12,7 +12,7 @@ import json
 import frappe
 from frappe.utils import flt
 from connectfest.services.common import extract_request_data
-from connectfest.services.auth import is_admin_user
+from connectfest.services.auth import is_admin_user, check_admin_permission
 
 PRICING_CACHE_DICT_KEY = "connectfest:tier_pricing:dict"
 PRICING_CACHE_ALL_KEY = "connectfest:tier_pricing:all"
@@ -257,10 +257,9 @@ def admin_create_tier_pricing(tier_name=None, price=None, gst_percent=18.0, desc
 	Requires System Manager or Administrator privileges.
 	"""
 	try:
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or not is_admin_user(sess_user):
-			frappe.local.response["http_status_code"] = 403
-			return {"status": "forbidden", "message": "Access Denied: Only administrators can create pricing tiers!"}
+		err = check_admin_permission("tier pricing creation")
+		if err:
+			return err
 
 		data = extract_request_data(kwargs)
 		t_name = (tier_name or data.get("tier_name") or data.get("name") or "").strip()
@@ -319,10 +318,9 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 	Automatically syncs updated price to all available stalls of this tier!
 	"""
 	try:
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or not is_admin_user(sess_user):
-			frappe.local.response["http_status_code"] = 403
-			return {"status": "forbidden", "message": "Access Denied: Only administrators can update pricing tiers!"}
+		err = check_admin_permission("tier pricing updates")
+		if err:
+			return err
 
 		data = extract_request_data(kwargs)
 		t_name = (tier_name or data.get("tier_name") or data.get("name") or "").strip()
@@ -392,10 +390,9 @@ def admin_delete_tier_pricing(tier_name=None, **kwargs):
 	Once deleted, it is permanently deleted. No hardcoded auto-resurrection!
 	"""
 	try:
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or not is_admin_user(sess_user):
-			frappe.local.response["http_status_code"] = 403
-			return {"status": "forbidden", "message": "Access Denied: Only administrators can delete pricing tiers!"}
+		err = check_admin_permission("tier pricing deletion")
+		if err:
+			return err
 
 		data = extract_request_data(kwargs)
 		t_name = (tier_name or data.get("tier_name") or data.get("name") or "").strip()

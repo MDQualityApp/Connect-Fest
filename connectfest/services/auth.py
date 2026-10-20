@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import flt
+from frappe.utils import flt, cint
 from connectfest.services.common import extract_request_data, handle_api_errors
 
 
@@ -115,6 +115,31 @@ def is_admin_user(user=None):
 		return True
 	roles = frappe.get_roles(u)
 	return "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles
+
+
+def check_admin_permission(resource_name="this administrative resource"):
+	"""
+	Verifies that the current session belongs to an authenticated Administrator.
+	If Guest, returns 401 Unauthorized.
+	If non-admin, returns 403 Forbidden.
+	If authorized Admin, returns None.
+	"""
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"is_logged_in": False,
+			"user": "Guest",
+			"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
+		}
+	if not is_admin_user(sess_user):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": f"Access Denied: Only administrators can access {resource_name}!",
+		}
+	return None
 
 
 def logout():
@@ -343,6 +368,18 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "Email address or Mobile Number is required"}
 
+		# Strictly block disabled users
+		target_check_email = usr
+		if not target_check_email and mob:
+			target_check_email = frappe.db.get_value("ConnectFest Registration", {"mobile_no": mob}, "email") or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": mob}, "email")
+		if target_check_email and frappe.db.exists("User", target_check_email):
+			if not cint(frappe.db.get_value("User", target_check_email, "enabled")):
+				frappe.local.response["http_status_code"] = 403
+				return {
+					"status": "disabled",
+					"message": f"Account '{target_check_email}' has been disabled by the Administrator. Access denied.",
+				}
+
 		otp = str(data.get("otp") or data.get("code") or "").strip()
 		if otp and mob:
 			from connectfest.services.otp import verify_otp
@@ -472,22 +509,29 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 		return {"status": "error", "message": "Something went wrong during admin authentication."}
 
 
-def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=1, **kwargs):
+def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kwargs):
 	"""
 	Admin API to enable or disable attendee User accounts.
 	Requires System Manager or Administrator privileges.
 	"""
 	try:
 		from frappe.utils import cint
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or not is_admin_user(sess_user):
-			frappe.local.response["http_status_code"] = 403
-			return {"status": "forbidden", "message": "Access Denied: Only administrators can enable or disable users!"}
+		err = check_admin_permission("user status controls")
+		if err:
+			return err
 
 		data = extract_request_data(kwargs)
 		target_email = (user_email or data.get("user_email") or data.get("email") or "").strip().lower()
 		target_mob = (mobile_no or data.get("mobile_no") or data.get("phone") or "").strip()
-		new_enabled = cint(enabled if enabled is not None else data.get("enabled", 1))
+
+		raw_enabled = enabled if enabled is not None else data.get("enabled")
+		if raw_enabled is None:
+			new_enabled = 1
+		elif isinstance(raw_enabled, bool):
+			new_enabled = 1 if raw_enabled else 0
+		else:
+			s = str(raw_enabled).strip().lower()
+			new_enabled = 0 if s in ("0", "false", "no", "disabled", "disable") else 1
 
 		if not target_email and target_mob:
 			target_email = frappe.db.get_value("ConnectFest Registration", {"mobile_no": target_mob}, "email") or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": target_mob}, "email") or frappe.db.get_value("User", {"phone": target_mob}, "name")

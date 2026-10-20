@@ -182,7 +182,7 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def toggle_stall_block(stall_number=None, action="block", reason=None, **kwargs):
+def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
 	"""Admin API to block/unblock stalls."""
 	return _toggle_stall_block(stall_number=stall_number, action=action, reason=reason, **kwargs)
 
@@ -259,7 +259,7 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=1, **kwargs):
+def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kwargs):
 	"""Admin API to enable or disable attendee User accounts."""
 	return _admin_toggle_user_status(user_email=user_email, mobile_no=mobile_no, enabled=enabled, **kwargs)
 

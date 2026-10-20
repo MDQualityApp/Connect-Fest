@@ -67,6 +67,14 @@ def send_otp(mobile_no=None, **kwargs):
 		if user_email:
 			user_name = frappe.db.get_value("User", user_email, "full_name")
 
+	if user_email and frappe.db.exists("User", user_email):
+		if not frappe.utils.cint(frappe.db.get_value("User", user_email, "enabled")):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "disabled",
+				"message": f"Account associated with +91-{mob} has been disabled by the Administrator. Cannot send login OTP.",
+			}
+
 	allow_unregistered = data.get("allow_unregistered") or data.get("purpose") == "registration" or kwargs.get("allow_unregistered")
 	if not user_email and not allow_unregistered:
 		frappe.local.response["http_status_code"] = 404
@@ -177,6 +185,14 @@ def verify_otp(mobile_no=None, otp=None, **kwargs):
 		user_email = frappe.db.get_value("User", {"phone": mob}, "name") or frappe.db.get_value("User", {"mobile_no": mob}, "name")
 		if user_email:
 			user_name = frappe.db.get_value("User", user_email, "full_name")
+
+	if user_email and frappe.db.exists("User", user_email):
+		if not frappe.utils.cint(frappe.db.get_value("User", user_email, "enabled")):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "disabled",
+				"message": f"Account associated with +91-{mob} has been disabled by the Administrator. Access denied.",
+			}
 
 	allow_unregistered = data.get("allow_unregistered") or data.get("purpose") == "registration" or kwargs.get("allow_unregistered")
 	if not user_email and not allow_unregistered:

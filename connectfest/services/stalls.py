@@ -289,15 +289,21 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
 
 
-def toggle_stall_block(stall_number=None, action="block", reason=None, **kwargs):
+def toggle_stall_block(stall_number=None, action=None, reason=None, **kwargs):
 	"""
 	Admin API to block/unblock stalls.
 	Eg: Stall 11 block -> User cannot buy.
 	"""
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("stall block/unblock controls")
+	if err:
+		return err
+
 	data = extract_request_data(kwargs)
-	stall_num = (stall_number or data.get("stall_number") or "").strip()
-	act = (action or data.get("action") or "block").strip().lower()
-	resn = (reason or data.get("reason") or "Reserved by Administration").strip()
+	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
+	raw_act = action if action is not None else data.get("action", "block")
+	act = str(raw_act or "block").strip().lower()
+	resn = (reason or data.get("reason") or ("Reserved by Administration" if act == "block" else "")).strip()
 
 	if not stall_num or not frappe.db.exists("ConnectFest Stall", stall_num):
 		frappe.local.response["http_status_code"] = 404
@@ -336,7 +342,13 @@ def toggle_stall_block(stall_number=None, action="block", reason=None, **kwargs)
 def get_admin_dashboard_data(**kwargs):
 	"""
 	Returns complete real-time dashboard data for ConnectFest Admin.
+	Requires System Manager or Administrator privileges.
 	"""
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("admin dashboard data")
+	if err:
+		return err
+
 	stalls = frappe.get_all(
 		"ConnectFest Stall",
 		fields=[
@@ -415,11 +427,10 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	  booked_by_registration, payment_status, payment_date, amount.
 	- Restricted to System Manager / Administrator.
 	"""
-	from connectfest.services.auth import is_admin_user
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can access admin stall inventory!"}
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("admin stall inventory")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	filter_status = (status or data.get("status") or "").strip()
@@ -562,12 +573,11 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 	Admin API: Create a new exhibition stall.
 	Requires System Manager or Administrator privileges.
 	"""
-	from connectfest.services.auth import is_admin_user
+	from connectfest.services.auth import check_admin_permission
 	from connectfest.services.pricing import get_tier_pricing
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can create stalls!"}
+	err = check_admin_permission("stall creation")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
@@ -620,11 +630,10 @@ def admin_get_stall(stall_number=None, **kwargs):
 	"""
 	Admin API: Get specific stall details with buyer info and hold status.
 	"""
-	from connectfest.services.auth import is_admin_user
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can view admin stall details!"}
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("admin stall details")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
@@ -644,11 +653,10 @@ def admin_update_stall(stall_number=None, **kwargs):
 	"""
 	Admin API: Update stall properties (tier, dimensions, price, status, block/unblock).
 	"""
-	from connectfest.services.auth import is_admin_user
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can update stalls!"}
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("stall updates")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
@@ -682,12 +690,11 @@ def admin_delete_stall(stall_number=None, **kwargs):
 	Admin API: Delete a stall.
 	CRITICAL RULE: If a stall is already BOOKED by an exhibitor, deletion is strictly PREVENTED!
 	"""
-	from connectfest.services.auth import is_admin_user
+	from connectfest.services.auth import check_admin_permission
 	from connectfest.services.common import STALL_LOCK_PREFIX
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can delete stalls!"}
+	err = check_admin_permission("stall deletion")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
@@ -745,13 +752,11 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 	- reset_booked: 0 (default) = Keeps existing booked stalls intact. 1 = Fresh wipe (resets all booked stalls too).
 	- Security: Restricted strictly to Administrator / System Manager.
 	"""
-	from connectfest.services.auth import is_admin_user
+	from connectfest.services.auth import check_admin_permission
 	from connectfest.services.pricing import restore_default_pricing
-
-	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or not is_admin_user(sess_user):
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Access Denied: Only administrators can restore defaults!"}
+	err = check_admin_permission("restore defaults")
+	if err:
+		return err
 
 	data = extract_request_data(kwargs)
 	r_pricing = cint(data.get("reset_pricing") if "reset_pricing" in data else reset_pricing)
