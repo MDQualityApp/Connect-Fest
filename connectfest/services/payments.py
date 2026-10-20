@@ -98,6 +98,17 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"Stall registration '{reg_id}' not found"}
 
+	# Block multiple payments if already Paid & Confirmed
+	db_payment_status = record.get("payment_status") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "payment_status")
+	if db_payment_status == "Paid":
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": f"Payment already completed and confirmed for registration '{reg_id}' (Stall: {record.get('stall_number')}). Multiple payments are strictly prohibited!",
+			"payment_status": "Paid",
+			"stall_number": record.get("stall_number"),
+		}
+
 	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
 	from connectfest.services.auth import is_admin_user
 	if not is_admin_user(sess_user):
@@ -279,6 +290,16 @@ def verify_razorpay_payment(**kwargs):
 				"message": "Access Denied: You cannot verify payment for another attendee's registration."
 			}
 
+	# Guard against multiple payments
+	current_status = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "payment_status") or frappe.db.get_value("ConnectFest Registration", reg_id, "payment_status")
+	if current_status == "Paid":
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": f"Payment has already been verified and processed for registration '{reg_id}'. Multiple payments are strictly prohibited!",
+			"payment_status": "Paid",
+		}
+
 	cfg = get_razorpay_config()
 	is_verified = False
 
@@ -451,6 +472,17 @@ def preview_payment(**kwargs):
 	if not record:
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"Record '{docname}' not found for preview"}
+
+	# Block payment preview if already Paid & Confirmed
+	db_payment_status = record.get("payment_status") or frappe.db.get_value("ConnectFest Registration", {"registration_id": docname}, "payment_status")
+	if db_payment_status == "Paid":
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": f"This registration '{docname}' has already been paid and confirmed (Stall: {record.get('stall_number')}). Multiple payments are strictly prohibited!",
+			"payment_status": "Paid",
+			"stall_number": record.get("stall_number"),
+		}
 
 	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
 	from connectfest.services.auth import is_admin_user

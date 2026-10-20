@@ -1,5 +1,6 @@
 import frappe
-from connectfest.services.common import extract_request_data
+from frappe.utils import flt
+from connectfest.services.common import extract_request_data, handle_api_errors
 
 
 def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
@@ -132,50 +133,188 @@ def logout():
 	}
 
 
+@handle_api_errors("ConnectFest Profile Fetch Error")
 def get_current_user_profile(**kwargs):
 	"""
-	Resolves current logged in user from Frappe session cookie or Token Auth.
+	Unified Attendee & User Profile API (Single Source of Truth).
+	Returns ALL user identity, role, stall booking, payment status, and digital pass details.
 	Strictly requires authentication (Guests not allowed).
 	Prevents IDOR: Users can only see their own profile.
 	"""
-	from connectfest.services.passes import get_my_dashboard
-	try:
-		data = extract_request_data(kwargs)
-		sess_user = getattr(frappe.session, "user", None)
+	data = extract_request_data(kwargs)
+	sess_user = getattr(frappe.session, "user", None)
 
-		if not sess_user or sess_user == "Guest":
-			frappe.local.response["http_status_code"] = 401
-			return {
-				"status": "unauthorized",
-				"is_logged_in": False,
-				"user": "Guest",
-				"message": "Authentication required! Please log in with OTP or credentials to view your profile and bookings.",
-			}
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"is_logged_in": False,
+			"user": "Guest",
+			"message": "Authentication required! Please log in with OTP or credentials to view your profile and bookings.",
+		}
 
-		# Prevent IDOR: Disallow peeking into another user's profile
-		requested_email = (data.get("email") or data.get("user_email") or "").strip().lower()
-		if requested_email and requested_email != sess_user.lower() and not is_admin_user(sess_user):
+	# Prevent IDOR: Disallow peeking into another user's profile
+	target_user = sess_user
+	requested_email = (data.get("email") or data.get("user_email") or "").strip().lower()
+	if requested_email and requested_email != sess_user.lower():
+		if not is_admin_user(sess_user):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
 				"message": "Access Denied: You are not authorized to view another attendee's personal data!",
 			}
+		target_user = requested_email
 
-		user_doc = frappe.get_doc("User", sess_user)
-		dash = get_my_dashboard(email=sess_user)
-		return {
-			"status": "success",
-			"is_logged_in": True,
-			"user": sess_user,
-			"full_name": user_doc.full_name,
-			"mobile_no": user_doc.mobile_no or user_doc.phone,
-			"roles": [r for r in frappe.get_roles(sess_user) if r not in ("All", "Guest")],
-			"profile": dash,
+	if frappe.db.exists("User", target_user):
+		user_doc = frappe.get_doc("User", target_user)
+		user_full_name = user_doc.full_name
+		user_roles = [r for r in frappe.get_roles(target_user) if r not in ("All", "Guest")]
+		user_mobile = (user_doc.mobile_no or user_doc.phone or "").strip()
+	else:
+		user_full_name = target_user
+		user_roles = ["Website User"]
+		user_mobile = ""
+
+	is_admin = is_admin_user(target_user)
+
+	# Fetch stall booking details (Exhibitor)
+	stalls = frappe.db.sql("""
+		SELECT name, registration_id, full_name, company_name, company_logo, location,
+		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
+		       email, mobile_no, stall_number, stall_category, amount, payment_status,
+		       razorpay_order_id, razorpay_payment_id, payment_date, creation
+		FROM `tabConnectFest Registration`
+		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
+		ORDER BY creation DESC LIMIT 1
+	""", (target_user, user_mobile, user_mobile), as_dict=True)
+
+	# Fetch visitor pass details (Visitor)
+	visitors = frappe.db.sql("""
+		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code,
+		       qr_payload, status, checked_in, checked_in_at, creation
+		FROM `tabConnectFest Visitor Registration`
+		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
+		ORDER BY creation DESC LIMIT 1
+	""", (target_user, user_mobile, user_mobile), as_dict=True)
+
+	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls else ("Visitor" if visitors else "Attendee"))
+
+	stall_booking = None
+	if stalls:
+		sb = stalls[0]
+		stall_doc = None
+		if sb.stall_number and frappe.db.exists("ConnectFest Stall", sb.stall_number):
+			stall_doc = frappe.get_doc("ConnectFest Stall", sb.stall_number)
+
+		tier_name = sb.stall_category or (stall_doc.tier if stall_doc else "")
+		zone_map = {
+			"Silver": "Zone D - East Pavilions",
+			"Premium": "Zone C - Center Aisles",
+			"Standard": "Zone B - West Aisles",
+			"Regular": "Zone E - South Entrance Corridor",
 		}
-	except Exception as e:
-		frappe.log_error("ConnectFest Profile Fetch Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		zone = zone_map.get(tier_name, "Zone B - West Aisles" if tier_name else None)
+		is_paid = (sb.payment_status == "Paid")
+		status_desc = "Confirmed" if is_paid else ("Awaiting Payment" if sb.stall_number else "Stall Not Selected")
+
+		stall_booking = {
+			"registration_id": sb.registration_id,
+			"full_name": sb.full_name or user_full_name,
+			"company_name": sb.company_name or "",
+			"company_logo": sb.company_logo or "",
+			"location": sb.location or "",
+			"industry": sb.industry or "",
+			"segment": sb.segment or "",
+			"is_bni_member": bool(sb.is_bni_member),
+			"region_name": sb.region_name or "",
+			"chapter_name": sb.chapter_name or "",
+			"source_of_info": sb.source_of_info or "",
+			"email": sb.email,
+			"mobile_no": sb.mobile_no or user_mobile,
+			"stall_number": sb.stall_number,
+			"stall_category": tier_name,
+			"zone": zone,
+			"dimensions": (stall_doc.dimensions if stall_doc else "") or ("Standard" if sb.stall_number else None),
+			"amount": flt(sb.amount),
+			"payment_status": sb.payment_status or "Pending",
+			"has_paid": is_paid,
+			"has_selected_stall": bool(sb.stall_number),
+			"next_action": "view_badge" if is_paid else ("proceed_to_payment" if sb.stall_number else "select_stall"),
+			"razorpay_payment_id": sb.razorpay_payment_id,
+			"razorpay_order_id": sb.razorpay_order_id,
+			"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
+			"booking_status": status_desc,
+			"badge_qr_payload": f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_paid else None,
+			"venue": "Chennai Trade Centre, Nandambakkam",
+			"dates": "20 & 21 Feb 2027",
+		}
+
+	visitor_pass = None
+	if visitors:
+		v = visitors[0]
+		visitor_pass = {
+			"registration_id": v.registration_id,
+			"pass_code": v.pass_code,
+			"full_name": v.full_name or user_full_name,
+			"email": v.email,
+			"mobile_no": v.mobile_no or user_mobile,
+			"which_day": v.which_day,
+			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
+			"status": v.status or "Registered",
+			"checked_in": int(v.checked_in or 0),
+			"checked_in_at": str(v.checked_in_at or ""),
+			"qr_payload": v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}",
+			"venue": "Chennai Trade Centre, Nandambakkam",
+			"dates": "20 & 21 Feb 2027",
+		}
+
+	res = {
+		"status": "success",
+		"is_logged_in": True,
+		"user": target_user,
+		"email": target_user,
+		"full_name": user_full_name,
+		"mobile_no": user_mobile,
+		"roles": user_roles,
+		"role_type": role_type,
+		"is_admin": is_admin,
+
+		# Stall & Exhibitor details
+		"has_stall_booking": bool(stall_booking),
+		"stall_booking": stall_booking,
+
+		# Visitor Pass details
+		"has_visitor_pass": bool(visitor_pass),
+		"visitor_pass": visitor_pass,
+
+		# Event Info
+		"venue": "Chennai Trade Centre, Nandambakkam",
+		"dates": "20 & 21 Feb 2027",
+	}
+
+	# Flatten primary booking fields directly on root level
+	if stall_booking:
+		for k, val in stall_booking.items():
+			if k not in res:
+				res[k] = val
+	elif visitor_pass:
+		for k, val in visitor_pass.items():
+			if k not in res:
+				res[k] = val
+
+	# Keep profile key for backwards compatibility
+	res["profile"] = {
+		"status": "success",
+		"is_authorized": True,
+		"has_stall_booking": bool(stall_booking),
+		"stall_booking": stall_booking,
+		"has_visitor_pass": bool(visitor_pass),
+		"visitor_pass": visitor_pass,
+	}
+
+	if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
+		frappe.local.response["http_status_code"] = 200
+	return res
 
 
 def login_attendee(email=None, mobile_no=None, password=None, **kwargs):

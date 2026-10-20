@@ -210,8 +210,10 @@ def get_registration(registration_id):
 
 @frappe.whitelist(allow_guest=True)
 def get_my_dashboard(email=None, mobile_no=None, **kwargs):
-	"""Attendee dashboard returning booked stall & digital pass."""
-	return _get_my_dashboard(email=email, mobile_no=mobile_no, **kwargs)
+	"""Attendee dashboard alias returning complete user profile and bookings."""
+	kwargs["email"] = email
+	kwargs["mobile_no"] = mobile_no
+	return _get_current_user_profile(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

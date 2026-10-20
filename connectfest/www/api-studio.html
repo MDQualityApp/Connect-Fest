@@ -1162,35 +1162,19 @@
           pass_code: savedPassCode
         }, null, 2)
       },
-      my_dashboard_secure: {
-        id: "my_dashboard_secure",
+      get_current_user_profile: {
+        id: "get_current_user_profile",
         cat: "pass",
-        title: "4.2 Attendee Dashboard (Full Access with Registration ID)",
-        label: "Dashboard (Full Access)",
-        method: "POST",
-        url: `${HOST}/api/method/connectfest.api.get_my_dashboard`,
-        hasBody: true,
-        getBody: () => JSON.stringify({
-          registration_id: savedRegId,
-          email: "karthik@titaniumlabs.com"
-        }, null, 2)
-      },
-      my_dashboard_public: {
-        id: "my_dashboard_public",
-        cat: "pass",
-        title: "4.3 Attendee Dashboard (Public Query - Privacy Masked)",
-        label: "Dashboard (Public Masked)",
-        method: "POST",
-        url: `${HOST}/api/method/connectfest.api.get_my_dashboard`,
-        hasBody: true,
-        body: JSON.stringify({
-          email: "karthik@titaniumlabs.com"
-        }, null, 2)
+        title: "4.2 Get Current User Profile (All-In-One: Identity, Stall & Pass Details)",
+        label: "Current User Profile (me)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
+        hasBody: false
       },
       login_attendee: {
         id: "login_attendee",
         cat: "pass",
-        title: "4.4 Attendee Login",
+        title: "4.3 Attendee Login",
         label: "Attendee Login",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.login_attendee`,
@@ -1202,7 +1186,7 @@
       send_otp: {
         id: "send_otp",
         cat: "pass",
-        title: "4.5 Mobile OTP: Send 6-Digit OTP",
+        title: "4.4 Mobile OTP: Send 6-Digit OTP",
         label: "Send Mobile OTP",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.send_otp`,
@@ -1214,7 +1198,7 @@
       verify_otp: {
         id: "verify_otp",
         cat: "pass",
-        title: "4.6 Mobile OTP: Verify & Login",
+        title: "4.5 Mobile OTP: Verify & Login",
         label: "Verify Mobile OTP",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.verify_otp`,
@@ -1227,19 +1211,10 @@
       lookup_reg: {
         id: "lookup_reg",
         cat: "pass",
-        title: "4.5 Universal Registration Lookup by ID",
+        title: "4.6 Universal Registration Lookup by ID",
         label: "Universal Reg Lookup",
         method: "GET",
         getUrl: () => `${HOST}/api/method/connectfest.api.get_registration?registration_id=${savedRegId || 'REG-CF27-0001'}`,
-        hasBody: false
-      },
-      get_current_user_profile: {
-        id: "get_current_user_profile",
-        cat: "pass",
-        title: "4.7 Current Logged-in User Profile (Anti-IDOR)",
-        label: "Current User Profile",
-        method: "GET",
-        url: `${HOST}/api/method/connectfest.api.get_current_user_profile`,
         hasBody: false
       },
       update_profile: {
