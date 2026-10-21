@@ -11,6 +11,7 @@ from frappe.utils import now_datetime, cint, flt
 from connectfest.services.common import (
 	STALL_CACHE_PREFIX,
 	extract_request_data,
+	parse_boolean,
 	get_cached_record,
 	set_cached_record,
 	handle_api_errors,
