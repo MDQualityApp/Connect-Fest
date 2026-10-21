@@ -456,6 +456,12 @@ def register_visitor(**kwargs):
 	mobile_no = (data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip()
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
+	matched_source = None
+	for src in VALID_SOURCES:
+		if src.lower() == source_of_info.lower():
+			matched_source = src
+			break
+	source_of_info = matched_source or ("Other" if source_of_info else "")
 
 	errors = []
 	if not full_name:
@@ -470,6 +476,22 @@ def register_visitor(**kwargs):
 	if errors:
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	cache = frappe.cache()
+	lock_email_key = cache.make_key(f"connectfest:lock_vreg:{email}") if email else None
+	lock_mob_key = cache.make_key(f"connectfest:lock_vreg:{mobile_no}") if mobile_no else None
+	has_lock = False
+	if lock_email_key or lock_mob_key:
+		try:
+			acq_e = cache.set(lock_email_key, "1", nx=True, ex=10) if lock_email_key else True
+			acq_m = cache.set(lock_mob_key, "1", nx=True, ex=10) if lock_mob_key else True
+			if not (acq_e and acq_m):
+				# Another concurrent thread is currently creating this registration!
+				time.sleep(0.35)
+			else:
+				has_lock = True
+		except Exception:
+			has_lock = True
 
 	# Check for Existing Registration (Strict Uniqueness on Email & Mobile)
 	existing = frappe.db.sql("""
@@ -622,6 +644,12 @@ def register_visitor(**kwargs):
 		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+	finally:
+		if has_lock:
+			if lock_email_key:
+				cache.delete(lock_email_key)
+			if lock_mob_key:
+				cache.delete(lock_mob_key)
 
 
 @handle_api_errors("ConnectFest Check Booking Status Error")
