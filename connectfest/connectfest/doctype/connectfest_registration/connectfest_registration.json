@@ -168,7 +168,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Stall Category",
-   "options": "\nRegular\nStandard\nPremium\nSilver",
+   "options": "Regular\nStandard\nPremium\nSilver\nTitle Sponsor",
    "reqd": 0
   },
   {

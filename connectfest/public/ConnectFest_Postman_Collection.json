@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "connectfest-2027-api-collection-v3",
     "name": "ConnectFest 2027 Complete APIs (Stalls, Theatre Lock, Razorpay, Passes & Admin)",
-    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 195 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- ConnectFest 3-Step Razorpay Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
+    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 220 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- ConnectFest 3-Step Razorpay Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -40,14 +40,14 @@
   "item": [
     {
       "name": "1. Stall Inventory & Theatre Seat Locking",
-      "description": "Endpoints for 195 stalls inventory and concurrency locking.",
+      "description": "Endpoints for 220 stalls inventory and concurrency locking.",
       "item": [
         {
-          "name": "1.1 Get All 195 Stalls (Real-Time Map & Status)",
+          "name": "1.1 Get All 220 Stalls (Real-Time Map & Status)",
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/method/connectfest.api.get_stalls",
-            "description": "Fetches all 195 stalls with tier summary, prices, dimensions, and real-time status (Available, Hold, Booked, Blocked)."
+            "description": "Fetches all 220 stalls with tier summary, prices, dimensions, and real-time status (Available, Hold, Booked, Blocked)."
           }
         },
         {
@@ -391,7 +391,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/method/connectfest.api.get_admin_dashboard_data",
-            "description": "Real-time metrics: 195 stalls count, revenue, visitor registration and gate check-ins."
+            "description": "Real-time metrics: 220 stalls count, revenue, visitor registration and gate check-ins."
           }
         },
         {

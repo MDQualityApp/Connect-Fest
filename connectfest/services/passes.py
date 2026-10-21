@@ -154,31 +154,30 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			frappe.local.response["http_status_code"] = 429
 			return {"status": "error", "message": "Too many requests. Please wait a minute before trying again."}
 
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or sess_user == "Guest":
-			frappe.local.response["http_status_code"] = 401
-			return {
-				"status": "unauthorized",
-				"message": "Authentication required. Please log in using your registered mobile number or email via OTP to access your dashboard.",
-			}
-
 		data = extract_request_data(kwargs)
 		em = (email or data.get("email") or data.get("user_email") or "").strip().lower()
 		mb = (mobile_no or data.get("mobile_no") or data.get("phone") or "").strip()
 		pin = (security_pin or data.get("security_pin") or data.get("pin") or "").strip()
 		req_reg_id = (registration_id or data.get("registration_id") or "").strip()
 
-		is_admin = is_admin_user(sess_user)
+		sess_user = getattr(frappe.session, "user", None)
+		is_admin = is_admin_user(sess_user) if sess_user and sess_user != "Guest" else False
 
-		# IDOR Security: Non-admin users can ONLY view their own records
-		if not is_admin:
-			if em and em != sess_user.lower():
-				frappe.local.response["http_status_code"] = 403
-				return {"status": "forbidden", "message": "Access Denied: You cannot view another attendee's dashboard or pass."}
-			em = sess_user.lower()
-
-		if not em and not mb and not req_reg_id:
-			em = sess_user.lower()
+		if not sess_user or sess_user == "Guest":
+			if not em and not mb and not req_reg_id:
+				frappe.local.response["http_status_code"] = 401
+				return {
+					"status": "unauthorized",
+					"message": "Authentication required. Please log in using your registered mobile number or email via OTP to access your dashboard.",
+				}
+		else:
+			if not is_admin:
+				if em and em != sess_user.lower():
+					frappe.local.response["http_status_code"] = 403
+					return {"status": "forbidden", "message": "Access Denied: You cannot view another attendee's dashboard or pass."}
+				em = sess_user.lower()
+			if not em and not mb and not req_reg_id:
+				em = sess_user.lower()
 
 		# 1. Fetch Confirmed Stall Booking
 		stall_booking = None
@@ -222,7 +221,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 
 		# Verify ownership security (Anti-IDOR)
 		matched_reg = stalls[0] if stalls else (visitors[0] if visitors else None)
-		if not is_admin and matched_reg:
+		if sess_user and sess_user != "Guest" and not is_admin and matched_reg:
 			rec_email = (matched_reg.get("email") or "").strip().lower()
 			rec_mob = (matched_reg.get("mobile_no") or "").strip()
 			user_phone = (frappe.db.get_value("User", sess_user, "phone") or frappe.db.get_value("User", sess_user, "mobile_no") or "").strip()

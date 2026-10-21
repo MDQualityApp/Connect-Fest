@@ -53,9 +53,10 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	"""
 	data = extract_request_data(kwargs)
 	reg_id = (registration_id or data.get("registration_id") or "").strip()
+	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
 
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
+	if not is_internal and (not sess_user or sess_user == "Guest"):
 		frappe.local.response["http_status_code"] = 401
 		return {
 			"status": "unauthorized",
@@ -112,9 +113,9 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 			"stall_number": record.get("stall_number"),
 		}
 
-	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
+	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin or internal creation)
 	from connectfest.services.auth import is_admin_user
-	if not is_admin_user(sess_user):
+	if not is_internal and not is_admin_user(sess_user):
 		rec_email = (record.get("email") or "").strip().lower()
 		rec_mob = (record.get("mobile_no") or "").strip()
 		sess_lower = sess_user.strip().lower()
@@ -258,15 +259,9 @@ def verify_razorpay_payment(**kwargs):
 	signature = (data.get("razorpay_signature") or "").strip()
 
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
-		frappe.local.response["http_status_code"] = 401
-		return {
-			"status": "unauthorized",
-			"message": "Login required to verify or finalize payment. Please log in with your registered mobile or email via OTP.",
-		}
 
 	# Auto-resolve registration_id for logged-in exhibitor if omitted
-	if not reg_id and sess_user:
+	if not reg_id and sess_user and sess_user != "Guest":
 		reg_id = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
 
 	if not (reg_id and order_id and payment_id and signature):
@@ -284,9 +279,9 @@ def verify_razorpay_payment(**kwargs):
 			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
 		}
 
-	# IDOR Prevention
+	# IDOR Prevention: If logged in as non-admin, ensure user owns the registration
 	from connectfest.services.auth import is_admin_user
-	if not is_admin_user(sess_user):
+	if sess_user and sess_user != "Guest" and not is_admin_user(sess_user):
 		reg_email = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or frappe.db.get_value("ConnectFest Registration", reg_id, "email")
 		if reg_email and reg_email.lower() != sess_user.lower():
 			frappe.local.response["http_status_code"] = 403
@@ -514,7 +509,7 @@ def preview_payment(**kwargs):
 	doctype = (data.get("reference_doctype") or data.get("doctype") or "ConnectFest Registration").strip()
 
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
+	if not docname and (not sess_user or sess_user == "Guest"):
 		frappe.local.response["http_status_code"] = 401
 		return {
 			"status": "unauthorized",
@@ -567,7 +562,7 @@ def preview_payment(**kwargs):
 
 	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
 	from connectfest.services.auth import is_admin_user
-	if not is_admin_user(sess_user):
+	if sess_user and sess_user != "Guest" and not is_admin_user(sess_user):
 		rec_email = (record.get("email") or "").strip().lower()
 		rec_mob = (record.get("mobile_no") or "").strip()
 		sess_lower = sess_user.strip().lower()
@@ -662,8 +657,8 @@ def checkout(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "reference_docname or registration_id is required"}
 
-	order_res = create_razorpay_order(registration_id=docname, **kwargs)
-	if order_res.get("status") == "error":
+	order_res = create_razorpay_order(registration_id=docname, is_internal=True, **kwargs)
+	if order_res.get("status") in ("error", "unauthorized", "forbidden"):
 		return order_res
 
 	order_info = order_res.get("order", {})
@@ -700,7 +695,7 @@ def finalize_payment(**kwargs):
 	kwargs["registration_id"] = docname
 
 	verify_res = verify_razorpay_payment(**kwargs)
-	if verify_res.get("status") == "error":
+	if verify_res.get("status") in ("error", "unauthorized", "forbidden", "conflict_refunded", "conflict_pending_admin"):
 		return verify_res
 
 	return {

@@ -842,6 +842,16 @@
         <div class="section-title">7. Dynamic Stall Pricing & GST (CRUD)</div>
         <div class="endpoint-list" id="pricingList"></div>
       </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">8. Gallery Management (Multiple Images & Pinning)</div>
+        <div class="endpoint-list" id="galleryList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">9. Event Sponsors & Partners (Public & Admin)</div>
+        <div class="endpoint-list" id="sponsorList"></div>
+      </div>
     </div>
 
     <!-- 2. MIDDLE: REQUEST EDITOR -->
@@ -1018,8 +1028,8 @@
       get_stalls: {
         id: "get_stalls",
         cat: "stall",
-        title: "2.1 Floor Map Inventory (All 195 Stalls & Live Status)",
-        label: "Floor Map (195 Stalls)",
+        title: "2.1 Floor Map Inventory (All 220 Stalls & Live Status)",
+        label: "Floor Map (220 Stalls)",
         method: "GET",
         url: `${HOST}/api/method/connectfest.api.get_stalls`,
         hasBody: false
@@ -1355,6 +1365,33 @@
           enabled: 0
         }, null, 2)
       },
+      admin_get_all_users: {
+        id: "admin_get_all_users",
+        cat: "admin",
+        title: "5.8 Admin Get All Users (Exhibitors, Visitors, Admins & Summary)",
+        label: "Get All Users (Directory)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_all_users`,
+        hasBody: false
+      },
+      admin_get_all_users_exhibitors: {
+        id: "admin_get_all_users_exhibitors",
+        cat: "admin",
+        title: "5.9 Admin Get Users Filtered by Role (Exhibitor / Visitor)",
+        label: "Filter Users by Role",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_all_users?role=exhibitor`,
+        hasBody: false
+      },
+      admin_get_user_details: {
+        id: "admin_get_user_details",
+        cat: "admin",
+        title: "5.10 Admin Get Single User Details (By Email or Mobile)",
+        label: "Get User Details",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_user_details?user_email=Administrator`,
+        hasBody: false
+      },
 
       // 6. ADMIN STALL MANAGEMENT & BUYER REPORTS
       admin_get_stalls_all: {
@@ -1439,8 +1476,8 @@
       admin_restore_defaults: {
         id: "admin_restore_defaults",
         cat: "admin_stall",
-        title: "6.8 Admin Restore Defaults (Re-seeds 4 Tiers & 195 Stalls On-Demand)",
-        label: "Restore Defaults (4 Tiers + 195 Stalls)",
+        title: "6.8 Admin Restore Defaults (Re-seeds 5 Tiers & 220 Stalls On-Demand)",
+        label: "Restore Defaults (5 Tiers + 220 Stalls)",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.admin_restore_defaults`,
         hasBody: true,
@@ -1502,6 +1539,215 @@
         body: JSON.stringify({
           tier_name: "VIP Pavilion"
         }, null, 2)
+      },
+
+      // 8. GALLERY APIS
+      get_gallery: {
+        id: "get_gallery",
+        cat: "gallery",
+        title: "8.1 Public Website Gallery (Pinned Images Always First!)",
+        label: "Public Gallery (Pinned First)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_gallery`,
+        hasBody: false
+      },
+      get_gallery_category: {
+        id: "get_gallery_category",
+        cat: "gallery",
+        title: "8.2 Public Gallery Filtered by Category",
+        label: "Gallery by Category",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_gallery?category=Highlights`,
+        hasBody: false
+      },
+      get_gallery_item: {
+        id: "get_gallery_item",
+        cat: "gallery",
+        title: "8.3 Public View Single Gallery Item & Multiple Images",
+        label: "Get Single Gallery Item",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_gallery_item?gallery_id=GAL-00105`,
+        hasBody: false
+      },
+      admin_create_gallery_item: {
+        id: "admin_create_gallery_item",
+        cat: "gallery",
+        title: "8.4 Admin Create Gallery Item (Multiple Images + Pin to Top)",
+        label: "Create Gallery Item (Multiple Images)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_create_gallery_item`,
+        hasBody: true,
+        body: JSON.stringify({
+          title: "ConnectFest 2027 Grand Expo Stage & Dignitaries",
+          description: "Exclusive photos from the main auditorium and opening ceremony.",
+          category: "Highlights",
+          is_pinned: 1,
+          images: [
+            {
+              image: "/files/stage_photo_1.jpg",
+              caption: "Lighting the Lamp with Chief Guests",
+              is_cover: 1
+            },
+            {
+              image: "/files/stage_photo_2.jpg",
+              caption: "Keynote Address by Title Sponsor"
+            },
+            {
+              image: "/files/stage_photo_3.jpg",
+              caption: "Audience and VIP delegation"
+            }
+          ]
+        }, null, 2)
+      },
+      admin_toggle_gallery_pin: {
+        id: "admin_toggle_gallery_pin",
+        cat: "gallery",
+        title: "8.5 Admin Pin / Unpin Items (Single or Multiple Bulk Pin)",
+        label: "Pin / Unpin (Single/Multi)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_toggle_gallery_pin`,
+        hasBody: true,
+        body: JSON.stringify({
+          gallery_ids: ["GAL-00105", "GAL-00106"],
+          is_pinned: 1
+        }, null, 2)
+      },
+      admin_update_gallery_item: {
+        id: "admin_update_gallery_item",
+        cat: "gallery",
+        title: "8.6 Admin Update Gallery Item (Add More Images / Edit Title)",
+        label: "Update Gallery Item",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_update_gallery_item`,
+        hasBody: true,
+        body: JSON.stringify({
+          gallery_id: "GAL-00105",
+          title: "ConnectFest 2027 Grand Expo Stage & Dignitaries (Updated)",
+          append_images: 1,
+          images: [
+            {
+              image: "/files/stage_photo_4.jpg",
+              caption: "Networking Tea Break"
+            }
+          ]
+        }, null, 2)
+      },
+      admin_get_gallery_items: {
+        id: "admin_get_gallery_items",
+        cat: "gallery",
+        title: "8.7 Admin View All Gallery Items (Including Drafts & Sort Order)",
+        label: "Admin List All Gallery",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_gallery_items`,
+        hasBody: false
+      },
+      admin_delete_gallery_item: {
+        id: "admin_delete_gallery_item",
+        cat: "gallery",
+        title: "8.8 Admin Delete Gallery Items (Single or Multiple Bulk Deletion)",
+        label: "Delete Gallery (Single/Multi)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_gallery_item`,
+        hasBody: true,
+        body: JSON.stringify({
+          gallery_ids: ["GAL-00105", "GAL-00106"]
+        }, null, 2)
+      },
+      get_sponsors: {
+        id: "get_sponsors",
+        cat: "sponsor",
+        title: "9.1 Public View All Sponsors (Categories & Sponsors Directory)",
+        label: "Public Sponsors Directory",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_sponsors`,
+        hasBody: false
+      },
+      get_sponsors_category: {
+        id: "get_sponsors_category",
+        cat: "sponsor",
+        title: "9.2 Public Filter Sponsors by Category (e.g. Title Sponsor)",
+        label: "Filter by Sponsor Tier",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_sponsors?category=Title+Sponsor`,
+        hasBody: false
+      },
+      get_sponsor_details: {
+        id: "get_sponsor_details",
+        cat: "sponsor",
+        title: "9.3 Public View Single Sponsor Details",
+        label: "Sponsor Details Profile",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_sponsor_details?sponsor_id=SPON-00122`,
+        hasBody: false
+      },
+      admin_create_sponsor: {
+        id: "admin_create_sponsor",
+        cat: "sponsor",
+        title: "9.4 Admin Add Sponsor (Company + What they Sponsored)",
+        label: "Admin Add Sponsor",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_create_sponsor`,
+        hasBody: true,
+        body: JSON.stringify({
+          sponsor_name: "Google Cloud",
+          sponsor_category: "Innovation Partner",
+          sponsored_for: "Official AI & Cloud Innovation Stage Partner",
+          logo: "/files/google_cloud.png",
+          website_url: "https://cloud.google.com",
+          is_featured: 1,
+          display_order: 1,
+          description: "Empowering next-generation enterprise AI and scalable infrastructure."
+        }, null, 2)
+      },
+      admin_get_sponsors: {
+        id: "admin_get_sponsors",
+        cat: "sponsor",
+        title: "9.5 Admin View All Sponsors (Active, Inactive & Summary)",
+        label: "Admin List All Sponsors",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_sponsors`,
+        hasBody: false
+      },
+      admin_update_sponsor: {
+        id: "admin_update_sponsor",
+        cat: "sponsor",
+        title: "9.6 Admin Update Sponsor (Edit Purpose, Links, Stall)",
+        label: "Update Sponsor Info",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_update_sponsor`,
+        hasBody: true,
+        body: JSON.stringify({
+          sponsor_id: "SPON-00122",
+          sponsored_for: "Grand Title Event Sponsor & Official Cloud Ecosystem Partner",
+          website_url: "https://zoho.com",
+          display_order: 1
+        }, null, 2)
+      },
+      admin_toggle_sponsor_status: {
+        id: "admin_toggle_sponsor_status",
+        cat: "sponsor",
+        title: "9.7 Admin Toggle Sponsor Status (Feature or Publish/Unpublish)",
+        label: "Toggle Status / Feature",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_toggle_sponsor_status`,
+        hasBody: true,
+        body: JSON.stringify({
+          sponsor_ids: ["SPON-00122"],
+          is_featured: 1,
+          is_active: 1
+        }, null, 2)
+      },
+      admin_delete_sponsor: {
+        id: "admin_delete_sponsor",
+        cat: "sponsor",
+        title: "9.8 Admin Delete Sponsor (Single or Multiple Bulk Deletion)",
+        label: "Delete Sponsor (Single/Multi)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_sponsor`,
+        hasBody: true,
+        body: JSON.stringify({
+          sponsor_ids: ["SPON-00127"]
+        }, null, 2)
       }
     };
 
@@ -1515,7 +1761,9 @@
         pass: document.getElementById('passList'),
         admin: document.getElementById('adminList'),
         admin_stall: document.getElementById('adminStallList'),
-        pricing: document.getElementById('pricingList')
+        pricing: document.getElementById('pricingList'),
+        gallery: document.getElementById('galleryList'),
+        sponsor: document.getElementById('sponsorList')
       };
 
       Object.values(lists).forEach(l => { if (l) l.innerHTML = ''; });

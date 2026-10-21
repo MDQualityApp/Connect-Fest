@@ -569,6 +569,310 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 		return {"status": "error", "message": str(e)}
 
 
+@handle_api_errors("ConnectFest Admin Get All Users Error")
+def admin_get_all_users(**kwargs):
+	"""
+	Admin API: Returns a unified directory of all users in ConnectFest.
+	Includes:
+	- Role categorization: Exhibitor, Visitor, Administrator, Website User
+	- Exhibitor details (company, stall number, payment status, amount)
+	- Visitor details (pass code, which day, checked-in status)
+	- Filter by role ('exhibitor', 'visitor', 'admin', 'all')
+	- Filter by status ('active' / enabled=1, 'disabled' / enabled=0)
+	- Search by name, email, phone, stall number, pass code
+	- Comprehensive summary counts & pagination
+	Requires System Manager or Administrator privileges.
+	"""
+	err = check_admin_permission("user directory access")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	role_filter = (data.get("role") or data.get("user_type") or data.get("type") or "all").strip().lower()
+	status_filter = data.get("status") or data.get("enabled")
+	payment_filter = (data.get("payment_status") or "").strip()
+	search_query = (data.get("search") or data.get("query") or "").strip().lower()
+
+	raw_page = data.get("page")
+	raw_limit = data.get("limit") or data.get("page_size") or 50
+	page = max(1, cint(raw_page)) if raw_page else 1
+	limit = 0 if str(raw_limit).lower() in ("all", "0") else min(500, max(1, cint(raw_limit)))
+
+	# 1. Fetch all Exhibitor registrations
+	exhibitor_records = frappe.get_all(
+		"ConnectFest Registration",
+		fields=[
+			"registration_id", "full_name", "email", "mobile_no", "company_name",
+			"company_logo", "location", "stall_number", "stall_category",
+			"amount", "payment_status", "status", "creation", "modified"
+		],
+		limit_page_length=0
+	)
+	exhibitors_by_email = {}
+	for ex in exhibitor_records:
+		if ex.email:
+			exhibitors_by_email[ex.email.strip().lower()] = ex
+
+	# 2. Fetch all Visitor registrations
+	visitor_records = frappe.get_all(
+		"ConnectFest Visitor Registration",
+		fields=[
+			"registration_id", "full_name", "email", "mobile_no", "which_day",
+			"pass_code", "checked_in", "checked_in_at", "status", "creation", "modified"
+		],
+		limit_page_length=0
+	)
+	visitors_by_email = {}
+	for vis in visitor_records:
+		if vis.email:
+			visitors_by_email[vis.email.strip().lower()] = vis
+
+	# 3. Fetch all Frappe Users
+	user_records = frappe.get_all(
+		"User",
+		filters={"name": ("not in", ["Guest"])},
+		fields=[
+			"name", "email", "first_name", "last_name", "full_name",
+			"phone", "mobile_no", "enabled", "user_type", "user_image",
+			"creation", "modified", "last_login", "last_active"
+		],
+		order_by="creation desc",
+		limit_page_length=0
+	)
+	users_by_email = {u.name.strip().lower(): u for u in user_records}
+
+	# 4. Fetch User Roles
+	roles_by_user = {}
+	role_rows = frappe.db.sql("""
+		SELECT parent, role FROM `tabHas Role`
+		WHERE parent != 'Guest'
+	""", as_dict=True)
+	for r in role_rows:
+		roles_by_user.setdefault(r.parent.strip().lower(), []).append(r.role)
+
+	# 5. Collect all unique attendee identities (combining User, Exhibitor, Visitor)
+	all_identities = set(users_by_email.keys()) | set(exhibitors_by_email.keys()) | set(visitors_by_email.keys())
+
+	unified_users = []
+	for email_key in all_identities:
+		u_doc = users_by_email.get(email_key)
+		ex_doc = exhibitors_by_email.get(email_key)
+		vis_doc = visitors_by_email.get(email_key)
+		user_roles = roles_by_user.get(email_key, [])
+
+		is_admin = (
+			email_key == "administrator"
+			or "Administrator" in user_roles
+			or "System Manager" in user_roles
+			or "ConnectFest Admin" in user_roles
+		)
+
+		# Determine primary user category
+		if is_admin:
+			category = "Admin"
+		elif ex_doc:
+			category = "Exhibitor"
+		elif vis_doc:
+			category = "Visitor"
+		else:
+			category = "Website User"
+
+		full_name = (
+			(u_doc.full_name if u_doc else "")
+			or (ex_doc.full_name if ex_doc else "")
+			or (vis_doc.full_name if vis_doc else "")
+			or email_key.split("@")[0]
+		).strip()
+
+		mobile = (
+			(u_doc.mobile_no or u_doc.phone if u_doc else "")
+			or (ex_doc.mobile_no if ex_doc else "")
+			or (vis_doc.mobile_no if vis_doc else "")
+			or ""
+		).strip()
+
+		enabled = cint(u_doc.enabled) if u_doc else 1
+		creation = str(u_doc.creation if u_doc else (ex_doc.creation if ex_doc else (vis_doc.creation if vis_doc else "")))
+		last_login = str(u_doc.last_login if u_doc and u_doc.last_login else "")
+		user_image = (u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or ""
+
+		exhibitor_info = None
+		if ex_doc:
+			exhibitor_info = {
+				"registration_id": ex_doc.registration_id,
+				"company_name": ex_doc.company_name or "",
+				"company_logo": ex_doc.company_logo or "",
+				"stall_number": ex_doc.stall_number or None,
+				"stall_category": ex_doc.stall_category or None,
+				"amount": flt(ex_doc.amount),
+				"payment_status": ex_doc.payment_status or "Pending",
+				"status": ex_doc.status or "Registered",
+			}
+
+		visitor_info = None
+		if vis_doc:
+			visitor_info = {
+				"registration_id": vis_doc.registration_id,
+				"pass_code": vis_doc.pass_code or "",
+				"which_day": vis_doc.which_day or "Both days",
+				"checked_in": cint(vis_doc.checked_in),
+				"checked_in_at": str(vis_doc.checked_in_at or ""),
+				"status": vis_doc.status or "Registered",
+			}
+
+		user_entry = {
+			"email": email_key,
+			"full_name": full_name,
+			"mobile_no": mobile,
+			"user_type": category,
+			"category": category,
+			"enabled": enabled,
+			"is_active": bool(enabled),
+			"user_image": user_image,
+			"roles": user_roles or (["Website User"] if category != "Admin" else ["System Manager", "Administrator"]),
+			"creation": creation,
+			"last_login": last_login,
+			"exhibitor_details": exhibitor_info,
+			"visitor_details": visitor_info,
+		}
+		unified_users.append(user_entry)
+
+	# Global counts before filtering
+	total_all = len(unified_users)
+	total_exhibitors = sum(1 for u in unified_users if u["user_type"] == "Exhibitor")
+	total_visitors = sum(1 for u in unified_users if u["user_type"] == "Visitor")
+	total_admins = sum(1 for u in unified_users if u["user_type"] == "Admin")
+	active_count = sum(1 for u in unified_users if u["enabled"] == 1)
+	disabled_count = sum(1 for u in unified_users if u["enabled"] == 0)
+
+	# Apply Filters
+	filtered_users = unified_users
+
+	# 1. Role Filter
+	if role_filter and role_filter not in ("all", "*"):
+		if role_filter in ("exhibitor", "exhibitors"):
+			filtered_users = [u for u in filtered_users if u["user_type"] == "Exhibitor"]
+		elif role_filter in ("visitor", "visitors"):
+			filtered_users = [u for u in filtered_users if u["user_type"] == "Visitor"]
+		elif role_filter in ("admin", "admins", "administrator"):
+			filtered_users = [u for u in filtered_users if u["user_type"] == "Admin"]
+		elif role_filter in ("website_user", "general", "user"):
+			filtered_users = [u for u in filtered_users if u["user_type"] == "Website User"]
+
+	# 2. Status Filter
+	if status_filter is not None and str(status_filter).strip() != "":
+		s_val = str(status_filter).strip().lower()
+		target_en = 1 if s_val in ("1", "true", "active", "enabled") else 0
+		filtered_users = [u for u in filtered_users if u["enabled"] == target_en]
+
+	# 3. Payment Status Filter (Exhibitor specific)
+	if payment_filter:
+		filtered_users = [
+			u for u in filtered_users
+			if u.get("exhibitor_details") and (u["exhibitor_details"].get("payment_status") or "").lower() == payment_filter.lower()
+		]
+
+	# 4. Search Filter
+	if search_query:
+		q = search_query.lower()
+		filtered_users = [
+			u for u in filtered_users
+			if (
+				q in u["email"].lower()
+				or q in u["full_name"].lower()
+				or q in u["mobile_no"].lower()
+				or (u.get("exhibitor_details") and (
+					q in (u["exhibitor_details"].get("company_name") or "").lower()
+					or q in (u["exhibitor_details"].get("stall_number") or "").lower()
+				))
+				or (u.get("visitor_details") and q in (u["visitor_details"].get("pass_code") or "").lower())
+			)
+		]
+
+	# Sort by creation desc
+	filtered_users.sort(key=lambda x: x.get("creation") or "", reverse=True)
+
+	total_filtered = len(filtered_users)
+
+	# Pagination
+	if limit > 0:
+		start = (page - 1) * limit
+		paginated_users = filtered_users[start:start + limit]
+	else:
+		paginated_users = filtered_users
+		limit = total_filtered or 1
+
+	total_pages = (total_filtered + limit - 1) // limit if limit > 0 else 1
+
+	return {
+		"status": "success",
+		"total_users": total_filtered,
+		"summary": {
+			"total_all": total_all,
+			"total_exhibitors": total_exhibitors,
+			"total_visitors": total_visitors,
+			"total_admins": total_admins,
+			"active_users": active_count,
+			"disabled_users": disabled_count,
+		},
+		"filters_applied": {
+			"role": role_filter,
+			"status": status_filter,
+			"payment_status": payment_filter or None,
+			"search": search_query or None,
+		},
+		"pagination": {
+			"current_page": page,
+			"page_size": limit,
+			"total_items": total_filtered,
+			"total_pages": total_pages,
+			"has_next": page < total_pages,
+			"has_prev": page > 1,
+		},
+		"users": paginated_users,
+	}
+
+
+@handle_api_errors("ConnectFest Admin Get User Details Error")
+def admin_get_user_details(user_email=None, mobile_no=None, **kwargs):
+	"""
+	Admin API to get full details of a specific user by email or mobile number.
+	"""
+	err = check_admin_permission("user details access")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	target_email = (user_email or data.get("user_email") or data.get("email") or "").strip().lower()
+	target_mob = (mobile_no or data.get("mobile_no") or data.get("phone") or "").strip()
+
+	if not target_email and not target_mob:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "user_email or mobile_no is required"}
+
+	# Fetch via admin_get_all_users with search
+	all_res = admin_get_all_users(search=target_email or target_mob, limit=10)
+	users = all_res.get("users", [])
+
+	matched = None
+	for u in users:
+		if target_email and u["email"].lower() == target_email:
+			matched = u
+			break
+		if target_mob and u["mobile_no"] == target_mob:
+			matched = u
+			break
+
+	if not matched:
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "error", "message": f"User not found for '{target_email or target_mob}'"}
+
+	return {
+		"status": "success",
+		"user": matched,
+	}
+
+
 def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 	"""
 	Initiates phone number or email address update with 2-minute OTP verification.

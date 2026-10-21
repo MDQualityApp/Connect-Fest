@@ -205,11 +205,11 @@
       gap: 12px;
     }
 
-    /* TIER CARDS GRID (4 TIERS) */
+    /* TIER CARDS GRID (5 TIERS) */
     .tiers-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
       margin-bottom: 40px;
     }
 
@@ -226,6 +226,15 @@
     .tier-card:hover {
       transform: translateY(-4px);
     }
+
+    /* CARD 0: TITLE SPONSOR (GOLD / ROYAL THEME) */
+    .tier-card.sponsor {
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      border-color: #f59e0b;
+      box-shadow: 0 10px 30px rgba(245, 158, 11, 0.25);
+    }
+
+    .sponsor .tier-number { background: #f59e0b; color: #1e1b4b; font-weight: 900; }
 
     /* CARD 1: SILVER (DARK THEME) */
     .tier-card.silver {
@@ -984,7 +993,7 @@
 
     <div class="header-badge">
       <div class="dot"></div>
-      <span id="header-status">195 STALLS LIVE</span>
+      <span id="header-status">220 STALLS LIVE</span>
     </div>
   </header>
 
@@ -1000,7 +1009,7 @@
         <h2 class="hero-title">Pick Your Stall.</h2>
         <h2 class="hero-subtitle">Own The Two Days.</h2>
         <div class="hero-meta">
-          <span>195 stalls &bull; 4 tiers</span>
+          <span>220 stalls &bull; 5 tiers (Official Blueprint)</span>
           <span style="color: var(--red);">&bull;</span>
           <span>1 User = 1 Stall Booking</span>
         </div>
@@ -1034,24 +1043,24 @@
           </div>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; font-size: 12px;">
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
-              <strong style="color: #60a5fa; display: block; margin-bottom: 2px;">Zone A - West Facilities</strong>
-              <span style="color: var(--text-muted);">Food Court (13x12m) &bull; Dining Hall (9x12m) &bull; Conference Hall (19x12m) &bull; VIP Green Room &bull; Store Room</span>
+              <strong style="color: #fef08a; display: block; margin-bottom: 2px;">Zone TS - Title Sponsor</strong>
+              <span style="color: var(--text-muted);">Title Sponsor Arena (12x4m, TS-01) &bull; Center Stage VIP Pavilion &bull; Maximum Event Footfall</span>
             </div>
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
-              <strong style="color: #34d399; display: block; margin-bottom: 2px;">Zone B - West Aisles</strong>
-              <span style="color: var(--text-muted);">Standard Stalls (3x2m) &bull; ST-01 to ST-60 &bull; Convenient access to main conference & food halls</span>
+              <strong style="color: #cbd5e1; display: block; margin-bottom: 2px;">Zone D - East Pavilions (Silver)</strong>
+              <span style="color: var(--text-muted);">37 Silver Stalls (4x3m, 6x3m, 8x3m, 6x4m, 8x4m, 6x5m) &bull; Blocks J, K, L, M</span>
             </div>
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
-              <strong style="color: #f59e0b; display: block; margin-bottom: 2px;">Zone C - Center Aisles</strong>
-              <span style="color: var(--text-muted);">Premium Stalls (3x3m) &bull; PR-01 to PR-45 &bull; High footfall central grand aisles</span>
+              <strong style="color: #f59e0b; display: block; margin-bottom: 2px;">Zone C - Center Grand Aisles (Premium)</strong>
+              <span style="color: var(--text-muted);">81 Premium Stalls (3x3m, 5x2m, 5x3m, 6x2m) &bull; Blocks E, F, G, H</span>
             </div>
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
-              <strong style="color: #cbd5e1; display: block; margin-bottom: 2px;">Zone D - East Pavilions</strong>
-              <span style="color: var(--text-muted);">Silver Stalls (4x3m, SL-01 to SL-20) &bull; Title Sponsor Grand Arena (12x4m, 8x4m, 6x4m)</span>
+              <strong style="color: #38bdf8; display: block; margin-bottom: 2px;">Zone B - West Aisles (Standard)</strong>
+              <span style="color: var(--text-muted);">59 Standard Stalls (3x2m) &bull; Blocks A, B, C, D &bull; Adjacent to Food Court & Conference Hall</span>
             </div>
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px 14px; border-radius: 10px;">
-              <strong style="color: #f43f5e; display: block; margin-bottom: 2px;">Zone E - South Walkway & Entrance</strong>
-              <span style="color: var(--text-muted);">Main Doors (Red Arrows) &bull; Reg Desk &bull; Executive Room 1 & 2 &bull; Regular Stalls (2x2m, RG-01 to RG-70)</span>
+              <strong style="color: #34d399; display: block; margin-bottom: 2px;">Zone E - South Walkway (Regular)</strong>
+              <span style="color: var(--text-muted);">42 Regular Stalls (2x2m) &bull; Blocks N & P &bull; Direct facing Main Entrance Red Doors</span>
             </div>
           </div>
         </div>
@@ -1185,9 +1194,9 @@
       <!-- METRICS -->
       <div class="admin-stats-grid">
         <div class="stat-card">
-          <div class="stat-label">Total Stalls (195)</div>
-          <div class="stat-value" id="stat-stalls-booked" style="color: var(--red);">0 / 195</div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="stat-stalls-available">195 Available</div>
+          <div class="stat-label">Total Stalls (220)</div>
+          <div class="stat-value" id="stat-stalls-booked" style="color: var(--red);">0 / 220</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="stat-stalls-available">220 Available</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Total Revenue</div>
@@ -1417,13 +1426,24 @@
       }
     }
 
+    let currentFloorView = 'svg';
+    let cachedStallsData = [];
+
+    function switchFloorView(mode) {
+      currentFloorView = mode;
+      document.getElementById('btn-view-svg')?.classList.toggle('active', mode === 'svg');
+      document.getElementById('btn-view-grid')?.classList.toggle('active', mode === 'grid');
+      renderStallMap(cachedStallsData);
+    }
+
     function renderTiers(tiers) {
       const container = document.getElementById('tiers-container');
       const tierConfig = [
-        { key: "Silver", num: "01", cls: "silver", name: "SILVER", defaultPrice: "₹1,00,000", dims: "4 &times; 3 m" },
-        { key: "Premium", num: "02", cls: "premium", name: "PREMIUM", defaultPrice: "₹45,000", dims: "3 &times; 3 m" },
-        { key: "Standard", num: "03", cls: "standard", name: "STANDARD", defaultPrice: "₹35,000", dims: "3 &times; 2 m" },
-        { key: "Regular", num: "04", cls: "regular", name: "REGULAR", defaultPrice: "₹25,000", dims: "2 &times; 2 m" }
+        { key: "Title Sponsor", num: "01", cls: "sponsor", name: "TITLE SPONSOR", defaultPrice: "₹2,50,000", dims: "12 &times; 4 m" },
+        { key: "Silver", num: "02", cls: "silver", name: "SILVER", defaultPrice: "₹1,00,000", dims: "4 &times; 3 m / 6 &times; 3 m" },
+        { key: "Premium", num: "03", cls: "premium", name: "PREMIUM", defaultPrice: "₹45,000", dims: "3 &times; 3 m" },
+        { key: "Standard", num: "04", cls: "standard", name: "STANDARD", defaultPrice: "₹35,000", dims: "3 &times; 2 m" },
+        { key: "Regular", num: "05", cls: "regular", name: "REGULAR", defaultPrice: "₹25,000", dims: "2 &times; 2 m" }
       ];
 
       container.innerHTML = tierConfig.map(t => {
@@ -1461,17 +1481,114 @@
       }).join('');
     }
 
+    function getStallColors(s) {
+      if (s.status === 'Booked') return { fill: '#e11d48', stroke: '#be123c', text: '#ffffff' };
+      if (s.status === 'Hold') return { fill: '#f59e0b', stroke: '#d97706', text: '#111827' };
+      if (s.status === 'Blocked') return { fill: '#334155', stroke: '#475569', text: '#94a3b8' };
+      if (s.tier === 'Title Sponsor') return { fill: '#fef08a', stroke: '#eab308', text: '#1e1b4b' };
+      if (s.tier === 'Silver') return { fill: '#cbd5e1', stroke: '#94a3b8', text: '#0f172a' };
+      if (s.tier === 'Premium') return { fill: '#fbbf24', stroke: '#f59e0b', text: '#0f172a' };
+      if (s.tier === 'Standard') return { fill: '#2f3340', stroke: '#64748b', text: '#ffffff' };
+      return { fill: '#ffffff', stroke: '#94a3b8', text: '#0f172a' }; // Regular
+    }
+
     function renderStallMap(stalls) {
+      cachedStallsData = stalls;
       const container = document.getElementById('stalls-map-container');
-      const tiers = ["Silver", "Premium", "Standard", "Regular"];
-      
-      container.innerHTML = tiers.map(t => {
+      if (!container) return;
+
+      const viewToggleBar = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; background: rgba(255,255,255,0.02); padding: 12px 18px; border-radius: 12px; border: 1px solid var(--card-border);">
+          <div style="font-size: 14px; font-weight: 700;">
+            <span style="color: var(--red); font-size: 16px; font-weight: 900;">220 Official Blueprint Stalls</span>
+            <span style="color: var(--text-muted); font-size: 12.5px; margin-left: 8px;">(Interactive SVG Floor Plan)</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-view-svg" class="nav-btn ${currentFloorView === 'svg' ? 'active' : ''}" style="padding: 6px 14px; font-size: 12px;" onclick="switchFloorView('svg')">
+              🗺️ 2D Blueprint Map
+            </button>
+            <button id="btn-view-grid" class="nav-btn ${currentFloorView === 'grid' ? 'active' : ''}" style="padding: 6px 14px; font-size: 12px;" onclick="switchFloorView('grid')">
+              🎟️ Category Grid View
+            </button>
+          </div>
+        </div>
+      `;
+
+      if (currentFloorView === 'svg') {
+        const svgContent = `
+          <div style="overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); background: #080c16; padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+            <svg viewBox="260 210 1350 710" style="width: 100%; min-width: 950px; height: auto; display: block; font-family: 'Plus Jakarta Sans', sans-serif;">
+              <!-- Outer Venue Wall -->
+              <rect x="270" y="245" width="1320" height="645" fill="none" stroke="#334155" stroke-width="2" rx="8" />
+
+              <!-- Left Side: Food Court, Dining Hall, Conference Hall -->
+              <rect x="272" y="247" width="95" height="150" fill="#0f172a" stroke="#334155" stroke-dasharray="4,4" />
+              <text x="319" y="320" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="800">FOOD COURT</text>
+              <text x="319" y="336" text-anchor="middle" fill="#64748b" font-size="9">13 &times; 12 m</text>
+
+              <rect x="272" y="402" width="95" height="130" fill="#0f172a" stroke="#334155" stroke-dasharray="4,4" />
+              <text x="319" y="468" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="800">DINING HALL</text>
+              <text x="319" y="484" text-anchor="middle" fill="#64748b" font-size="9">9 &times; 12 m</text>
+
+              <rect x="272" y="538" width="95" height="230" fill="#0f172a" stroke="#334155" stroke-dasharray="4,4" />
+              <text x="319" y="650" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="800">CONFERENCE</text>
+              <text x="319" y="666" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="800">HALL</text>
+              <text x="319" y="682" text-anchor="middle" fill="#64748b" font-size="9">19 &times; 12 m</text>
+
+              <!-- Top Toilet Block -->
+              <rect x="690" y="215" width="80" height="30" fill="#1e293b" stroke="#475569" rx="4" />
+              <text x="730" y="235" text-anchor="middle" fill="#cbd5e1" font-size="11" font-weight="800">TOILET</text>
+
+              <!-- Bottom Rooms (Registration, Room 1, Room 2, Rest Room) -->
+              <rect x="940" y="800" width="310" height="75" fill="#0f172a" stroke="#334155" rx="4" />
+              <text x="990" y="842" text-anchor="middle" fill="#94a3b8" font-size="9.5" font-weight="700">REGISTRATION</text>
+              <text x="1080" y="842" text-anchor="middle" fill="#94a3b8" font-size="9.5" font-weight="700">ROOM 1</text>
+              <text x="1160" y="842" text-anchor="middle" fill="#94a3b8" font-size="9.5" font-weight="700">ROOM 2</text>
+              <text x="1225" y="842" text-anchor="middle" fill="#94a3b8" font-size="9.5" font-weight="700">REST</text>
+
+              <!-- Main Entrance Doors (Red Arrows) -->
+              <polygon points="885,820 895,835 875,835" fill="#e11d48" />
+              <polygon points="915,820 925,835 905,835" fill="#e11d48" />
+              <text x="900" y="855" text-anchor="middle" fill="#e11d48" font-size="9" font-weight="800">ENTRANCE</text>
+
+              <!-- Render All 220 Stalls in Exact SVG Coordinates -->
+              ${stalls.map(s => {
+                const colors = getStallColors(s);
+                const isSelected = activeHoldStall === s.stall_number;
+                const fontSize = s.label === '12x4' ? 14 : (s.width < 32 || s.height < 32 ? 8 : 9.5);
+                const strokeW = isSelected ? 2.5 : (s.tier === 'Title Sponsor' ? 2 : 1);
+                const strokeC = isSelected ? '#38bdf8' : colors.stroke;
+
+                return `
+                  <g class="svg-stall-elem" 
+                     style="cursor: pointer; transition: all 0.2s;"
+                     onclick="handleStallClick('${s.stall_number}', '${s.status}', ${s.price}, '${s.tier}', '${s.dimensions}')">
+                    <title>${s.stall_number} • ${s.tier} (${s.dimensions}) - ₹${Number(s.price).toLocaleString()} [${s.status}]</title>
+                    <rect x="${s.x}" y="${s.y}" width="${s.width}" height="${s.height}" rx="3"
+                          fill="${colors.fill}" stroke="${strokeC}" stroke-width="${strokeW}" />
+                    <text x="${s.x + s.width / 2}" y="${s.y + s.height / 2 + 3.5}" 
+                          text-anchor="middle" fill="${colors.text}" font-size="${fontSize}" font-weight="800">
+                      ${s.stall_number}
+                    </text>
+                  </g>
+                `;
+              }).join('')}
+            </svg>
+          </div>
+        `;
+        container.innerHTML = viewToggleBar + svgContent;
+        return;
+      }
+
+      // Grid View (Category Row View)
+      const tiers = ["Title Sponsor", "Silver", "Premium", "Standard", "Regular"];
+      container.innerHTML = viewToggleBar + tiers.map(t => {
         const filtered = stalls.filter(s => s.tier === t);
         return `
           <div class="stall-tier-row">
             <div class="tier-row-label">
               <span>${t.toUpperCase()} STALLS (${filtered.length})</span>
-              <span style="font-size: 11px;">₹${filtered[0]?.price.toLocaleString()}</span>
+              <span style="font-size: 11px;">₹${filtered[0]?.price ? Number(filtered[0].price).toLocaleString() : '2,50,000'}</span>
             </div>
             <div class="stalls-grid">
               ${filtered.map(s => {
@@ -1479,7 +1596,7 @@
                 return `
                   <div class="stall-seat ${s.status} ${isSelected ? 'selected' : ''}" 
                        onclick="handleStallClick('${s.stall_number}', '${s.status}', ${s.price}, '${s.tier}', '${s.dimensions}')"
-                       title="${s.stall_number} - ${s.tier} (₹${s.price.toLocaleString()}) [${s.status}]">
+                       title="${s.stall_number} - ${s.tier} (₹${Number(s.price).toLocaleString()}) [${s.status}]">
                     ${s.stall_number}
                   </div>
                 `;
@@ -1491,10 +1608,9 @@
     }
 
     function pickTier(tierName) {
-      const firstAvailable = document.querySelector(`.stall-seat.Available[title*="${tierName}"]`);
+      const firstAvailable = (cachedStallsData || []).find(s => s.tier === tierName && s.status === 'Available');
       if (firstAvailable) {
-        firstAvailable.click();
-        firstAvailable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        handleStallClick(firstAvailable.stall_number, firstAvailable.status, firstAvailable.price, firstAvailable.tier, firstAvailable.dimensions);
       } else {
         alert(`No stalls currently available in ${tierName} tier!`);
       }

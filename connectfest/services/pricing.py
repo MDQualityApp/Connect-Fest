@@ -20,10 +20,16 @@ PRICING_CACHE_ALL_KEY = "connectfest:tier_pricing:all"
 # Standard reference templates (used ONLY by admin_restore_defaults on explicit request)
 DEFAULT_TIERS_TEMPLATE = [
 	{
+		"tier_name": "Title Sponsor",
+		"price": 250000.0,
+		"gst_percent": 18.0,
+		"description": "Grand Central Arena, 12x4m Exclusive Pavilion, Max Footfall & Main Stage Visibility",
+	},
+	{
 		"tier_name": "Silver",
 		"price": 100000.0,
 		"gst_percent": 18.0,
-		"description": "VIP East Pavilion, 6x3m Double Booth, 4 Spotlights, 2x 15A Power, Premium Fascia, Priority Branding",
+		"description": "VIP East Pavilion, 4x3m / 6x3m Booth, 4 Spotlights, 2x 15A Power, Premium Fascia, Priority Branding",
 	},
 	{
 		"tier_name": "Premium",
@@ -35,13 +41,13 @@ DEFAULT_TIERS_TEMPLATE = [
 		"tier_name": "Standard",
 		"price": 35000.0,
 		"gst_percent": 18.0,
-		"description": "West Aisle Booth, 3x3m Booth, 2 Spotlights, 1x 5A Power socket, Standard Fascia, Good Visibility",
+		"description": "West Aisle Booth, 3x2m Booth, 2 Spotlights, 1x 5A Power socket, Standard Fascia, Good Visibility",
 	},
 	{
 		"tier_name": "Regular",
 		"price": 25000.0,
 		"gst_percent": 18.0,
-		"description": "South Entrance Corridor, 2.5x2.5m Booth, 1 Spotlight, 1x 5A Power socket, Standard Fascia, Budget-friendly",
+		"description": "South Entrance Corridor, 2x2m Booth, 1 Spotlight, 1x 5A Power socket, Standard Fascia, Budget-friendly",
 	},
 ]
 
@@ -155,6 +161,7 @@ def get_tier_pricing():
 	try:
 		settings = frappe.get_single("ConnectFest Settings")
 		s_map = {}
+		if getattr(settings, "price_title_sponsor", None): s_map["Title Sponsor"] = flt(settings.price_title_sponsor)
 		if settings.price_silver: s_map["Silver"] = flt(settings.price_silver)
 		if settings.price_premium: s_map["Premium"] = flt(settings.price_premium)
 		if settings.price_standard: s_map["Standard"] = flt(settings.price_standard)
@@ -358,7 +365,9 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 		# Sync to ConnectFest Settings if standard tier
 		t_lower = doc.tier_name.lower()
 		settings = frappe.get_single("ConnectFest Settings")
-		if t_lower == "silver": settings.price_silver = doc.price
+		if "title" in t_lower or "sponsor" in t_lower:
+			if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = doc.price
+		elif t_lower == "silver": settings.price_silver = doc.price
 		elif t_lower == "premium": settings.price_premium = doc.price
 		elif t_lower == "standard": settings.price_standard = doc.price
 		elif t_lower == "regular": settings.price_regular = doc.price
@@ -455,6 +464,7 @@ def restore_default_pricing():
 
 	# Sync ConnectFest Settings
 	settings = frappe.get_single("ConnectFest Settings")
+	if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = 250000.0
 	settings.price_silver = 100000.0
 	settings.price_premium = 45000.0
 	settings.price_standard = 35000.0
@@ -468,18 +478,20 @@ def restore_default_pricing():
 
 
 # Legacy alias
-def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, **kwargs):
-	"""Legacy alias supporting 4 tiers update in one call."""
+def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, title_sponsor=None, sponsor=None, **kwargs):
+	"""Legacy alias supporting all 5 tiers update in one call."""
 	data = extract_request_data(kwargs)
 	s = flt(silver or data.get("silver") or 0)
 	p = flt(premium or data.get("premium") or 0)
 	st = flt(standard or data.get("standard") or 0)
 	r = flt(regular or data.get("regular") or 0)
+	ts = flt(title_sponsor or sponsor or data.get("title_sponsor") or data.get("sponsor") or 0)
 
 	if s > 0: admin_update_tier_pricing("Silver", price=s)
 	if p > 0: admin_update_tier_pricing("Premium", price=p)
 	if st > 0: admin_update_tier_pricing("Standard", price=st)
 	if r > 0: admin_update_tier_pricing("Regular", price=r)
+	if ts > 0: admin_update_tier_pricing("Title Sponsor", price=ts)
 
 	return {
 		"status": "success",

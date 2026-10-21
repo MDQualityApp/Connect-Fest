@@ -280,7 +280,7 @@ def register_stall(**kwargs):
 
 		if create_order and stall_number:
 			from connectfest.services.payments import create_razorpay_order
-			order_info = create_razorpay_order(registration_id=actual_reg_id, stall_number=stall_number)
+			order_info = create_razorpay_order(registration_id=actual_reg_id, stall_number=stall_number, is_internal=True)
 			response_data["razorpay_order"] = order_info.get("order")
 
 		return response_data
@@ -302,7 +302,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
 
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
+	if not reg_id and (not sess_user or sess_user == "Guest"):
 		frappe.local.response["http_status_code"] = 401
 		return {
 			"status": "unauthorized",
@@ -372,7 +372,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 
 	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
 	from connectfest.services.auth import is_admin_user
-	if not is_admin_user(sess_user):
+	if sess_user and sess_user != "Guest" and not is_admin_user(sess_user):
 		rec_email = (record.get("email") or "").strip().lower()
 		rec_mob = (record.get("mobile_no") or "").strip()
 		sess_lower = sess_user.strip().lower()

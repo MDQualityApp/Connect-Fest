@@ -12,6 +12,12 @@
   "zone",
   "price",
   "status",
+  "block",
+  "label",
+  "x",
+  "y",
+  "width",
+  "height",
   "admin_control_section",
   "is_blocked_by_admin",
   "blocked_reason",
@@ -68,6 +74,37 @@
    "label": "Status",
    "options": "Available\nHold\nBooked\nBlocked",
    "reqd": 1
+  },
+  {
+   "fieldname": "block",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Block / Aisle"
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Floorplan Label"
+  },
+  {
+   "fieldname": "x",
+   "fieldtype": "Float",
+   "label": "SVG X"
+  },
+  {
+   "fieldname": "y",
+   "fieldtype": "Float",
+   "label": "SVG Y"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "SVG Width"
+  },
+  {
+   "fieldname": "height",
+   "fieldtype": "Float",
+   "label": "SVG Height"
   },
   {
    "fieldname": "admin_control_section",

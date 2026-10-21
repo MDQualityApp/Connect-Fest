@@ -4,7 +4,7 @@ Structured modular services:
 - connectfest.services.common: Constants, Redis cache/lock keys, payload parsers
 - connectfest.services.pricing: Dynamic admin pricing & tier price calculation
 - connectfest.services.auth: Frappe User provisioning, attendee login, and profile
-- connectfest.services.stalls: 195 stall inventory, theatre seat locking, admin block
+- connectfest.services.stalls: 220 stall inventory, theatre seat locking, admin block
 - connectfest.services.registration: Exhibitor & Visitor registration, stall selection
 - connectfest.services.payments: Razorpay test/live checkout, preview, finalize
 - connectfest.services.passes: Digital QR pass verification & attendee dashboard
@@ -46,6 +46,8 @@ from connectfest.services.auth import (
 	logout as _logout,
 	admin_login as _admin_login,
 	admin_toggle_user_status as _admin_toggle_user_status,
+	admin_get_all_users as _admin_get_all_users,
+	admin_get_user_details as _admin_get_user_details,
 	request_contact_update as _request_contact_update,
 	verify_and_update_contact as _verify_and_update_contact,
 	update_profile as _update_profile,
@@ -92,6 +94,26 @@ from connectfest.services.queue import (
 from connectfest.services.otp import (
 	send_otp as _send_otp,
 	verify_otp as _verify_otp,
+)
+from connectfest.services.gallery import (
+	get_gallery as _get_gallery,
+	get_gallery_item as _get_gallery_item,
+	admin_create_gallery_item as _admin_create_gallery_item,
+	admin_get_gallery_items as _admin_get_gallery_items,
+	admin_update_gallery_item as _admin_update_gallery_item,
+	admin_delete_gallery_item as _admin_delete_gallery_item,
+	admin_toggle_gallery_pin as _admin_toggle_gallery_pin,
+	admin_upload_gallery_image as _admin_upload_gallery_image,
+)
+from connectfest.services.sponsors import (
+	get_sponsors as _get_sponsors,
+	get_sponsor_details as _get_sponsor_details,
+	admin_create_sponsor as _admin_create_sponsor,
+	admin_get_sponsors as _admin_get_sponsors,
+	admin_update_sponsor as _admin_update_sponsor,
+	admin_delete_sponsor as _admin_delete_sponsor,
+	admin_toggle_sponsor_status as _admin_toggle_sponsor_status,
+	seed_default_sponsors as _seed_default_sponsors,
 )
 
 
@@ -166,7 +188,7 @@ def verify_razorpay_payment(**kwargs):
 # ==============================================================================
 @frappe.whitelist(allow_guest=True)
 def get_stalls(**kwargs):
-	"""Returns all 195 stalls with live booking status and zones."""
+	"""Returns all 220 stalls with live booking status, blueprint coordinates, and zones."""
 	return _get_stalls(**kwargs)
 
 
@@ -212,9 +234,7 @@ def get_registration(registration_id):
 @frappe.whitelist(allow_guest=True)
 def get_my_dashboard(email=None, mobile_no=None, **kwargs):
 	"""Attendee dashboard alias returning complete user profile and bookings."""
-	kwargs["email"] = email
-	kwargs["mobile_no"] = mobile_no
-	return _get_current_user_profile(**kwargs)
+	return _get_my_dashboard(email=email, mobile_no=mobile_no, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -263,6 +283,24 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kwargs):
 	"""Admin API to enable or disable attendee User accounts."""
 	return _admin_toggle_user_status(user_email=user_email, mobile_no=mobile_no, enabled=enabled, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_all_users(**kwargs):
+	"""Admin API: Returns a unified directory of all attendees, exhibitors, visitors, and admins."""
+	return _admin_get_all_users(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_all_users(**kwargs):
+	"""Alias for admin_get_all_users."""
+	return _admin_get_all_users(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_user_details(user_email=None, mobile_no=None, **kwargs):
+	"""Admin API: Returns complete details of a specific user by email or mobile number."""
+	return _admin_get_user_details(user_email=user_email, mobile_no=mobile_no, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -342,20 +380,20 @@ def admin_delete_stall(stall_number=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
-	"""Admin API: Explicitly restore pristine default pricing (4 tiers) and default 195 stalls on-demand."""
+	"""Admin API: Explicitly restore pristine default pricing (5 tiers) and default 220 stalls on-demand."""
 	return _admin_restore_defaults(reset_pricing=reset_pricing, reset_stalls=reset_stalls, reset_booked=reset_booked, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def seed_stalls():
-	"""Seeding API: Populates or verifies 195 stalls and pricing tiers while preserving bookings."""
+	"""Seeding API: Populates or verifies 220 stalls and pricing tiers while preserving bookings."""
 	return _seed_default_stalls(preserve_booked=True)
 
 
 @frappe.whitelist(allow_guest=True)
-def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, **kwargs):
-	"""Admin dynamic price updates for all tiers."""
-	return _update_dynamic_pricing(silver=silver, premium=premium, standard=standard, regular=regular, **kwargs)
+def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, title_sponsor=None, sponsor=None, **kwargs):
+	"""Admin dynamic price updates for all 5 tiers."""
+	return _update_dynamic_pricing(silver=silver, premium=premium, standard=standard, regular=regular, title_sponsor=title_sponsor, sponsor=sponsor, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -368,3 +406,123 @@ def get_queue_stats():
 def flush_queue():
 	"""Manual Redis to MariaDB queue flush."""
 	return _flush_queue()
+
+
+# ==============================================================================
+# 9. GALLERY APIS (Public Website & Admin Multiple Images CRUD + Pinning)
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def get_gallery(**kwargs):
+	"""Public API: Returns published gallery items with multiple images (Pinned items first)."""
+	return _get_gallery(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_gallery_item(gallery_id=None, **kwargs):
+	"""Public API: Returns a single gallery item with all its images."""
+	return _get_gallery_item(gallery_id=gallery_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_gallery_item(**kwargs):
+	"""Admin API: Create a gallery item with multiple images and optional pinning."""
+	return _admin_create_gallery_item(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_gallery_items(**kwargs):
+	"""Admin API: List all gallery items (published + draft) with pagination and filters."""
+	return _admin_get_gallery_items(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_gallery_item(**kwargs):
+	"""Admin API: Update a gallery item (title, description, pin status, images)."""
+	return _admin_update_gallery_item(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_gallery_item(gallery_id=None, gallery_ids=None, **kwargs):
+	"""Admin API: Delete single or multiple gallery items and their images."""
+	return _admin_delete_gallery_item(gallery_id=gallery_id, gallery_ids=gallery_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_gallery_items(gallery_ids=None, **kwargs):
+	"""Alias for admin_delete_gallery_item supporting bulk deletion."""
+	return _admin_delete_gallery_item(gallery_ids=gallery_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_gallery_pin(gallery_id=None, gallery_ids=None, is_pinned=None, **kwargs):
+	"""Admin API: Pin or unpin single or multiple gallery items to highlight at the top of the website."""
+	return _admin_toggle_gallery_pin(gallery_id=gallery_id, gallery_ids=gallery_ids, is_pinned=is_pinned, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_pin_gallery_items(gallery_ids=None, is_pinned=None, **kwargs):
+	"""Alias for admin_toggle_gallery_pin supporting bulk pinning."""
+	return _admin_toggle_gallery_pin(gallery_ids=gallery_ids, is_pinned=is_pinned, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_upload_gallery_image(**kwargs):
+	"""Admin API: Upload an image file or base64 data to get a public /files/... URL."""
+	return _admin_upload_gallery_image(**kwargs)
+
+
+# ==============================================================================
+# 10. SPONSOR APIS (Public Website Directory & Admin CRUD + Tiers)
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def get_sponsors(**kwargs):
+	"""Public API: Returns active sponsors grouped by category/tier, showing what they sponsored."""
+	return _get_sponsors(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_sponsor_details(sponsor_id=None, **kwargs):
+	"""Public API: Returns single sponsor full profile."""
+	return _get_sponsor_details(sponsor_id=sponsor_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_sponsor(**kwargs):
+	"""Admin API: Add a new sponsor and what they sponsored for."""
+	return _admin_create_sponsor(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_sponsors(**kwargs):
+	"""Admin API: List all sponsors (active and inactive) with summary counts."""
+	return _admin_get_sponsors(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_sponsor(sponsor_id=None, **kwargs):
+	"""Admin API: Update sponsor information."""
+	return _admin_update_sponsor(sponsor_id=sponsor_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_sponsor(sponsor_id=None, sponsor_ids=None, **kwargs):
+	"""Admin API: Delete single or multiple sponsors."""
+	return _admin_delete_sponsor(sponsor_id=sponsor_id, sponsor_ids=sponsor_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_sponsors(sponsor_ids=None, **kwargs):
+	"""Alias for admin_delete_sponsor supporting bulk deletion."""
+	return _admin_delete_sponsor(sponsor_ids=sponsor_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_sponsor_status(sponsor_id=None, sponsor_ids=None, **kwargs):
+	"""Admin API: Toggle active or featured status for sponsors."""
+	return _admin_toggle_sponsor_status(sponsor_id=sponsor_id, sponsor_ids=sponsor_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def seed_default_sponsors():
+	"""Seeds default realistic sponsors for ConnectFest 2027."""
+	return _seed_default_sponsors()

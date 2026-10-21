@@ -9,7 +9,7 @@ from connectfest.services.pricing import get_tier_pricing
 def get_stalls(**kwargs):
 	"""
 	Universal Floor Map & Real-Time Inventory API.
-	Returns all 195 stalls with zone, dimensions, live booking status, and pricing.
+	Returns all 220 stalls with zone, dimensions, blueprint coordinates, live booking status, and pricing.
 	"""
 	try:
 		from frappe.utils import cint
@@ -32,6 +32,12 @@ def get_stalls(**kwargs):
 				"zone",
 				"price",
 				"status",
+				"block",
+				"label",
+				"x",
+				"y",
+				"width",
+				"height",
 				"is_blocked_by_admin",
 				"blocked_reason",
 				"booked_by_registration",
@@ -40,7 +46,7 @@ def get_stalls(**kwargs):
 				"hold_expires_at",
 			],
 			order_by="stall_number ASC",
-			limit=250,
+			limit=500,
 		)
 
 		now_dt = now_datetime()
@@ -85,8 +91,9 @@ def get_stalls(**kwargs):
 
 			# Zone assignment
 			if not stall.get("zone"):
-				if t == "Silver": stall["zone"] = "Zone D - East Pavilions"
-				elif t == "Premium": stall["zone"] = "Zone C - Center Aisles"
+				if t == "Title Sponsor": stall["zone"] = "Zone TS - Title Sponsor Arena"
+				elif t == "Silver": stall["zone"] = "Zone D - East Pavilions"
+				elif t == "Premium": stall["zone"] = "Zone C - Center Grand Aisles"
 				elif t == "Standard": stall["zone"] = "Zone B - West Aisles"
 				else: stall["zone"] = "Zone E - South Entrance Corridor"
 
@@ -394,7 +401,7 @@ def get_admin_dashboard_data(**kwargs):
 			"booked_by_registration",
 		],
 		order_by="stall_number ASC",
-		limit=250,
+		limit=500,
 	)
 
 	total_stalls = len(stalls)
@@ -479,6 +486,12 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"dimensions",
 			"price",
 			"status",
+			"block",
+			"label",
+			"x",
+			"y",
+			"width",
+			"height",
 			"is_blocked_by_admin",
 			"blocked_reason",
 			"booked_by_registration",
@@ -516,10 +529,12 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	for s in stalls:
 		# Attach zone
 		t = s.tier or "Regular"
-		if t == "Silver": s["zone"] = "Zone D - East Pavilions"
-		elif t == "Premium": s["zone"] = "Zone C - Center Aisles"
-		elif t == "Standard": s["zone"] = "Zone B - West Aisles"
-		else: s["zone"] = "Zone E - South Entrance Corridor"
+		if not s.get("zone"):
+			if t == "Title Sponsor": s["zone"] = "Zone TS - Title Sponsor Arena"
+			elif t == "Silver": s["zone"] = "Zone D - East Pavilions"
+			elif t == "Premium": s["zone"] = "Zone C - Center Grand Aisles"
+			elif t == "Standard": s["zone"] = "Zone B - West Aisles"
+			else: s["zone"] = "Zone E - South Entrance Corridor"
 
 		if s.is_blocked_by_admin or s.status == "Blocked":
 			s["status"] = "Blocked"
@@ -764,23 +779,139 @@ def admin_delete_stall(stall_number=None, **kwargs):
 	}
 
 
-DEFAULT_STALLS_SPEC = [
-	{"prefix": "SL", "count": 20, "tier": "Silver", "dimensions": "4 x 3 m", "price": 100000.0, "zone": "Zone D - East Pavilions"},
-	{"prefix": "PR", "count": 45, "tier": "Premium", "dimensions": "3 x 3 m", "price": 45000.0, "zone": "Zone C - Center Aisles"},
-	{"prefix": "ST", "count": 60, "tier": "Standard", "dimensions": "3 x 2 m", "price": 35000.0, "zone": "Zone B - West Aisles"},
-	{"prefix": "RG", "count": 70, "tier": "Regular", "dimensions": "2 x 2 m", "price": 25000.0, "zone": "Zone E - South Entrance Corridor"},
-]
+def build_connectfest_220_stalls():
+	"""
+	Generates all 220 official floor-plan stalls according to the CONNECTFEST 2027 Blueprint.
+	Coordinates (x, y, width, height) are in SVG coordinate space for 2D architectural rendering.
+	"""
+	stalls = []
+	cnt = {}
+	tier_map = {
+		'2x2': 'Regular', '3x2': 'Standard',
+		'3x3': 'Premium', '5x2': 'Premium', '5x3': 'Premium', '6x2': 'Premium',
+		'4x3': 'Silver', '6x3': 'Silver', '8x3': 'Silver', '6x4': 'Silver', '8x4': 'Silver', '6x5': 'Silver',
+		'12x4': 'Title Sponsor',
+	}
+	zone_map = {
+		'A': 'Zone A - Top North Strip',
+		'B': 'Zone B - West Aisles',
+		'C': 'Zone B - West Aisles',
+		'D': 'Zone B - West Aisles',
+		'E': 'Zone C - Center Grand Aisles',
+		'F': 'Zone C - Center Grand Aisles',
+		'G': 'Zone C - Center Grand Aisles',
+		'H': 'Zone C - Center Grand Aisles',
+		'J': 'Zone D - East Pavilions',
+		'K': 'Zone D - East Pavilions',
+		'L': 'Zone D - East Pavilions',
+		'M': 'Zone D - East Pavilions',
+		'TS': 'Zone TS - Title Sponsor Arena',
+		'N': 'Zone E - South Entrance Corridor',
+		'P': 'Zone E - South Entrance Corridor',
+	}
+	default_prices = {
+		'Title Sponsor': 250000.0,
+		'Silver': 100000.0,
+		'Premium': 45000.0,
+		'Standard': 35000.0,
+		'Regular': 25000.0,
+	}
+
+	def add(g, x, y, w, h, label):
+		cnt[g] = cnt.get(g, 0) + 1
+		s_id = f"{g}-{str(cnt[g]).zfill(2)}"
+		t = tier_map[label]
+		dim_str = label.replace('x', ' x ') + ' m'
+		stalls.append({
+			'stall_number': s_id,
+			'block': g,
+			'x': float(x),
+			'y': float(y),
+			'width': float(w),
+			'height': float(h),
+			'label': label,
+			'dimensions': dim_str,
+			'tier': t,
+			'zone': zone_map[g],
+			'default_price': default_prices.get(t, 25000.0),
+		})
+
+	def grid(g, x, y, w, h, cols, rows, label):
+		for r in range(rows):
+			for c in range(cols):
+				add(g, round(x + c * w, 2), round(y + r * h, 2), w, h, label)
+
+	def row_x(g, x, y, w, h, n, label):
+		grid(g, x, y, w, h, n, 1, label)
+
+	# top strip
+	row_x('A', 399, 255, 44, 28, 3, '3x2')
+	row_x('A', 648, 255, 44.5, 44, 2, '3x3')
+	row_x('A', 826, 255, 44.5, 44, 4, '3x3')
+	row_x('A', 1092, 255, 44.5, 44, 2, '3x3')
+	add('A', 1211, 255, 59, 44, '4x3')
+	row_x('A', 1359, 255, 59, 44, 3, '4x3')
+
+	# column blocks
+	grid('B', 428, 328, 29.5, 44.4, 2, 10, '3x2')
+	grid('C', 531, 282, 29.5, 44.4, 2, 10, '3x2')
+	grid('D', 636, 343, 29.5, 73, 2, 1, '5x2')
+	grid('D', 636, 416, 29.5, 44.4, 2, 8, '3x2')
+	grid('E', 738, 299, 44, 44.4, 2, 8, '3x3')
+	add('E', 738, 655, 88, 71, '6x5')
+	grid('F', 871, 343, 44, 73, 2, 1, '5x3')
+	grid('F', 871, 416, 44, 44.4, 2, 7, '3x3')
+	row_x('F', 871, 727, 44.2, 44, 5, '3x3')
+	grid('G', 1004, 299, 44, 44.4, 2, 8, '3x3')
+	add('G', 1004, 655, 88, 28, '6x2')
+	add('H', 1137, 342, 88, 30, '6x2')
+	grid('H', 1137, 372, 44, 44.4, 2, 8, '3x3')
+	grid('J', 1271, 298, 43.5, 59, 2, 5, '4x3')
+	grid('J', 1271, 593, 43.5, 89, 2, 1, '6x3')
+	add('K', 1403, 342, 44, 88, '6x3')
+	grid('K', 1403, 430, 44, 59, 1, 5, '4x3')
+	add('K', 1447, 342, 44, 118, '8x3')
+	add('K', 1447, 460, 44, 88, '6x3')
+	add('K', 1447, 548, 44, 88, '6x3')
+	add('K', 1447, 636, 44, 89, '6x3')
+	add('K', 1403, 727, 88, 59, '6x4')
+	add('K', 1283, 727, 119, 59, '8x4')
+
+	# right edge & bottom-right
+	for y in [314, 402, 490, 652, 740]:
+		add('L', 1537, y, 43, 88, '6x3')
+	add('M', 1211, 830, 88, 45, '6x3')
+	add('M', 1328, 830, 89, 45, '6x3')
+	add('M', 1417, 830, 88, 45, '6x3')
+
+	# title sponsor
+	add('TS', 1092, 727, 178, 58, '12x4')
+
+	# 2x2 rows
+	row_x('N', 428, 772, 29.5, 29, 11, '2x2')
+	row_x('N', 768, 772, 29.5, 29, 11, '2x2')
+	add('P', 340, 846, 30, 29, '2x2')
+	row_x('P', 385, 846, 29.5, 29, 7, '2x2')
+	row_x('P', 605, 846, 29.5, 29, 12, '2x2')
+
+	return stalls
+
+
+DEFAULT_STALLS_SPEC = build_connectfest_220_stalls()
 
 
 def seed_default_stalls(preserve_booked=True):
 	"""
-	Universal Stall & Tier Seeding Function.
-	Executed automatically during `bench migrate` (via after_migrate hook & migration patch)
-	and during app installation.
-	- Ensures all 195 standard stalls (SL-01..20, PR-01..45, ST-01..60, RG-01..70) exist with zones & dimensions.
-	- Preserves booked stalls & customer registrations.
-	- Seeds default 4 tier pricing records in 'ConnectFest Tier Pricing' if empty or missing.
-	- Seeds default event settings in 'ConnectFest Settings'.
+	Universal Stall & Tier Seeding Function for ConnectFest 2027.
+	Seeds all 220 official floor-plan stalls (Blocks A to P + Title Sponsor TS-01) with SVG coordinates & dimensions.
+	- 220 stalls:
+	  * Title Sponsor: 1 stall (TS-01, 12x4m, Grand Central Arena)
+	  * Silver: 37 stalls (4x3m, 6x3m, 8x3m, 6x4m, 8x4m, 6x5m)
+	  * Premium: 81 stalls (3x3m, 5x2m, 5x3m, 6x2m)
+	  * Standard: 59 stalls (3x2m)
+	  * Regular: 42 stalls (2x2m)
+	- Seeds default 5 tier pricing in 'ConnectFest Tier Pricing'.
+	- Preserves booked stalls & registrations.
 	- 100% Idempotent and safe to run multiple times.
 	"""
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
@@ -805,6 +936,9 @@ def seed_default_stalls(preserve_booked=True):
 		try:
 			settings = frappe.get_single("ConnectFest Settings")
 			updated = False
+			if not getattr(settings, "price_title_sponsor", None):
+				settings.price_title_sponsor = 250000.0
+				updated = True
 			if not settings.price_silver:
 				settings.price_silver = 100000.0
 				updated = True
@@ -831,65 +965,75 @@ def seed_default_stalls(preserve_booked=True):
 		except Exception:
 			pass
 
-	# 3. Seed / Verify all 195 Default Stalls
+	# 3. Seed / Verify all 220 Default Stalls
 	if not frappe.db.table_exists("ConnectFest Stall"):
 		return {"status": "skipped", "message": "ConnectFest Stall table not found"}
 
 	pricing = get_tier_pricing()
 
+	# Clean up obsolete placeholder unbooked stalls (e.g. SL-, PR-, ST-, RG-)
+	try:
+		frappe.db.sql("""
+			DELETE FROM `tabConnectFest Stall`
+			WHERE (stall_number LIKE 'SL-%' OR stall_number LIKE 'PR-%' OR stall_number LIKE 'ST-%' OR stall_number LIKE 'RG-%')
+			AND (status != 'Booked' OR status IS NULL)
+			AND (booked_by_registration IS NULL OR booked_by_registration = '')
+		""")
+	except Exception:
+		pass
+
 	created_count = 0
 	updated_count = 0
+	spec_stalls = build_connectfest_220_stalls()
 
-	for spec in DEFAULT_STALLS_SPEC:
-		prefix = spec["prefix"]
-		count = spec["count"]
-		tier = spec["tier"]
-		dims = spec["dimensions"]
-		zone = spec.get("zone")
-		default_price = flt(pricing.get(tier, spec["price"]))
+	for s in spec_stalls:
+		stall_num = s["stall_number"]
+		tier = s["tier"]
+		dims = s["dimensions"]
+		zone = s["zone"]
+		block = s["block"]
+		label = s["label"]
+		x = s["x"]
+		y = s["y"]
+		width = s["width"]
+		height = s["height"]
+		default_price = flt(pricing.get(tier, s["default_price"]))
 
-		for i in range(1, count + 1):
-			stall_num = f"{prefix}-{i:02d}"
-			existing = frappe.db.sql(
-				"SELECT name, status, booked_by_registration, zone, dimensions FROM `tabConnectFest Stall` WHERE stall_number = %s",
-				(stall_num,),
-				as_dict=True
-			)
+		existing = frappe.db.sql(
+			"SELECT name, status, booked_by_registration FROM `tabConnectFest Stall` WHERE stall_number = %s",
+			(stall_num,),
+			as_dict=True
+		)
 
-			if not existing:
-				# Insert brand new stall
+		if not existing:
+			frappe.db.sql("""
+				INSERT INTO `tabConnectFest Stall`
+				(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, block, label, x, y, width, height, creation, modified, modified_by, owner)
+				VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+			""", (stall_num, stall_num, tier, dims, zone, default_price, block, label, x, y, width, height, now_str, now_str, sess_user, sess_user))
+			created_count += 1
+		else:
+			curr = existing[0]
+			is_booked = curr.get("status") == "Booked" or bool(curr.get("booked_by_registration"))
+			if not is_booked:
 				frappe.db.sql("""
-					INSERT INTO `tabConnectFest Stall`
-					(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, creation, modified, modified_by, owner)
-					VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s)
-				""", (stall_num, stall_num, tier, dims, zone, default_price, now_str, now_str, sess_user, sess_user))
-				created_count += 1
+					UPDATE `tabConnectFest Stall`
+					SET tier = %s, dimensions = %s, zone = %s, price = %s, block = %s, label = %s, x = %s, y = %s, width = %s, height = %s, modified = %s
+					WHERE stall_number = %s
+				""", (tier, dims, zone, default_price, block, label, x, y, width, height, now_str, stall_num))
+				updated_count += 1
 			else:
-				curr = existing[0]
-				is_booked = curr.get("status") == "Booked" or bool(curr.get("booked_by_registration"))
-				if not is_booked:
-					# Safe to update dimensions, zone, tier, price if needed
-					frappe.db.sql("""
-						UPDATE `tabConnectFest Stall`
-						SET tier = %s, dimensions = %s, zone = %s, price = %s, modified = %s
-						WHERE stall_number = %s
-					""", (tier, dims, zone, default_price, now_str, stall_num))
-					updated_count += 1
-				else:
-					# Stall is booked: only backfill zone/dimensions if completely empty
-					if not curr.get("zone") or not curr.get("dimensions"):
-						frappe.db.sql("""
-							UPDATE `tabConnectFest Stall`
-							SET zone = COALESCE(NULLIF(zone, ''), %s),
-								dimensions = COALESCE(NULLIF(dimensions, ''), %s)
-							WHERE stall_number = %s
-						""", (zone, dims, stall_num))
+				frappe.db.sql("""
+					UPDATE `tabConnectFest Stall`
+					SET block = %s, label = %s, x = %s, y = %s, width = %s, height = %s
+					WHERE stall_number = %s
+				""", (block, label, x, y, width, height, stall_num))
 
 	frappe.db.commit()
 
 	total_stalls = frappe.db.count("ConnectFest Stall")
 	try:
-		print(f"ConnectFest: Seeded/Verified stalls (Total: {total_stalls}, Newly Created: {created_count}, Updated: {updated_count})")
+		print(f"ConnectFest: Seeded/Verified 220 stalls (Total: {total_stalls}, Newly Created: {created_count}, Updated: {updated_count})")
 	except Exception:
 		pass
 
@@ -904,9 +1048,9 @@ def seed_default_stalls(preserve_booked=True):
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
 	"""
 	Admin Restore API:
-	Explicitly restores pristine default pricing (4 tiers) and default 195 stalls.
-	- reset_pricing: 1 = Restore Silver (₹1,00,000), Premium (₹45,000), Standard (₹35,000), Regular (₹25,000) with 18% GST.
-	- reset_stalls: 1 = Restore all 195 standard stalls (SL-01..20, PR-01..45, ST-01..60, RG-01..70)
+	Explicitly restores pristine default pricing (5 tiers) and default 220 stalls.
+	- reset_pricing: 1 = Restore Title Sponsor (₹2,50,000), Silver (₹1,00,000), Premium (₹45,000), Standard (₹35,000), Regular (₹25,000) with 18% GST.
+	- reset_stalls: 1 = Restore all 220 standard stalls (Blocks A..P + Title Sponsor TS-01)
 	- reset_booked: 0 (default) = Keeps existing booked stalls intact. 1 = Fresh wipe (resets all booked stalls too).
 	- Security: Restricted strictly to Administrator / System Manager.
 	"""
@@ -934,7 +1078,7 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 	if r_pricing:
 		restore_default_pricing()
 		result["pricing_restored"] = True
-		result["pricing_tiers"] = ["Silver", "Premium", "Standard", "Regular"]
+		result["pricing_tiers"] = ["Title Sponsor", "Silver", "Premium", "Standard", "Regular"]
 
 	# 2. Restore Stalls
 	if r_stalls:

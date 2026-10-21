@@ -12,6 +12,7 @@
   "razorpay_webhook_secret",
   "currency",
   "pricing_section",
+  "price_title_sponsor",
   "price_silver",
   "price_premium",
   "column_break_pricing",
@@ -58,6 +59,12 @@
    "fieldname": "pricing_section",
    "fieldtype": "Section Break",
    "label": "Stall Tier Pricing (Dynamic)"
+  },
+  {
+   "default": "250000",
+   "fieldname": "price_title_sponsor",
+   "fieldtype": "Currency",
+   "label": "Title Sponsor Price (INR)"
   },
   {
    "default": "100000",
