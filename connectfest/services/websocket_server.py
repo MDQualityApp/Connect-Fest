@@ -25,18 +25,31 @@ PORT = int(os.environ.get("CONNECTFEST_WS_PORT", 8085))
 HOST = "0.0.0.0"
 
 def get_redis_url():
-	if os.environ.get("REDIS_CACHE_URL"):
-		return os.environ.get("REDIS_CACHE_URL")
+	# 1. Environment variables
+	for env_key in ("REDIS_CACHE_URL", "FRAPPE_REDIS_CACHE", "REDIS_URL"):
+		val = os.environ.get(env_key)
+		if val:
+			return val
+
+	# 2. Frappe bench sites/common_site_config.json
 	try:
 		bench_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
 		config_path = os.path.join(bench_root, "sites", "common_site_config.json")
 		if os.path.exists(config_path):
 			with open(config_path, "r") as f:
 				conf = json.load(f)
-				if conf.get("redis_cache"):
-					return conf.get("redis_cache")
+				redis_url = conf.get("redis_cache") or conf.get("redis_socketio") or conf.get("redis_queue")
+				if redis_url:
+					# Handle Redis password auth if configured in Frappe production
+					pwd = conf.get("redis_password")
+					if pwd and "@" not in redis_url:
+						parts = redis_url.split("://", 1)
+						if len(parts) == 2:
+							redis_url = f"{parts[0]}://:{pwd}@{parts[1]}"
+					return redis_url
 	except Exception:
 		pass
+
 	return "redis://127.0.0.1:13080"
 
 REDIS_URL = get_redis_url()
@@ -138,7 +151,7 @@ async def client_handler(websocket):
 						if pub:
 							await pub.publish(CHANNEL, payload_str)
 					except Exception:
-						pass
+						redis_pub_client = None
 
 				# B. Stall Deselection (User unpicked or cancelled)
 				elif action in ("deselect_stall", "stall_unselected", "stall_unselecting") and stall_num:
@@ -161,7 +174,7 @@ async def client_handler(websocket):
 						if pub:
 							await pub.publish(CHANNEL, payload_str)
 					except Exception:
-						pass
+						redis_pub_client = None
 
 				# C. Request Active Selections Refresh
 				elif action in ("get_selections", "get_active_selections"):
@@ -198,7 +211,7 @@ async def client_handler(websocket):
 				if pub:
 					asyncio.create_task(pub.publish(CHANNEL, payload_str))
 			except Exception:
-				pass
+				redis_pub_client = None
 
 
 async def redis_listener():
