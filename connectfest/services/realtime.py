@@ -79,13 +79,19 @@ def broadcast_stall_update(stall_number, status, extra_data=None):
 	except Exception:
 		pass
 
-	# 2. Publish to Frappe Realtime / Socket.IO
+	# 2. Publish to Frappe Realtime / Socket.IO (Desk and Website visitors)
 	try:
 		from frappe.realtime import publish_realtime
 		publish_realtime(
 			event="connectfest_stall_update",
 			message=payload,
 			room="all",
+			after_commit=False,
+		)
+		publish_realtime(
+			event="connectfest_stall_update",
+			message=payload,
+			room="website",
 			after_commit=False,
 		)
 	except Exception as realtime_err:
