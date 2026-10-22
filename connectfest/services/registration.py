@@ -358,7 +358,9 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		return {"status": "error", "message": f"Stall '{stall_num}' does not exist in ConnectFest inventory"}
 
 	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
-	if stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked":
+	from connectfest.services.auth import is_admin_user
+	is_admin = is_admin_user(sess_user)
+	if (stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked") and not is_admin:
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
 

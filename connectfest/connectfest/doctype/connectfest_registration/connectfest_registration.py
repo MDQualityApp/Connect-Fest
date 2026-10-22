@@ -61,7 +61,9 @@ class ConnectFestRegistration(Document):
 				frappe.throw(frappe._("Stall '{0}' does not exist in ConnectFest inventory").format(self.stall_number))
 
 			stall = frappe.get_doc("ConnectFest Stall", self.stall_number)
-			if stall.is_blocked_by_admin:
+			sess_u = getattr(frappe.session, "user", None)
+			from connectfest.services.auth import is_admin_user
+			if stall.is_blocked_by_admin and not is_admin_user(sess_u):
 				frappe.throw(frappe._("Stall '{0}' is blocked by administration ({1})").format(self.stall_number, stall.blocked_reason or "Reserved"))
 
 			if stall.status == "Booked" and stall.booked_by_registration and stall.booked_by_registration != (self.registration_id or self.name):

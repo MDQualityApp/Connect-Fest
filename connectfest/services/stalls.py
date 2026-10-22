@@ -215,7 +215,11 @@ def hold_stall(stall_number=None, **kwargs):
 
 		stall = frappe.get_doc("ConnectFest Stall", stall_num)
 
-		if stall.is_blocked_by_admin:
+		from connectfest.services.auth import is_admin_user
+		sess_u = getattr(frappe.session, "user", "")
+		is_admin = is_admin_user(sess_u)
+
+		if (stall.is_blocked_by_admin or stall.status == "Blocked") and not is_admin:
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "error",
@@ -1484,6 +1488,20 @@ def admin_book_stall(**kwargs):
 				update_modified=True,
 			)
 			cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{st_num}"))
+			try:
+				from connectfest.services.realtime import broadcast_stall_update
+				broadcast_stall_update(
+					st_num,
+					"Booked",
+					{
+						"booked_by_registration": actual_reg_id,
+						"booked_by_name": full_name,
+						"booked_by_company": company_name,
+						"payment_mode": payment_mode,
+					}
+				)
+			except Exception:
+				pass
 
 		booked_results.append({
 			"registration_id": actual_reg_id,

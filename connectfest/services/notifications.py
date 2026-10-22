@@ -93,12 +93,24 @@ def build_confirmation_html(data):
 				</p>
 			</div>
 
+			<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 4px 8px 8px 4px; padding: 16px; margin-bottom: 24px;">
+				<h4 style="margin: 0 0 6px; color: #166534; font-size: 14px; font-weight: 700;">📄 Stall Allocation Letter &amp; Invoice</h4>
+				<p style="margin: 0; font-size: 13px; color: #15803d; line-height: 1.5;">
+					Your official <strong>Intimation of Stall Allocation &amp; Terms &amp; Conditions</strong> document has been generated and attached to this email. You can also download it directly anytime below.
+				</p>
+			</div>
+
 			<p style="font-size: 14px; color: #64748b; line-height: 1.5; margin: 0 0 24px;">
 				You can access your digital exhibitor badge, floor plan coordinates, and event passes at any time through your Attendee Dashboard using your registered email or phone number.
 			</p>
 
-			<div style="text-align: center; margin-bottom: 24px;">
-				<a href="https://connectfestapp.mdqapps.online/" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">View Attendee Dashboard</a>
+			<div style="text-align: center; margin-bottom: 28px;">
+				<a href="https://connectfestapp.mdqapps.online/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
+					📥 Download Stall Allocation / Invoice (PDF)
+				</a>
+				<a href="https://connectfestapp.mdqapps.online/" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
+					View Attendee Dashboard
+				</a>
 			</div>
 		</div>
 
@@ -224,10 +236,27 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 				"registration_id": reg_data.get("registration_id")
 			}
 
+		# Generate Stall Allocation & Terms PDF attachment
+		attachments = []
+		try:
+			from connectfest.services.invoice import get_registration_allocation_data, generate_stall_allocation_pdf_bytes
+			alloc_data = get_registration_allocation_data(registration_id=reg_data.get("registration_id") or reg_data.get("name"))
+			if not alloc_data:
+				alloc_data = reg_data
+			pdf_bytes = generate_stall_allocation_pdf_bytes(alloc_data)
+			stall_tag = str(reg_data.get("stall_numbers") or reg_data.get("stall_number") or reg_data.get("registration_id") or "allotment").replace(" ", "_").replace("-", "")
+			attachments.append({
+				"fname": f"Stall_Allocation_{stall_tag}.pdf",
+				"fcontent": pdf_bytes
+			})
+		except Exception as e:
+			frappe.log_error(title="Failed to generate allocation PDF attachment", message=frappe.get_traceback())
+
 		frappe.sendmail(
 			recipients=[target_email],
 			subject=subject,
 			message=html_body,
+			attachments=attachments if attachments else None,
 			now=True,
 			delayed=False,
 		)

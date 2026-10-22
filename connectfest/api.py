@@ -128,6 +128,8 @@ from connectfest.services.reports import (
 	admin_export_bookings_csv as _admin_export_bookings_csv,
 	admin_export_bookings_pdf as _admin_export_bookings_pdf,
 	admin_get_bookings_report as _admin_get_bookings_report,
+	admin_export as _admin_export,
+	download_stall_allocation_letter as _download_stall_allocation_letter,
 )
 from connectfest.services.terms import (
 	get_terms_and_conditions as _get_terms_and_conditions,
@@ -252,6 +254,13 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 def get_admin_dashboard_data(**kwargs):
 	"""Real-time dashboard metrics and inventory overview."""
 	return _get_admin_dashboard_data(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_live_stall_updates(limit=50, since=None, **kwargs):
+	"""Real-time stall updates and active holds for live frontend map synchronization."""
+	from connectfest.services.realtime import get_live_stall_updates as _get_live_stall_updates
+	return _get_live_stall_updates(limit=limit, since=since)
 
 
 # ==============================================================================
@@ -642,6 +651,39 @@ def admin_get_bookings_report(**kwargs):
 	Admin API: Get JSON reporting data with filters and summary analytics for dashboard display.
 	"""
 	return _admin_get_bookings_report(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_export(**kwargs):
+	"""
+	Unified Admin Export API:
+	Supports format: 'csv', 'pdf', 'json'
+	Supports download: 1 or 0
+	Supports filters: role, payment_status, payment_mode, is_bni_member, tier, status, search
+	"""
+	return _admin_export(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_stall_allocation_letter(registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""
+	Downloads official 3-page Stall Allocation Letter & Sales Invoice (PDF)
+	in the exact TEXPO 2026 / TIEMA template format.
+	"""
+	return _download_stall_allocation_letter(registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_sales_invoice(registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for download_stall_allocation_letter."""
+	return _download_stall_allocation_letter(registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_invoice(registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for download_stall_allocation_letter."""
+	return _download_stall_allocation_letter(registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
 
 
 # ==============================================================================

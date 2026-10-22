@@ -2,7 +2,7 @@ import io
 import csv
 import frappe
 from frappe.utils import now_datetime, flt, cint
-from connectfest.services.common import extract_request_data, handle_api_errors
+from connectfest.services.common import extract_request_data, handle_api_errors, parse_boolean
 from connectfest.services.auth import check_admin_permission
 
 
@@ -523,3 +523,91 @@ def admin_get_bookings_report(**kwargs):
 		"filters_applied": data,
 		"records": rows,
 	}
+
+
+@handle_api_errors("ConnectFest Admin Export Error")
+def admin_export(**kwargs):
+	"""
+	Unified Export API for ConnectFest Bookings & Attendees.
+	Payload fields:
+	- format: 'csv' | 'pdf' | 'json' (default: 'json')
+	- download: 1 or 0 (if 1 and format is csv/pdf, directly triggers file download)
+	- Filters: role, payment_status, payment_mode, is_bni_member, tier, status, search
+	"""
+	err = check_admin_permission("export bookings report")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	fmt = (data.get("format") or data.get("export_format") or data.get("type") or "json").strip().lower()
+	download = parse_boolean(data.get("download", 0))
+
+	query_params = []
+	for k in ["role", "status", "payment_status", "payment_mode", "is_bni_member", "tier", "search"]:
+		val = data.get(k)
+		if val is not None and str(val).strip() != "":
+			query_params.append(f"{k}={val}")
+	q_str = ("?" + "&".join(query_params)) if query_params else ""
+
+	now_tag = now_datetime().strftime("%Y%m%d_%H%M%S")
+
+	if fmt == "csv":
+		if download:
+			return admin_export_bookings_csv(**kwargs)
+		rows = fetch_report_data(data)
+		return {
+			"status": "success",
+			"format": "csv",
+			"download_url": f"/api/method/connectfest.api.admin_export_bookings_csv{q_str}",
+			"filename": f"connectfest_bookings_{now_tag}.csv",
+			"total_records": len(rows),
+			"filters_applied": data,
+		}
+
+	elif fmt == "pdf":
+		if download:
+			return admin_export_bookings_pdf(**kwargs)
+		rows = fetch_report_data(data)
+		return {
+			"status": "success",
+			"format": "pdf",
+			"download_url": f"/api/method/connectfest.api.admin_export_bookings_pdf{q_str}",
+			"filename": f"connectfest_bookings_{now_tag}.pdf",
+			"total_records": len(rows),
+			"filters_applied": data,
+		}
+
+	else:
+		# Default format: JSON report
+		return admin_get_bookings_report(**kwargs)
+
+
+@handle_api_errors("ConnectFest Download Stall Allocation Letter Error")
+def download_stall_allocation_letter(**kwargs):
+	"""
+	Generates and downloads the official 3-page Stall Allocation Letter & Sales Invoice (PDF)
+	in the exact TEXPO 2026 / TIEMA template format.
+	Accessible by registration_id, email, or mobile_no.
+	"""
+	from connectfest.services.invoice import get_registration_allocation_data, generate_stall_allocation_pdf_bytes
+
+	data = extract_request_data(kwargs)
+	reg_id = (data.get("registration_id") or data.get("id") or "").strip()
+	mobile_no = (data.get("mobile_no") or "").strip()
+	email = (data.get("email") or "").strip().lower()
+
+	alloc_data = get_registration_allocation_data(registration_id=reg_id, mobile_no=mobile_no, email=email)
+	if not alloc_data:
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "error", "message": f"No booking registration found for {reg_id or mobile_no or email}"}
+
+	pdf_bytes = generate_stall_allocation_pdf_bytes(alloc_data)
+	booth_tag = str(alloc_data.get("stall_number") or alloc_data.get("registration_id") or "allotment").replace(" ", "_")
+	filename = f"stall_allocation_{booth_tag}.pdf"
+
+	frappe.local.response.filename = filename
+	frappe.local.response.filecontent = pdf_bytes
+	frappe.local.response.type = "download"
+	frappe.local.response.content_type = "application/pdf"
+
+

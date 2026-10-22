@@ -59,8 +59,8 @@ def validate_stall_hold_for_user(stall_doc, reg_id=None, user_email=None, user_m
 
 	stall_num = stall_doc.stall_number or stall_doc.name
 
-	# 1. Blocked by admin
-	if stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked":
+	# 1. Blocked by admin (Permitted for Event Administrators)
+	if (stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked") and not is_admin:
 		return False, {
 			"http_status_code": 403,
 			"status": "error",
@@ -628,6 +628,19 @@ def verify_razorpay_payment(**kwargs):
 		frappe.db.commit()
 		from connectfest.services.common import STALL_LOCK_PREFIX
 		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+		try:
+			from connectfest.services.realtime import broadcast_stall_update
+			broadcast_stall_update(
+				stall_num,
+				"Booked",
+				{
+					"booked_by_registration": reg_id,
+					"booked_by_name": fn,
+					"booked_by_company": cp,
+				}
+			)
+		except Exception:
+			pass
 
 	# Trigger Booking Confirmation Email to Attendee
 	try:
@@ -920,11 +933,37 @@ def admin_confirm_payment(**kwargs):
 
 	data = extract_request_data(kwargs)
 	reg_id = (data.get("registration_id") or data.get("reg_id") or "").strip()
-	email = (data.get("email") or data.get("user_email") or "").strip().lower()
 	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
+	email = (data.get("email") or data.get("user_email") or "").strip().lower()
+	full_name = (data.get("full_name") or data.get("name") or "").strip()
+	company_name = (data.get("company_name") or data.get("company") or "").strip()
+	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
+	company_logo = ""
+	if raw_logo:
+		from connectfest.services.common import save_image_from_base64_or_url
+		company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
+
+	location = (data.get("location") or "").strip()
+	industry = (data.get("industry") or "").strip()
+	segment = (data.get("segment") or "").strip()
+	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
+	region_name = (data.get("region_name") or "").strip()
+	chapter_name = (data.get("chapter_name") or "").strip()
+	if is_bni_member:
+		region_name = region_name or "Chennai"
+		chapter_name = chapter_name or "Connect Chapter"
+	else:
+		region_name = ""
+		chapter_name = ""
+	raw_source = (data.get("source_of_info") or data.get("source") or "Other").strip()
+	valid_sources = ["Social Media", "BNI Chapter", "Friends / Family", "WhatsApp", "Email Campaign", "Website", "Word of Mouth", "Other"]
+	source_of_info = raw_source if raw_source in valid_sources else "Other"
 	stall_num = (data.get("stall_number") or data.get("stall_no") or "").strip()
 	raw_pay_mode = (data.get("payment_mode") or "Cash").strip()
 	receipt_no = (data.get("receipt_no") or data.get("reference_id") or data.get("transaction_id") or "").strip()
+	rzp_payment_id = (data.get("razorpay_payment_id") or data.get("payment_id") or "").strip()
+	action = (data.get("action") or "").strip().lower()
+	create_order = parse_boolean(data.get("create_order", 0)) or action == "create_order"
 	remarks = (data.get("remarks") or data.get("notes") or "").strip()
 
 	if raw_pay_mode.lower() in ("cash", "offline"):
@@ -938,7 +977,25 @@ def admin_confirm_payment(**kwargs):
 	else:
 		payment_mode = raw_pay_mode.capitalize()
 
-	# Resolve registration doc
+	# Validate Stall Number existence
+	if not stall_num:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "Stall Number (stall_number) is mandatory! Please specify which stall is being booked."
+		}
+
+	if not frappe.db.exists("ConnectFest Stall", stall_num):
+		frappe.local.response["http_status_code"] = 404
+		return {
+			"status": "error",
+			"message": f"Stall '{stall_num}' does not exist in ConnectFest inventory!"
+		}
+
+	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
+	chosen_stall = stall_num
+
+	# 1. Resolve registration doc
 	reg_doc = None
 	if reg_id:
 		if frappe.db.exists("ConnectFest Registration", reg_id):
@@ -946,41 +1003,107 @@ def admin_confirm_payment(**kwargs):
 		elif frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
 			reg_doc = frappe.get_doc("ConnectFest Registration", {"registration_id": reg_id})
 
-	if not reg_doc and (email or mobile_no):
+	# 2. Look up by mobile_no or email
+	if not reg_doc and (mobile_no or email):
 		filters = {}
-		if email:
-			filters["email"] = email
 		if mobile_no:
 			filters["mobile_no"] = mobile_no
-		candidates = frappe.get_all("ConnectFest Registration", filters=filters, order_by="creation desc", limit=1)
+		elif email:
+			filters["email"] = email
+
+		candidates = frappe.get_all(
+			"ConnectFest Registration",
+			filters=filters,
+			fields=["name", "registration_id", "full_name", "company_name", "email", "mobile_no", "location", "industry", "segment", "is_bni_member", "region_name", "chapter_name", "stall_number", "payment_status"],
+			order_by="creation desc"
+		)
+
 		if candidates:
-			reg_doc = frappe.get_doc("ConnectFest Registration", candidates[0].name)
+			# Look for an existing pending or unbooked registration
+			unbooked = [r for r in candidates if not r.stall_number or r.payment_status != "Paid"]
+			if unbooked:
+				reg_doc = frappe.get_doc("ConnectFest Registration", unbooked[0].name)
+			else:
+				# User exists and all previous registrations are Paid (Multi-stall purchase!)
+				# Inherit existing profile fields if not passed
+				prev = candidates[0]
+				full_name = full_name or prev.full_name
+				company_name = company_name or prev.company_name
+				email = email or prev.email
+				mobile_no = mobile_no or prev.mobile_no
+				location = location or prev.location
+				industry = industry or prev.industry
+				segment = segment or prev.segment
+				is_bni_member = is_bni_member or bool(prev.is_bni_member)
+				region_name = region_name or prev.region_name
+				chapter_name = chapter_name or prev.chapter_name
 
+	# 3. If STILL not found, check tabUser or create brand new User & Registration!
 	if not reg_doc:
-		frappe.local.response["http_status_code"] = 404
-		return {
-			"status": "error",
-			"message": "Registration record not found. Please provide valid registration_id, email, or mobile_no."
-		}
+		if not mobile_no and not email:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Please provide mobile_no (or email/registration_id) along with stall_number to book a stall!"
+			}
 
-	# Resolve stall number
-	chosen_stall = stall_num or reg_doc.stall_number
-	if not chosen_stall:
-		frappe.local.response["http_status_code"] = 400
-		return {
-			"status": "error",
-			"message": "Stall Number (stall_number) is mandatory to confirm payment! Please specify which stall is being booked."
-		}
+		clean_mob = mobile_no
+		clean_email = email
+		clean_name = full_name
+		clean_comp = company_name
 
-	if not frappe.db.exists("ConnectFest Stall", chosen_stall):
-		frappe.local.response["http_status_code"] = 404
-		return {
-			"status": "error",
-			"message": f"Stall '{chosen_stall}' does not exist in ConnectFest inventory!"
-		}
+		# Check if User exists by mobile or email
+		found_user = None
+		if clean_mob:
+			found_user = frappe.db.get_value("User", {"mobile_no": clean_mob}, ["name", "email", "full_name"], as_dict=True) or frappe.db.get_value("User", {"phone": clean_mob}, ["name", "email", "full_name"], as_dict=True)
+		if not found_user and clean_email:
+			found_user = frappe.db.get_value("User", {"email": clean_email}, ["name", "email", "full_name"], as_dict=True)
 
-	stall_doc = frappe.get_doc("ConnectFest Stall", chosen_stall)
+		if found_user:
+			clean_email = clean_email or found_user.get("email")
+			clean_name = clean_name or found_user.get("full_name")
+
+		clean_name = clean_name or (f"Exhibitor {clean_mob[-4:]}" if len(clean_mob) >= 4 else "Exhibitor")
+		clean_comp = clean_comp or clean_name
+		clean_email = clean_email or (f"exhibitor_{clean_mob}@connectfest.in" if clean_mob else "")
+
+		if clean_email:
+			from connectfest.services.auth import ensure_frappe_user
+			ensure_frappe_user(clean_email, clean_name, clean_mob, role="Website User")
+
+		from connectfest.services.common import generate_stall_id
+		new_reg_id = generate_stall_id(frappe.cache())
+
+		if stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked":
+			stall_doc.is_blocked_by_admin = 0
+			stall_doc.blocked_reason = None
+			stall_doc.save(ignore_permissions=True)
+
+		reg_doc = frappe.get_doc({
+			"doctype": "ConnectFest Registration",
+			"registration_id": new_reg_id,
+			"full_name": clean_name,
+			"company_name": clean_comp,
+			"company_logo": company_logo,
+			"mobile_no": clean_mob,
+			"email": clean_email,
+			"location": location or "Chennai",
+			"industry": industry or "-",
+			"segment": segment or "-",
+			"is_bni_member": 1 if is_bni_member else 0,
+			"region_name": region_name or "",
+			"chapter_name": chapter_name or "",
+			"source_of_info": source_of_info,
+			"stall_number": chosen_stall,
+			"status": "Registered",
+			"payment_status": "Pending",
+		})
+		reg_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
 	actual_reg_id = reg_doc.registration_id or reg_doc.name
+
+	# Already booked check: reject only if booked by ANOTHER exhibitor
 	if stall_doc.status == "Booked" and stall_doc.booked_by_registration and stall_doc.booked_by_registration != actual_reg_id:
 		frappe.local.response["http_status_code"] = 409
 		return {
@@ -988,13 +1111,61 @@ def admin_confirm_payment(**kwargs):
 			"message": f"Stall '{chosen_stall}' is already booked by another exhibitor ({stall_doc.booked_by_name or stall_doc.booked_by_registration})!"
 		}
 
-	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
-	ref_id = receipt_no or f"{payment_mode.upper()}-ADMIN-{now_datetime().strftime('%y%m%d%H%M%S')}"
+	# IMPORTANT: If stall was blocked by admin, Admin is booking it now, so unblock it!
+	if stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked":
+		stall_doc.is_blocked_by_admin = 0
+		stall_doc.blocked_reason = None
 
 	from connectfest.services.pricing import get_tier_pricing
 	dynamic_prices = get_tier_pricing()
-	tier = stall_doc.tier
+	tier = stall_doc.tier or "Regular"
 	final_amount = dynamic_prices.get(tier, stall_doc.price)
+
+	# If Online payment and Admin wants to create a Razorpay order:
+	if payment_mode == "Online" and (create_order or (not rzp_payment_id and not receipt_no)):
+		from connectfest.services.payments import create_razorpay_order
+		order_res = create_razorpay_order(
+			registration_id=actual_reg_id,
+			stall_number=chosen_stall,
+			is_internal=True
+		)
+		if order_res.get("status") == "success":
+			reg_doc.stall_number = chosen_stall
+			reg_doc.stall_category = tier
+			reg_doc.amount = final_amount
+			reg_doc.payment_mode = "Online"
+			reg_doc.payment_status = "Pending"
+			if order_res.get("order") and order_res["order"].get("id"):
+				reg_doc.razorpay_order_id = order_res["order"]["id"]
+			reg_doc.save(ignore_permissions=True)
+
+			stall_doc.status = "Hold"
+			stall_doc.booked_by_registration = actual_reg_id
+			stall_doc.booked_by_name = reg_doc.full_name
+			stall_doc.booked_by_company = reg_doc.company_name
+			stall_doc.booked_by_email = reg_doc.email
+			stall_doc.booked_by_mobile = reg_doc.mobile_no
+			stall_doc.is_blocked_by_admin = 0
+			stall_doc.save(ignore_permissions=True)
+			frappe.db.commit()
+
+			return {
+				"status": "success",
+				"action": "order_created",
+				"message": f"Razorpay order created for stall {chosen_stall}. Proceed with online payment.",
+				"registration_id": actual_reg_id,
+				"stall_number": chosen_stall,
+				"stall_category": tier,
+				"amount": final_amount,
+				"payment_mode": "Online",
+				"order": order_res.get("order"),
+				"customer": order_res.get("customer"),
+			}
+		else:
+			return order_res
+
+	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+	ref_id = rzp_payment_id or receipt_no or f"{payment_mode.upper()}-ADMIN-{now_datetime().strftime('%y%m%d%H%M%S')}"
 
 	# Update registration doc
 	reg_doc.stall_number = chosen_stall
@@ -1019,6 +1190,7 @@ def admin_confirm_payment(**kwargs):
 	stall_doc.hold_token = ""
 	stall_doc.hold_expires_at = None
 	stall_doc.is_blocked_by_admin = 0
+	stall_doc.blocked_reason = None
 	stall_doc.save(ignore_permissions=True)
 
 	frappe.db.commit()
