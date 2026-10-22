@@ -48,6 +48,7 @@ from connectfest.services.auth import (
 	admin_toggle_user_status as _admin_toggle_user_status,
 	admin_get_all_users as _admin_get_all_users,
 	admin_get_user_details as _admin_get_user_details,
+	admin_delete_user as _admin_delete_user,
 	request_contact_update as _request_contact_update,
 	verify_and_update_contact as _verify_and_update_contact,
 	update_profile as _update_profile,
@@ -63,7 +64,9 @@ from connectfest.services.stalls import (
 	admin_get_stall as _admin_get_stall,
 	admin_update_stall as _admin_update_stall,
 	admin_delete_stall as _admin_delete_stall,
+	admin_book_stall as _admin_book_stall,
 	admin_restore_defaults as _admin_restore_defaults,
+	admin_clear_all_bookings as _admin_clear_all_bookings,
 	seed_default_stalls as _seed_default_stalls,
 )
 from connectfest.services.registration import (
@@ -79,6 +82,7 @@ from connectfest.services.payments import (
 	preview_payment as _preview_payment,
 	checkout as _checkout,
 	finalize_payment as _finalize_payment,
+	admin_confirm_payment as _admin_confirm_payment,
 )
 from connectfest.services.passes import (
 	verify_gate_pass as _verify_gate_pass,
@@ -115,6 +119,27 @@ from connectfest.services.sponsors import (
 	admin_toggle_sponsor_status as _admin_toggle_sponsor_status,
 	seed_default_sponsors as _seed_default_sponsors,
 )
+from connectfest.services.notifications import (
+	send_booking_confirmation_email as _send_booking_confirmation_email,
+	send_payment_failure_email as _send_payment_failure_email,
+	resend_booking_email as _resend_booking_email,
+)
+from connectfest.services.reports import (
+	admin_export_bookings_csv as _admin_export_bookings_csv,
+	admin_export_bookings_pdf as _admin_export_bookings_pdf,
+	admin_get_bookings_report as _admin_get_bookings_report,
+)
+from connectfest.services.terms import (
+	get_terms_and_conditions as _get_terms_and_conditions,
+	get_terms_by_type as _get_terms_by_type,
+	admin_get_terms_and_conditions as _admin_get_terms_and_conditions,
+	admin_get_terms_item as _admin_get_terms_item,
+	admin_create_terms_and_conditions as _admin_create_terms_and_conditions,
+	admin_update_terms_and_conditions as _admin_update_terms_and_conditions,
+	admin_delete_terms_and_conditions as _admin_delete_terms_and_conditions,
+	seed_default_terms as _seed_default_terms,
+)
+
 
 
 # ==============================================================================
@@ -179,8 +204,21 @@ def finalize_payment(**kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def verify_razorpay_payment(**kwargs):
-	"""Signature verification core."""
+	"""Signature verification core for attendee online payments."""
 	return _verify_razorpay_payment(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_confirm_payment(**kwargs):
+	"""Admin API: Confirm payment directly (Cash or Online) and allocate stall for exhibitor."""
+	return _admin_confirm_payment(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_record_cash_payment(**kwargs):
+	"""Alias for admin_confirm_payment with default Cash mode."""
+	kwargs["payment_mode"] = kwargs.get("payment_mode") or "Cash"
+	return _admin_confirm_payment(**kwargs)
 
 
 # ==============================================================================
@@ -304,6 +342,12 @@ def admin_get_user_details(user_email=None, mobile_no=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def admin_delete_user(**kwargs):
+	"""Admin API: Cascade-deletes user account and releases all their registrations and booked stalls."""
+	return _admin_delete_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 	"""Initiates phone number or email address update with 2-minute OTP verification."""
 	return _request_contact_update(new_mobile_no=new_mobile_no, new_email=new_email, **kwargs)
@@ -379,9 +423,36 @@ def admin_delete_stall(stall_number=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def admin_book_stall(**kwargs):
+	"""Admin API: Book one or multiple stalls directly for an attendee with Online or Cash payment."""
+	return _admin_book_stall(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_book_stall_for_user(**kwargs):
+	"""Alias for admin_book_stall."""
+	return _admin_book_stall(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
 	"""Admin API: Explicitly restore pristine default pricing (5 tiers) and default 220 stalls on-demand."""
 	return _admin_restore_defaults(reset_pricing=reset_pricing, reset_stalls=reset_stalls, reset_booked=reset_booked, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_clear_all_bookings(**kwargs):
+	"""
+	Admin API: Complete wipe and reset for testing.
+	Deletes all Exhibitor Registrations, Visitor Registrations, resets 220 stalls to Available, and clears Redis queues.
+	"""
+	return _admin_clear_all_bookings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_reset_test_data(**kwargs):
+	"""Alias for admin_clear_all_bookings."""
+	return _admin_clear_all_bookings(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -526,3 +597,107 @@ def admin_toggle_sponsor_status(sponsor_id=None, sponsor_ids=None, **kwargs):
 def seed_default_sponsors():
 	"""Seeds default realistic sponsors for ConnectFest 2027."""
 	return _seed_default_sponsors()
+
+
+# ==============================================================================
+# 11. NOTIFICATIONS & EMAIL ALERTS APIS
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def resend_booking_email(registration_id=None, email=None, **kwargs):
+	"""Public / Attendee API: Resend booking confirmation email with pass & stall details."""
+	return _resend_booking_email(registration_id=registration_id, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_resend_booking_email(registration_id=None, email=None, **kwargs):
+	"""Admin alias to resend booking confirmation email."""
+	return _resend_booking_email(registration_id=registration_id, email=email, **kwargs)
+
+
+# ==============================================================================
+# 12. EXPORT & REPORTING APIS (CSV & PDF DOWNLOADS WITH FILTERS)
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def admin_export_bookings_csv(**kwargs):
+	"""
+	Admin API: Export attendees and stall bookings as CSV file.
+	Supports filters: role (all/exhibitor/visitor), status, payment_status, payment_mode (Online/Cash),
+	is_bni_member (1/0), tier (Platinum/Diamond/Gold/Silver), search query.
+	"""
+	return _admin_export_bookings_csv(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_export_bookings_pdf(**kwargs):
+	"""
+	Admin API: Export attendees and stall bookings as a beautifully styled PDF report.
+	Includes event header, summary KPI cards, detailed records table, and timestamp.
+	"""
+	return _admin_export_bookings_pdf(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_bookings_report(**kwargs):
+	"""
+	Admin API: Get JSON reporting data with filters and summary analytics for dashboard display.
+	"""
+	return _admin_get_bookings_report(**kwargs)
+
+
+# ==============================================================================
+# 13. TERMS AND CONDITIONS CRUD APIS
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def get_terms_and_conditions(**kwargs):
+	"""Public API: Get active terms and conditions, optionally filtered by type or version."""
+	return _get_terms_and_conditions(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_terms_by_type(terms_type=None, **kwargs):
+	"""Public API: Get latest active terms for a specific type (e.g. Exhibitor or Visitor)."""
+	return _get_terms_by_type(terms_type=terms_type, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_terms_and_conditions(**kwargs):
+	"""Admin API: List all terms and conditions (active & inactive) with filters and breakdown."""
+	return _admin_get_terms_and_conditions(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_terms_item(terms_id=None, **kwargs):
+	"""Admin API: Get a single terms and conditions document by ID."""
+	return _admin_get_terms_item(terms_id=terms_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_terms_and_conditions(**kwargs):
+	"""Admin API: Create a new terms and conditions document."""
+	return _admin_create_terms_and_conditions(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_terms_and_conditions(terms_id=None, **kwargs):
+	"""Admin API: Update an existing terms and conditions document."""
+	return _admin_update_terms_and_conditions(terms_id=terms_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_terms_and_conditions(terms_id=None, terms_ids=None, **kwargs):
+	"""Admin API: Delete one or multiple terms and conditions documents."""
+	return _admin_delete_terms_and_conditions(terms_id=terms_id, terms_ids=terms_ids, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_terms(terms_ids=None, **kwargs):
+	"""Alias for admin_delete_terms_and_conditions supporting bulk deletion."""
+	return _admin_delete_terms_and_conditions(terms_ids=terms_ids, **kwargs)
+
+
+
+@frappe.whitelist(allow_guest=True)
+def seed_default_terms():
+	"""Seeds default realistic terms and conditions for ConnectFest 2027."""
+	return _seed_default_terms()
+

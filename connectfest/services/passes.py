@@ -199,10 +199,10 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			SELECT registration_id, full_name, company_name, company_logo, location,
 			       mobile_no, email, is_bni_member, region_name, chapter_name,
 			       industry, segment, stall_number, stall_category, amount, payment_status,
-			       razorpay_order_id, razorpay_payment_id, payment_date, status, creation
+			       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, status, creation
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
-			ORDER BY creation DESC LIMIT 1
+			ORDER BY creation DESC
 		""", params, as_dict=True)
 
 		# 2. Fetch Visitor Pass
@@ -231,58 +231,65 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 
 		is_authorized = True
 
+		all_stall_bookings = []
 		if stalls:
-			sb = stalls[0]
-			stall_doc = None
-			if sb.stall_number and frappe.db.exists("ConnectFest Stall", sb.stall_number):
-				stall_doc = frappe.get_doc("ConnectFest Stall", sb.stall_number)
+			for sb in stalls:
+				if not sb.stall_number:
+					continue
 
-			zone = "Zone B - West Aisles"
-			tier_name = sb.stall_category or (stall_doc.tier if stall_doc else "")
-			if tier_name == "Silver":
-				zone = "Zone D - East Pavilions"
-			elif tier_name == "Premium":
-				zone = "Zone C - Center Aisles"
-			elif tier_name == "Standard":
+				stall_doc = None
+				if frappe.db.exists("ConnectFest Stall", sb.stall_number):
+					stall_doc = frappe.get_doc("ConnectFest Stall", sb.stall_number)
+
 				zone = "Zone B - West Aisles"
-			elif tier_name == "Regular":
-				zone = "Zone E - South Entrance Corridor"
-			else:
-				zone = None
+				tier_name = sb.stall_category or (stall_doc.tier if stall_doc else "")
+				if tier_name == "Silver":
+					zone = "Zone D - East Pavilions"
+				elif tier_name == "Premium":
+					zone = "Zone C - Center Aisles"
+				elif tier_name == "Standard":
+					zone = "Zone B - West Aisles"
+				elif tier_name == "Regular":
+					zone = "Zone E - South Entrance Corridor"
+				else:
+					zone = None
 
-			is_paid = (sb.payment_status == "Paid")
-			status_desc = "Confirmed" if is_paid else ("Awaiting Payment" if sb.stall_number else "Stall Not Selected")
+				is_paid = (sb.payment_status == "Paid")
+				status_desc = "Confirmed" if is_paid else ("Awaiting Payment" if sb.stall_number else "Stall Not Selected")
 
-			stall_booking = {
-				"registration_id": sb.registration_id,
-				"full_name": sb.full_name,
-				"company_name": sb.company_name,
-				"company_logo": sb.company_logo or "",
-				"location": sb.location or "",
-				"industry": sb.industry or "",
-				"segment": sb.segment or "",
-				"is_bni_member": bool(sb.is_bni_member),
-				"region_name": sb.region_name or "",
-				"chapter_name": sb.chapter_name or "",
-				"email": sb.email if is_authorized else mask_email(sb.email),
-				"mobile_no": sb.mobile_no if is_authorized else mask_phone(sb.mobile_no),
-				"stall_number": sb.stall_number,
-				"stall_category": tier_name,
-				"zone": zone,
-				"dimensions": (stall_doc.dimensions if stall_doc else "") or ("Standard" if sb.stall_number else None),
-				"amount": flt(sb.amount),
-				"payment_status": sb.payment_status,
-				"has_paid": is_paid,
-				"has_selected_stall": bool(sb.stall_number),
-				"next_action": "view_badge" if is_paid else ("proceed_to_payment" if sb.stall_number else "select_stall"),
-				"razorpay_payment_id": sb.razorpay_payment_id if is_authorized else "pay_verified_secure",
-				"razorpay_order_id": sb.razorpay_order_id if is_authorized else "order_verified_secure",
-				"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
-				"status": status_desc,
-				"badge_qr_payload": (f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_authorized else None) if is_paid else None,
-				"venue": "Chennai Trade Centre, Nandambakkam",
-				"dates": "20 & 21 Feb 2027",
-			}
+				all_stall_bookings.append({
+					"registration_id": sb.registration_id,
+					"full_name": sb.full_name,
+					"company_name": sb.company_name,
+					"company_logo": sb.company_logo or "",
+					"location": sb.location or "",
+					"industry": sb.industry or "",
+					"segment": sb.segment or "",
+					"is_bni_member": bool(sb.is_bni_member),
+					"region_name": sb.region_name or "",
+					"chapter_name": sb.chapter_name or "",
+					"email": sb.email if is_authorized else mask_email(sb.email),
+					"mobile_no": sb.mobile_no if is_authorized else mask_phone(sb.mobile_no),
+					"stall_number": sb.stall_number,
+					"stall_category": tier_name,
+					"zone": zone,
+					"dimensions": (stall_doc.dimensions if stall_doc else "") or ("Standard" if sb.stall_number else None),
+					"amount": flt(sb.amount),
+					"payment_status": sb.payment_status,
+					"payment_mode": sb.get("payment_mode") or ("Cash" if (sb.get("razorpay_payment_id") or "").startswith("CASH") else "Online"),
+					"has_paid": is_paid,
+					"has_selected_stall": bool(sb.stall_number),
+					"next_action": "view_badge" if is_paid else ("proceed_to_payment" if sb.stall_number else "select_stall"),
+					"razorpay_payment_id": sb.razorpay_payment_id if is_authorized else "pay_verified_secure",
+					"razorpay_order_id": sb.razorpay_order_id if is_authorized else "order_verified_secure",
+					"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
+					"status": status_desc,
+					"badge_qr_payload": (f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_authorized else None) if is_paid else None,
+					"venue": "Chennai Trade Centre, Nandambakkam",
+					"dates": "20 & 21 Feb 2027",
+				})
+
+		stall_booking = all_stall_bookings[0] if all_stall_bookings else None
 
 		if visitors:
 			v = visitors[0]
@@ -305,8 +312,10 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		res = {
 			"status": "success",
 			"is_authorized": is_authorized,
-			"has_stall_booking": bool(stall_booking),
+			"has_stall_booking": bool(all_stall_bookings),
 			"stall_booking": stall_booking,
+			"stall_bookings": all_stall_bookings,
+			"total_stalls": len(all_stall_bookings),
 			"has_visitor_pass": bool(visitor_pass),
 			"visitor_pass": visitor_pass,
 		}

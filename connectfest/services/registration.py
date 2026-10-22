@@ -75,15 +75,15 @@ def register_stall(**kwargs):
 	# Enforce Strict Uniqueness on Email and Mobile
 	if email or mobile_no:
 		# 1. Check existing exhibitor registrations
-		existing = frappe.db.sql("""
+		all_ex = frappe.db.sql("""
 			SELECT name, registration_id, full_name, company_name, email, mobile_no,
 			       stall_number, stall_category, amount, payment_status, status
 			FROM `tabConnectFest Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
-			ORDER BY creation DESC LIMIT 1
+			ORDER BY creation DESC
 		""", {"email": email, "mobile": mobile_no}, as_dict=True)
-		if existing:
-			ex = existing[0]
+		if all_ex:
+			ex = all_ex[0]
 			ex_email = (ex.get("email") or "").strip().lower()
 			ex_mobile = (ex.get("mobile_no") or "").strip()
 			req_email = (email or "").strip().lower()
@@ -105,27 +105,52 @@ def register_stall(**kwargs):
 					"message": f"Email address '{req_email}' is already registered with mobile number {ex_mobile}! Please use your registered mobile number."
 				}
 
-			# Both match: Exact same attendee returning
-			if ex.payment_status == "Paid":
-				st_name = ex.stall_number or ex.stall_category
-				frappe.local.response["http_status_code"] = 400
-				return {
-					"status": "error",
-					"message": f"Each exhibitor can book only 1 stall! You already have an active booked stall: {st_name} (Registration ID: {ex.registration_id})."
-				}
+			# Check if user already booked this specific stall
+			if stall_number:
+				already_booked_this = [
+					r for r in all_ex
+					if r.get("stall_number") == stall_number and r.get("payment_status") == "Paid"
+				]
+				if already_booked_this:
+					frappe.local.response["http_status_code"] = 400
+					return {
+						"status": "error",
+						"message": f"You have already booked and confirmed stall '{stall_number}' (Registration ID: {already_booked_this[0].get('registration_id')})."
+					}
+
+				# If user has an existing Pending registration for this same stall, return it
+				pending_for_this = [
+					r for r in all_ex
+					if r.get("stall_number") == stall_number and r.get("payment_status") != "Paid"
+				]
+				if pending_for_this:
+					p_rec = pending_for_this[0]
+					ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
+					return {
+						"status": "already_registered",
+						"message": f"You already have a pending registration for stall '{stall_number}'! (Registration ID: {p_rec.registration_id}). Please proceed to complete payment.",
+						"registration_id": p_rec.registration_id,
+						"data": p_rec,
+					}
 			else:
-				# Return existing pending registration without creating duplicate!
-				ensure_frappe_user(ex_email, ex.full_name or full_name, ex_mobile, role="Website User")
-				if company_logo and not ex.get("company_logo"):
-					frappe.db.set_value("ConnectFest Registration", ex.name, "company_logo", company_logo)
-					frappe.db.commit()
-					ex["company_logo"] = company_logo
-				return {
-					"status": "already_registered",
-					"message": f"An exhibitor registration already exists with this email and mobile number! (Registration ID: {ex.registration_id}). Please proceed to select your stall and complete payment.",
-					"registration_id": ex.registration_id,
-					"data": ex,
-				}
+				# No stall_number specified:
+				# If there is an existing pending registration without stall chosen, reuse it
+				# unless caller explicitly requested a new registration (allow_new / new_booking)
+				allow_new = parse_boolean(data.get("allow_new", 0)) or parse_boolean(data.get("new_booking", 0))
+				if not allow_new:
+					pending_no_stall = [
+						r for r in all_ex
+						if r.get("payment_status") != "Paid" and not r.get("stall_number")
+					]
+					if pending_no_stall:
+						p_rec = pending_no_stall[0]
+						ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
+						return {
+							"status": "already_registered",
+							"message": f"An exhibitor registration already exists with this email and mobile number! (Registration ID: {p_rec.registration_id}). Please proceed to select your stall and complete payment.",
+							"registration_id": p_rec.registration_id,
+							"data": p_rec,
+						}
 
 		# 2. Check if already registered in Visitor Registration with this mobile or email
 		vis = frappe.db.sql("""
@@ -216,6 +241,19 @@ def register_stall(**kwargs):
 	reg_id = generate_stall_id(cache)
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S.%f")
 
+	raw_pay_mode = (data.get("payment_mode") or "").strip().capitalize()
+	if raw_pay_mode.lower() in ("cash", "cheque", "bank transfer"):
+		from connectfest.services.auth import is_admin_user
+		sess_user = getattr(frappe.session, "user", None)
+		if not is_admin_user(sess_user):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Cash payments can only be processed and recorded by Event Administration at the venue desk. Exhibitors must pay online via Razorpay."
+			}
+
+	has_stall_selected = bool(stall_number or stall_category)
+
 	record = {
 		"name": reg_id,
 		"registration_id": reg_id,
@@ -232,9 +270,10 @@ def register_stall(**kwargs):
 		"segment": segment,
 		"source_of_info": matched_source,
 		"stall_number": stall_number or None,
-		"stall_category": stall_category or None,
-		"amount": amount,
-		"payment_status": "Pending",
+		"stall_category": stall_category or "",
+		"amount": amount if has_stall_selected else 0.0,
+		"payment_status": "Pending" if has_stall_selected else "",
+		"payment_mode": (raw_pay_mode or "Online") if has_stall_selected else "",
 		"razorpay_order_id": "",
 		"razorpay_payment_id": "",
 		"razorpay_signature": "",
@@ -297,6 +336,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	Validates availability, updates registration record, applies dynamic pricing, and places a 10-minute hold.
 	"""
 	from connectfest.services.stalls import hold_stall
+	cache = frappe.cache()
 	data = extract_request_data(kwargs)
 	reg_id = (registration_id or data.get("registration_id") or "").strip()
 	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
@@ -308,28 +348,6 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 			"status": "unauthorized",
 			"message": "Login required to select stall. Please log in using your registered mobile number or email via OTP.",
 		}
-
-	# Auto-resolve registration_id for logged-in exhibitor if not explicitly provided
-	if not reg_id:
-		reg_id = frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id") or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name")
-
-	# Check visitor restriction
-	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
-		frappe.local.response["http_status_code"] = 403
-		return {
-			"status": "forbidden",
-			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
-		}
-
-	if not reg_id:
-		if frappe.db.exists("ConnectFest Visitor Registration", {"email": sess_user}):
-			frappe.local.response["http_status_code"] = 403
-			return {
-				"status": "forbidden",
-				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
-			}
-		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "registration_id is required"}
 
 	if not stall_num:
 		frappe.local.response["http_status_code"] = 400
@@ -344,16 +362,134 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
 
+	# Prevent duplicate payment/selection for the same stall if already Paid & Confirmed by this user
+	if sess_user and sess_user != "Guest":
+		user_mob = (frappe.db.get_value("User", sess_user, "mobile_no") or frappe.db.get_value("User", sess_user, "phone") or "").strip()
+		already_paid_this = frappe.db.sql("""
+			SELECT registration_id, stall_number FROM `tabConnectFest Registration`
+			WHERE (email = %(email)s OR (mobile_no = %(mobile)s AND %(mobile)s != ''))
+			  AND stall_number = %(stall_num)s
+			  AND payment_status = 'Paid'
+			LIMIT 1
+		""", {"email": sess_user, "mobile": user_mob, "stall_num": stall_num}, as_dict=True)
+		if already_paid_this:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Stall '{stall_num}' has already been paid and confirmed for your account. Multiple payments are strictly prohibited!",
+				"payment_status": "Paid",
+				"stall_number": stall_num,
+			}
+
 	if stall_doc.status == "Booked" and stall_doc.booked_by_registration != reg_id:
 		frappe.local.response["http_status_code"] = 409
 		return {"status": "error", "message": f"Stall '{stall_num}' is already booked and confirmed by another exhibitor"}
 
+	record = None
+	# If caller provided reg_id explicitly:
+	if reg_id:
+		if frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
+			records = frappe.get_all("ConnectFest Registration", filters={"registration_id": reg_id}, fields=["*"], limit=1)
+			if records:
+				r = records[0]
+				if r.payment_status == "Paid":
+					if r.stall_number == stall_num:
+						frappe.local.response["http_status_code"] = 400
+						return {
+							"status": "error",
+							"message": f"Stall '{stall_num}' has already been paid and confirmed for this registration. You cannot change your stall after payment.",
+							"payment_status": "Paid",
+							"stall_number": stall_num,
+						}
+					else:
+						# Registration reg_id was already paid for a different stall.
+						# Since user can buy multiple stalls, spawn a new registration for this new stall!
+						reg_id = None
+				else:
+					record = r
+
+	# Auto-resolve or create registration for logged-in exhibitor
+	if not reg_id and sess_user and sess_user != "Guest":
+		# Priority 1: Existing pending registration for this exact stall
+		p1 = frappe.db.get_value(
+			"ConnectFest Registration",
+			{"email": sess_user, "stall_number": stall_num, "payment_status": ("!=", "Paid")},
+			"registration_id"
+		)
+		if p1:
+			reg_id = p1
+		else:
+			# Priority 2: Existing pending registration with no stall selected yet
+			p2 = frappe.db.get_value(
+				"ConnectFest Registration",
+				{"email": sess_user, "stall_number": ("in", ["", None]), "payment_status": ("!=", "Paid")},
+				"registration_id",
+				order_by="creation desc"
+			)
+			if p2:
+				reg_id = p2
+			else:
+				# Priority 3: User already has paid registrations (e.g. A-01), but wants to buy an additional stall (e.g. A-02)!
+				# Automatically create a new registration record for this additional stall!
+				new_reg_id = generate_stall_id(cache)
+				prev_regs = frappe.get_all(
+					"ConnectFest Registration",
+					filters={"email": sess_user},
+					fields=["*"],
+					order_by="creation asc",
+					limit=1
+				)
+				prev = prev_regs[0] if prev_regs else {}
+				dynamic_prices = get_tier_pricing()
+				tier = stall_doc.tier
+				price = dynamic_prices.get(tier, stall_doc.price)
+
+				new_doc = frappe.get_doc({
+					"doctype": "ConnectFest Registration",
+					"registration_id": new_reg_id,
+					"full_name": prev.get("full_name") or frappe.db.get_value("User", sess_user, "full_name") or sess_user,
+					"company_name": prev.get("company_name") or "",
+					"company_logo": prev.get("company_logo") or "",
+					"location": prev.get("location") or "Chennai",
+					"mobile_no": prev.get("mobile_no") or frappe.db.get_value("User", sess_user, "mobile_no") or "",
+					"email": sess_user,
+					"is_bni_member": prev.get("is_bni_member") or 0,
+					"region_name": prev.get("region_name") or "",
+					"chapter_name": prev.get("chapter_name") or "",
+					"industry": prev.get("industry") or "",
+					"segment": prev.get("segment") or "",
+					"source_of_info": prev.get("source_of_info") or "Direct",
+					"stall_number": stall_num,
+					"stall_category": tier,
+					"amount": price,
+					"payment_status": "Pending",
+					"payment_mode": "Online",
+					"status": "Registered",
+				})
+				new_doc.insert(ignore_permissions=True)
+				frappe.db.commit()
+				reg_id = new_reg_id
+				record = new_doc.as_dict()
+
+	# Check visitor restriction
+	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	if not reg_id:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "registration_id is required"}
+
 	cache = frappe.cache()
-	record = get_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}")
-	if not record and frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
-		records = frappe.get_all("ConnectFest Registration", filters={"registration_id": reg_id}, fields=["*"], limit=1)
-		if records:
-			record = records[0]
+	if not record:
+		record = get_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}")
+		if not record and frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
+			records = frappe.get_all("ConnectFest Registration", filters={"registration_id": reg_id}, fields=["*"], limit=1)
+			if records:
+				record = records[0]
 
 	if not record:
 		frappe.local.response["http_status_code"] = 404
@@ -405,6 +541,8 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	record["stall_number"] = stall_num
 	record["stall_category"] = tier
 	record["amount"] = price
+	record["payment_status"] = "Pending"
+	record["payment_mode"] = "Online"
 	set_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}", record)
 
 	db_target = None
@@ -421,13 +559,25 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				"stall_number": stall_num,
 				"stall_category": tier,
 				"amount": price,
+				"payment_status": "Pending",
+				"payment_mode": "Online",
 			},
 			update_modified=False,
 		)
 		frappe.db.commit()
 
 	# Hold stall for 10 mins
-	hold_res = hold_stall(stall_number=stall_num, email=record.get("email"), mobile_no=record.get("mobile_no"), full_name=record.get("full_name"), company_name=record.get("company_name"))
+	hold_res = hold_stall(
+		stall_number=stall_num,
+		email=record.get("email"),
+		mobile_no=record.get("mobile_no"),
+		full_name=record.get("full_name"),
+		company_name=record.get("company_name"),
+		registration_id=reg_id,
+	)
+
+	if hold_res.get("status") == "error":
+		return hold_res
 
 	return {
 		"status": "success",
@@ -660,31 +810,37 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 	mb = (mobile_no or data.get("mobile_no") or data.get("phone") or "").strip()
 
 	stall_booking = None
+	stall_bookings = []
 	visitor_pass = None
 
 	if em or mb:
 		stalls = frappe.db.sql("""
-			SELECT registration_id, full_name, company_name, email, mobile_no, stall_number, stall_category, amount, payment_status
+			SELECT registration_id, full_name, company_name, email, mobile_no, stall_number, stall_category,
+			       amount, payment_status, payment_mode, payment_date, status, creation
 			FROM `tabConnectFest Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s) AND payment_status = 'Paid'
-			LIMIT 1
+			ORDER BY creation DESC
 		""", {"email": em, "mobile": mb}, as_dict=True)
 		if stalls:
+			stall_bookings = stalls
 			stall_booking = stalls[0]
 
 		visitors = frappe.db.sql("""
-			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in
+			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info
 			FROM `tabConnectFest Visitor Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
-			LIMIT 1
+			ORDER BY creation DESC LIMIT 1
 		""", {"email": em, "mobile": mb}, as_dict=True)
 		if visitors:
 			visitor_pass = visitors[0]
 
 	return {
 		"status": "success",
-		"has_stall_booking": bool(stall_booking),
+		"has_stall_booking": bool(stall_bookings),
 		"stall_booking": stall_booking,
+		"stall_bookings": stall_bookings,
+		"total_stalls": len(stall_bookings),
+		"stalls_list": [s.get("stall_number") for s in stall_bookings if s.get("stall_number")],
 		"has_visitor_pass": bool(visitor_pass),
 		"visitor_pass": visitor_pass,
 	}

@@ -202,33 +202,55 @@ def get_current_user_profile(**kwargs):
 
 	is_admin = is_admin_user(target_user)
 
-	# Fetch stall booking details (Exhibitor)
-	stalls = frappe.db.sql("""
+	# Fetch all stall booking details (Exhibitor)
+	stalls_raw = frappe.db.sql("""
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
 		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
-		       razorpay_order_id, razorpay_payment_id, payment_date, creation
+		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation
 		FROM `tabConnectFest Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
-		ORDER BY creation DESC LIMIT 1
+		ORDER BY creation ASC
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
 
 	# Fetch visitor pass details (Visitor)
-	visitors = frappe.db.sql("""
+	visitors_raw = frappe.db.sql("""
 		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code,
 		       qr_payload, status, checked_in, checked_in_at, creation
 		FROM `tabConnectFest Visitor Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
-		ORDER BY creation DESC LIMIT 1
+		ORDER BY creation ASC
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
 
-	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls else ("Visitor" if visitors else "Attendee"))
+	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls_raw else ("Visitor" if visitors_raw else "Attendee"))
 
-	stall_booking = None
-	if stalls:
-		sb = stalls[0]
+	# Business details from primary registration
+	primary_reg = stalls_raw[0] if stalls_raw else None
+	company_name = (primary_reg.company_name if primary_reg else "") or ""
+	company_logo = (primary_reg.company_logo if primary_reg else "") or ""
+	location = (primary_reg.location if primary_reg else "") or ""
+	industry = (primary_reg.industry if primary_reg else "") or ""
+	segment = (primary_reg.segment if primary_reg else "") or ""
+	is_bni_member = bool(primary_reg.is_bni_member) if primary_reg else False
+	region_name = (primary_reg.region_name if primary_reg else "") or ""
+	chapter_name = (primary_reg.chapter_name if primary_reg else "") or ""
+	source_of_info = (primary_reg.source_of_info if primary_reg else "") or ""
+
+	stalls = []
+	pending_registrations = []
+	for sb in stalls_raw:
+		if not sb.stall_number:
+			pending_registrations.append({
+				"registration_id": sb.registration_id,
+				"status": "Registered",
+				"booking_status": "Stall Not Selected",
+				"next_action": "select_stall",
+				"created_at": str(sb.creation),
+			})
+			continue
+
 		stall_doc = None
-		if sb.stall_number and frappe.db.exists("ConnectFest Stall", sb.stall_number):
+		if frappe.db.exists("ConnectFest Stall", sb.stall_number):
 			stall_doc = frappe.get_doc("ConnectFest Stall", sb.stall_number)
 
 		tier_name = sb.stall_category or (stall_doc.tier if stall_doc else "")
@@ -238,60 +260,62 @@ def get_current_user_profile(**kwargs):
 			"Standard": "Zone B - West Aisles",
 			"Regular": "Zone E - South Entrance Corridor",
 		}
-		zone = zone_map.get(tier_name, "Zone B - West Aisles" if tier_name else None)
+		zone = zone_map.get(tier_name) if tier_name else None
 		is_paid = (sb.payment_status == "Paid")
-		status_desc = "Confirmed" if is_paid else ("Awaiting Payment" if sb.stall_number else "Stall Not Selected")
+		pay_mode = sb.get("payment_mode") or ("Cash" if (sb.get("razorpay_payment_id") or "").startswith("CASH") else ("Online" if is_paid else "N/A"))
+		status_desc = "Confirmed" if is_paid else "Awaiting Payment"
 
-		stall_booking = {
+		stalls.append({
 			"registration_id": sb.registration_id,
 			"full_name": sb.full_name or user_full_name,
-			"company_name": sb.company_name or "",
-			"company_logo": sb.company_logo or "",
-			"location": sb.location or "",
-			"industry": sb.industry or "",
-			"segment": sb.segment or "",
+			"company_name": sb.company_name or company_name,
+			"company_logo": sb.company_logo or company_logo,
+			"location": sb.location or location,
+			"industry": sb.industry or industry,
+			"segment": sb.segment or segment,
 			"is_bni_member": bool(sb.is_bni_member),
 			"region_name": sb.region_name or "",
 			"chapter_name": sb.chapter_name or "",
 			"source_of_info": sb.source_of_info or "",
-			"email": sb.email,
+			"email": sb.email or target_user,
 			"mobile_no": sb.mobile_no or user_mobile,
 			"stall_number": sb.stall_number,
 			"stall_category": tier_name,
+			"tier": tier_name,
 			"zone": zone,
-			"dimensions": (stall_doc.dimensions if stall_doc else "") or ("Standard" if sb.stall_number else None),
+			"dimensions": (stall_doc.dimensions if stall_doc else "") or "3 x 3 m",
 			"amount": flt(sb.amount),
 			"payment_status": sb.payment_status or "Pending",
+			"payment_mode": pay_mode,
 			"has_paid": is_paid,
-			"has_selected_stall": bool(sb.stall_number),
-			"next_action": "view_badge" if is_paid else ("proceed_to_payment" if sb.stall_number else "select_stall"),
+			"has_selected_stall": True,
+			"next_action": "view_badge" if is_paid else "proceed_to_payment",
 			"razorpay_payment_id": sb.razorpay_payment_id,
 			"razorpay_order_id": sb.razorpay_order_id,
 			"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
 			"booking_status": status_desc,
 			"badge_qr_payload": f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_paid else None,
-			"venue": "Chennai Trade Centre, Nandambakkam",
-			"dates": "20 & 21 Feb 2027",
-		}
+			"created_at": str(sb.creation),
+		})
 
-	visitor_pass = None
-	if visitors:
-		v = visitors[0]
-		visitor_pass = {
+	visitor_passes = []
+	for v in visitors_raw:
+		visitor_passes.append({
 			"registration_id": v.registration_id,
 			"pass_code": v.pass_code,
-			"full_name": v.full_name or user_full_name,
-			"email": v.email,
-			"mobile_no": v.mobile_no or user_mobile,
 			"which_day": v.which_day,
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
 			"status": v.status or "Registered",
 			"checked_in": int(v.checked_in or 0),
 			"checked_in_at": str(v.checked_in_at or ""),
 			"qr_payload": v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}",
-			"venue": "Chennai Trade Centre, Nandambakkam",
-			"dates": "20 & 21 Feb 2027",
-		}
+			"created_at": str(v.creation),
+		})
+
+	stall_booking = stalls[0] if stalls else None
+	total_amount = sum(flt(s.get("amount", 0.0)) for s in stalls)
+	total_amount_paid = sum(flt(s.get("amount", 0.0)) for s in stalls if s.get("has_paid"))
+	all_stalls_paid = bool(stalls and all(s.get("has_paid") for s in stalls))
 
 	res = {
 		"status": "success",
@@ -304,37 +328,35 @@ def get_current_user_profile(**kwargs):
 		"role_type": role_type,
 		"is_admin": is_admin,
 
-		# Stall & Exhibitor details
-		"has_stall_booking": bool(stall_booking),
+		# Business / Attendee Profile
+		"company_name": company_name,
+		"company_logo": company_logo,
+		"location": location,
+		"industry": industry,
+		"segment": segment,
+		"is_bni_member": is_bni_member,
+		"region_name": region_name,
+		"chapter_name": chapter_name,
+		"source_of_info": source_of_info,
+
+		# Single Comprehensive Stall Booking Object & Multi-Stall Support
+		"has_stall_booking": bool(stalls),
+		"has_pending_selection": bool(pending_registrations and not stalls),
+		"total_stalls": len(stalls),
+		"stall_numbers": [s["stall_number"] for s in stalls if s.get("stall_number")],
+		"total_amount": total_amount,
+		"total_amount_paid": total_amount_paid,
+		"all_stalls_paid": all_stalls_paid,
 		"stall_booking": stall_booking,
+		"stalls": stalls,
 
-		# Visitor Pass details
-		"has_visitor_pass": bool(visitor_pass),
-		"visitor_pass": visitor_pass,
+		# Visitor Pass
+		"has_visitor_pass": bool(visitor_passes),
+		"visitor_pass": visitor_passes[0] if visitor_passes else None,
 
-		# Event Info
+		# Venue & Dates
 		"venue": "Chennai Trade Centre, Nandambakkam",
 		"dates": "20 & 21 Feb 2027",
-	}
-
-	# Flatten primary booking fields directly on root level
-	if stall_booking:
-		for k, val in stall_booking.items():
-			if k not in res:
-				res[k] = val
-	elif visitor_pass:
-		for k, val in visitor_pass.items():
-			if k not in res:
-				res[k] = val
-
-	# Keep profile key for backwards compatibility
-	res["profile"] = {
-		"status": "success",
-		"is_authorized": True,
-		"has_stall_booking": bool(stall_booking),
-		"stall_booking": stall_booking,
-		"has_visitor_pass": bool(visitor_pass),
-		"visitor_pass": visitor_pass,
 	}
 
 	if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
@@ -603,29 +625,33 @@ def admin_get_all_users(**kwargs):
 		"ConnectFest Registration",
 		fields=[
 			"registration_id", "full_name", "email", "mobile_no", "company_name",
-			"company_logo", "location", "stall_number", "stall_category",
-			"amount", "payment_status", "status", "creation", "modified"
+			"company_logo", "location", "is_bni_member", "region_name", "chapter_name",
+			"industry", "segment", "source_of_info", "stall_number", "stall_category",
+			"amount", "payment_status", "payment_mode", "razorpay_order_id",
+			"razorpay_payment_id", "payment_date", "status", "creation", "modified"
 		],
+		order_by="creation desc",
 		limit_page_length=0
 	)
 	exhibitors_by_email = {}
 	for ex in exhibitor_records:
 		if ex.email:
-			exhibitors_by_email[ex.email.strip().lower()] = ex
+			exhibitors_by_email.setdefault(ex.email.strip().lower(), []).append(ex)
 
 	# 2. Fetch all Visitor registrations
 	visitor_records = frappe.get_all(
 		"ConnectFest Visitor Registration",
 		fields=[
 			"registration_id", "full_name", "email", "mobile_no", "which_day",
-			"pass_code", "checked_in", "checked_in_at", "status", "creation", "modified"
+			"source_of_info", "pass_code", "checked_in", "checked_in_at", "status", "creation", "modified"
 		],
+		order_by="creation desc",
 		limit_page_length=0
 	)
 	visitors_by_email = {}
 	for vis in visitor_records:
 		if vis.email:
-			visitors_by_email[vis.email.strip().lower()] = vis
+			visitors_by_email.setdefault(vis.email.strip().lower(), []).append(vis)
 
 	# 3. Fetch all Frappe Users
 	user_records = frappe.get_all(
@@ -656,8 +682,10 @@ def admin_get_all_users(**kwargs):
 	unified_users = []
 	for email_key in all_identities:
 		u_doc = users_by_email.get(email_key)
-		ex_doc = exhibitors_by_email.get(email_key)
-		vis_doc = visitors_by_email.get(email_key)
+		ex_list = exhibitors_by_email.get(email_key, [])
+		ex_doc = ex_list[0] if ex_list else None
+		vis_list = visitors_by_email.get(email_key, [])
+		vis_doc = vis_list[0] if vis_list else None
 		user_roles = roles_by_user.get(email_key, [])
 
 		is_admin = (
@@ -697,16 +725,51 @@ def admin_get_all_users(**kwargs):
 		user_image = (u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or ""
 
 		exhibitor_info = None
-		if ex_doc:
+		if ex_list:
+			latest_ex = ex_list[0]
+			stalls_detail = [
+				{
+					"registration_id": r.registration_id,
+					"stall_number": r.stall_number,
+					"stall_category": r.stall_category,
+					"amount": flt(r.amount),
+					"payment_status": r.payment_status or "Pending",
+					"payment_mode": r.get("payment_mode") or ("Cash" if (r.get("razorpay_payment_id") or "").startswith("CASH") else "Online"),
+					"payment_date": str(r.payment_date or ""),
+					"status": r.status or "Registered",
+					"is_bni_member": bool(r.get("is_bni_member")),
+					"region_name": r.get("region_name") or "",
+					"chapter_name": r.get("chapter_name") or "",
+					"industry": r.get("industry") or "",
+					"segment": r.get("segment") or "",
+					"source_of_info": r.get("source_of_info") or "",
+					"creation": str(r.creation or ""),
+				}
+				for r in ex_list
+			]
+			all_stalls = [r.stall_number for r in ex_list if r.stall_number]
+			total_stall_amount = sum(flt(r.amount) for r in ex_list)
 			exhibitor_info = {
-				"registration_id": ex_doc.registration_id,
-				"company_name": ex_doc.company_name or "",
-				"company_logo": ex_doc.company_logo or "",
-				"stall_number": ex_doc.stall_number or None,
-				"stall_category": ex_doc.stall_category or None,
-				"amount": flt(ex_doc.amount),
-				"payment_status": ex_doc.payment_status or "Pending",
-				"status": ex_doc.status or "Registered",
+				"registration_id": latest_ex.registration_id,
+				"company_name": latest_ex.company_name or "",
+				"company_logo": latest_ex.company_logo or "",
+				"location": latest_ex.location or "",
+				"is_bni_member": bool(latest_ex.get("is_bni_member")),
+				"region_name": latest_ex.get("region_name") or "",
+				"chapter_name": latest_ex.get("chapter_name") or "",
+				"industry": latest_ex.get("industry") or "",
+				"segment": latest_ex.get("segment") or "",
+				"source_of_info": latest_ex.get("source_of_info") or "",
+				"stall_number": ", ".join(all_stalls) if all_stalls else (latest_ex.stall_number or None),
+				"stall_category": latest_ex.stall_category or None,
+				"amount": total_stall_amount,
+				"payment_status": latest_ex.payment_status or "Pending",
+				"payment_mode": latest_ex.get("payment_mode") or ("Cash" if (latest_ex.get("razorpay_payment_id") or "").startswith("CASH") else "Online"),
+				"payment_date": str(latest_ex.payment_date or ""),
+				"status": latest_ex.status or "Registered",
+				"total_stalls": len(ex_list),
+				"stalls_booked": all_stalls,
+				"stalls": stalls_detail,
 			}
 
 		visitor_info = None
@@ -717,8 +780,20 @@ def admin_get_all_users(**kwargs):
 				"which_day": vis_doc.which_day or "Both days",
 				"checked_in": cint(vis_doc.checked_in),
 				"checked_in_at": str(vis_doc.checked_in_at or ""),
+				"source_of_info": vis_doc.get("source_of_info") or "",
 				"status": vis_doc.status or "Registered",
 			}
+
+		primary_bni = bool(ex_doc.get("is_bni_member")) if ex_doc else False
+		primary_region = (ex_doc.get("region_name") if ex_doc else "") or ""
+		primary_chapter = (ex_doc.get("chapter_name") if ex_doc else "") or ""
+		primary_industry = (ex_doc.get("industry") if ex_doc else "") or ""
+		primary_segment = (ex_doc.get("segment") if ex_doc else "") or ""
+		primary_company = (ex_doc.company_name if ex_doc else "") or ""
+		primary_location = (ex_doc.location if ex_doc else "") or ""
+		primary_source = (ex_doc.get("source_of_info") if ex_doc else (vis_doc.get("source_of_info") if vis_doc else "")) or ""
+		primary_pay_mode = (ex_doc.get("payment_mode") or ("Cash" if (ex_doc.get("razorpay_payment_id") or "").startswith("CASH") else "Online")) if ex_doc else None
+		all_user_stalls = [r.stall_number for r in ex_list if r.stall_number]
 
 		user_entry = {
 			"email": email_key,
@@ -726,6 +801,20 @@ def admin_get_all_users(**kwargs):
 			"mobile_no": mobile,
 			"user_type": category,
 			"category": category,
+			"company_name": primary_company,
+			"company_logo": user_image,
+			"location": primary_location,
+			"is_bni_member": primary_bni,
+			"region_name": primary_region,
+			"chapter_name": primary_chapter,
+			"industry": primary_industry,
+			"segment": primary_segment,
+			"source_of_info": primary_source,
+			"payment_mode": primary_pay_mode,
+			"payment_status": (ex_doc.payment_status if ex_doc else None),
+			"stall_count": len(ex_list),
+			"stall_numbers": all_user_stalls,
+			"stall_number": (", ".join(all_user_stalls)) if all_user_stalls else (ex_doc.stall_number if ex_doc else None),
 			"enabled": enabled,
 			"is_active": bool(enabled),
 			"user_image": user_image,
@@ -742,6 +831,7 @@ def admin_get_all_users(**kwargs):
 	total_exhibitors = sum(1 for u in unified_users if u["user_type"] == "Exhibitor")
 	total_visitors = sum(1 for u in unified_users if u["user_type"] == "Visitor")
 	total_admins = sum(1 for u in unified_users if u["user_type"] == "Admin")
+	total_bni = sum(1 for u in unified_users if u.get("is_bni_member"))
 	active_count = sum(1 for u in unified_users if u["enabled"] == 1)
 	disabled_count = sum(1 for u in unified_users if u["enabled"] == 0)
 
@@ -772,7 +862,22 @@ def admin_get_all_users(**kwargs):
 			if u.get("exhibitor_details") and (u["exhibitor_details"].get("payment_status") or "").lower() == payment_filter.lower()
 		]
 
-	# 4. Search Filter
+	# 4. Payment Mode Filter (Cash / Online)
+	pay_mode_filter = (data.get("payment_mode") or "").strip().lower()
+	if pay_mode_filter:
+		filtered_users = [
+			u for u in filtered_users
+			if (u.get("payment_mode") or "").lower() == pay_mode_filter
+		]
+
+	# 5. BNI Member Filter
+	bni_filter = data.get("is_bni_member") if data.get("is_bni_member") is not None else data.get("bni")
+	if bni_filter is not None and str(bni_filter).strip() != "":
+		b_val = str(bni_filter).strip().lower()
+		target_bni = b_val in ("1", "true", "yes")
+		filtered_users = [u for u in filtered_users if bool(u.get("is_bni_member")) == target_bni]
+
+	# 6. Search Filter
 	if search_query:
 		q = search_query.lower()
 		filtered_users = [
@@ -781,10 +886,16 @@ def admin_get_all_users(**kwargs):
 				q in u["email"].lower()
 				or q in u["full_name"].lower()
 				or q in u["mobile_no"].lower()
-				or (u.get("exhibitor_details") and (
-					q in (u["exhibitor_details"].get("company_name") or "").lower()
-					or q in (u["exhibitor_details"].get("stall_number") or "").lower()
-				))
+				or q in (u.get("company_name") or "").lower()
+				or q in (u.get("location") or "").lower()
+				or q in (u.get("region_name") or "").lower()
+				or q in (u.get("chapter_name") or "").lower()
+				or q in (u.get("industry") or "").lower()
+				or q in (u.get("segment") or "").lower()
+				or q in (u.get("source_of_info") or "").lower()
+				or q in (u.get("payment_mode") or "").lower()
+				or any(q in st.lower() for st in u.get("stall_numbers", []))
+				or (u.get("stall_number") and q in u["stall_number"].lower())
 				or (u.get("visitor_details") and q in (u["visitor_details"].get("pass_code") or "").lower())
 			)
 		]
@@ -812,6 +923,7 @@ def admin_get_all_users(**kwargs):
 			"total_exhibitors": total_exhibitors,
 			"total_visitors": total_visitors,
 			"total_admins": total_admins,
+			"total_bni_members": total_bni,
 			"active_users": active_count,
 			"disabled_users": disabled_count,
 		},
@@ -1241,3 +1353,205 @@ def update_profile(**kwargs):
 		frappe.log_error("ConnectFest Profile Update Error", frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong while updating profile. Please try again."}
+
+
+def cleanup_user_registrations_and_stalls(user_email=None, user_mobile=None):
+	"""
+	Core cascade cleanup function:
+	Given a user's email and/or mobile number:
+	1. Releases all stalls allocated to their registrations back to 'Available' (clearing locks).
+	2. Deletes all their ConnectFest Registration records.
+	3. Deletes all their ConnectFest Visitor Registration records.
+	4. Resets any stalls where booked_by_email matches user_email.
+	5. Clears Redis caches and hold locks.
+	"""
+	clean_email = (user_email or "").strip().lower()
+	clean_mob = (user_mobile or "").strip()
+
+	if not clean_email and not clean_mob:
+		return {"released_stalls": [], "deleted_exhibitors": 0, "deleted_visitors": 0}
+
+	released_stalls = []
+	deleted_exhibitors = 0
+	deleted_visitors = 0
+	cache = frappe.cache()
+
+	# 1. Fetch all Exhibitor Registrations
+	conditions = []
+	params = {}
+	if clean_email:
+		conditions.append("email = %(email)s")
+		params["email"] = clean_email
+	if clean_mob:
+		conditions.append("mobile_no = %(mobile)s")
+		params["mobile"] = clean_mob
+
+	where_str = " OR ".join(conditions)
+
+	ex_regs = frappe.db.sql(f"""
+		SELECT name, registration_id, email, mobile_no, stall_number
+		FROM `tabConnectFest Registration`
+		WHERE {where_str}
+	""", params, as_dict=True)
+
+	for reg in ex_regs:
+		stall_num = reg.get("stall_number")
+		if stall_num and frappe.db.exists("ConnectFest Stall", stall_num):
+			try:
+				stall = frappe.get_doc("ConnectFest Stall", stall_num)
+				stall.status = "Available"
+				stall.booked_by_registration = None
+				stall.booked_by_name = None
+				stall.booked_by_company = None
+				stall.booked_by_email = None
+				stall.booked_by_mobile = None
+				stall.hold_token = None
+				stall.hold_expires_at = None
+				stall.payment_mode = None
+				stall.save(ignore_permissions=True)
+				released_stalls.append(stall_num)
+			except Exception:
+				pass
+
+			# Clear redis locks
+			try:
+				cache.delete(cache.make_key(f"connectfest:stall_lock:{stall_num}"))
+				cache.delete_keys(f"cf:stall_lock:{stall_num}*")
+			except Exception:
+				pass
+
+		# Delete registration doc
+		try:
+			frappe.delete_doc("ConnectFest Registration", reg.name, ignore_permissions=True, force=True)
+			deleted_exhibitors += 1
+		except Exception:
+			frappe.db.sql("DELETE FROM `tabConnectFest Registration` WHERE name = %s", (reg.name,))
+			deleted_exhibitors += 1
+
+	# 2. Direct Stall check by booked_by_email or booked_by_mobile (in case stall was booked without registration doc)
+	direct_stalls = frappe.db.sql(f"""
+		SELECT stall_number FROM `tabConnectFest Stall`
+		WHERE (booked_by_email = %(email)s OR (booked_by_mobile = %(mobile)s AND %(mobile)s != ''))
+	""", {"email": clean_email, "mobile": clean_mob}, as_dict=True)
+
+	for ds in direct_stalls:
+		s_num = ds["stall_number"]
+		if s_num not in released_stalls and frappe.db.exists("ConnectFest Stall", s_num):
+			try:
+				stall = frappe.get_doc("ConnectFest Stall", s_num)
+				stall.status = "Available"
+				stall.booked_by_registration = None
+				stall.booked_by_name = None
+				stall.booked_by_company = None
+				stall.booked_by_email = None
+				stall.booked_by_mobile = None
+				stall.hold_token = None
+				stall.hold_expires_at = None
+				stall.payment_mode = None
+				stall.save(ignore_permissions=True)
+				released_stalls.append(s_num)
+				cache.delete(cache.make_key(f"connectfest:stall_lock:{s_num}"))
+				cache.delete_keys(f"cf:stall_lock:{s_num}*")
+			except Exception:
+				pass
+
+	# 3. Fetch and Delete all Visitor Registrations
+	vis_regs = frappe.db.sql(f"""
+		SELECT name, registration_id
+		FROM `tabConnectFest Visitor Registration`
+		WHERE {where_str}
+	""", params, as_dict=True)
+
+	for vr in vis_regs:
+		try:
+			frappe.delete_doc("ConnectFest Visitor Registration", vr.name, ignore_permissions=True, force=True)
+			deleted_visitors += 1
+		except Exception:
+			frappe.db.sql("DELETE FROM `tabConnectFest Visitor Registration` WHERE name = %s", (vr.name,))
+			deleted_visitors += 1
+
+	try:
+		if not getattr(frappe.db, "_disable_transaction_control", 0):
+			frappe.db.commit()
+	except Exception:
+		pass
+
+	# Clear user cache
+	try:
+		if clean_email:
+			cache.delete_keys(f"cf:user:{clean_email}*")
+			cache.delete_keys(f"cf:reg:*{clean_email}*")
+	except Exception:
+		pass
+
+	frappe.clear_cache()
+
+	return {
+		"released_stalls": list(set(released_stalls)),
+		"deleted_exhibitors": deleted_exhibitors,
+		"deleted_visitors": deleted_visitors,
+	}
+
+
+def on_user_trash(doc, method=None):
+	"""
+	Frappe DocEvent Hook: Triggers when ANY User document is deleted in Frappe.
+	Cascades deletion to their registrations and releases all their booked stalls.
+	"""
+	# Never wipe for system Administrator or Guest
+	if doc.name in ("Administrator", "Guest"):
+		return
+
+	user_email = (doc.name or doc.email or "").strip().lower()
+	user_mobile = (doc.mobile_no or doc.phone or "").strip()
+	cleanup_user_registrations_and_stalls(user_email=user_email, user_mobile=user_mobile)
+
+
+@handle_api_errors("ConnectFest Admin Delete User Error")
+def admin_delete_user(**kwargs):
+	"""
+	Admin API: Complete user deletion with automatic cascade cleanup.
+	Deletes:
+	- Frappe User account
+	- All exhibitor registrations for this email/phone
+	- All visitor registrations for this email/phone
+	- Releases all booked stalls back to 'Available'
+	"""
+	err = check_admin_permission("delete user")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	target_user = (data.get("email") or data.get("user") or data.get("user_id") or data.get("name") or "").strip().lower()
+	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
+
+	if not target_user and not mobile_no:
+		return {"status": "error", "message": "User email or mobile number is required for deletion."}
+
+	if target_user in ("administrator", "guest"):
+		return {"status": "error", "message": f"System user '{target_user}' cannot be deleted!"}
+
+	# Resolve user details if user exists in tabUser
+	user_deleted = False
+	if target_user and frappe.db.exists("User", target_user):
+		u_doc = frappe.get_doc("User", target_user)
+		if not mobile_no:
+			mobile_no = (u_doc.mobile_no or u_doc.phone or "").strip()
+		frappe.delete_doc("User", target_user, ignore_permissions=True, force=True)
+		user_deleted = True
+
+	# Cascade cleanup registrations & stalls
+	cleanup_res = cleanup_user_registrations_and_stalls(user_email=target_user, user_mobile=mobile_no)
+
+	frappe.db.commit()
+
+	return {
+		"status": "success",
+		"message": f"User '{target_user or mobile_no}' and all associated bookings have been successfully deleted.",
+		"user": target_user,
+		"user_account_deleted": user_deleted,
+		"exhibitors_deleted": cleanup_res["deleted_exhibitors"],
+		"visitors_deleted": cleanup_res["deleted_visitors"],
+		"released_stalls": cleanup_res["released_stalls"],
+	}
+

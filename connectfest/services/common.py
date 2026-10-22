@@ -70,21 +70,29 @@ def set_cached_record(cache, key, data, ex=86400):
 
 
 def generate_stall_id(cache):
-	try:
-		seq = cache.incr(cache.make_key(STALL_COUNTER_KEY))
-	except Exception:
-		seq = int(time.time() * 1000) % 1000000
 	ym = now_datetime().strftime("%y%m")
-	return f"CF-{ym}-{seq:06d}"
+	for _ in range(100):
+		try:
+			seq = cache.incr(cache.make_key(STALL_COUNTER_KEY))
+		except Exception:
+			seq = int(time.time() * 1000) % 1000000
+		candidate = f"CF-{ym}-{seq:06d}"
+		if not frappe.db.exists("ConnectFest Registration", {"registration_id": candidate}):
+			return candidate
+	return f"CF-{ym}-{int(time.time() * 1000) % 1000000:06d}"
 
 
 def generate_visitor_id(cache):
-	try:
-		seq = cache.incr(cache.make_key(VISITOR_COUNTER_KEY))
-	except Exception:
-		seq = int(time.time() * 1000) % 1000000
 	ym = now_datetime().strftime("%y%m")
-	return f"VIS-{ym}-{seq:06d}"
+	for _ in range(100):
+		try:
+			seq = cache.incr(cache.make_key(VISITOR_COUNTER_KEY))
+		except Exception:
+			seq = int(time.time() * 1000) % 1000000
+		candidate = f"VIS-{ym}-{seq:06d}"
+		if not frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": candidate}):
+			return candidate
+	return f"VIS-{ym}-{int(time.time() * 1000) % 1000000:06d}"
 
 
 def generate_security_pin():

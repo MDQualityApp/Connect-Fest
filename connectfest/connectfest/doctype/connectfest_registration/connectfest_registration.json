@@ -30,6 +30,7 @@
   "amount",
   "payment_section",
   "payment_status",
+  "payment_mode",
   "razorpay_order_id",
   "column_break_pay",
   "razorpay_payment_id",
@@ -168,7 +169,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Stall Category",
-   "options": "Regular\nStandard\nPremium\nSilver\nTitle Sponsor",
+   "options": "\nRegular\nStandard\nPremium\nSilver\nTitle Sponsor",
    "reqd": 0
   },
   {
@@ -176,7 +177,8 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Amount (INR)",
-   "read_only": 1
+   "read_only": 1,
+   "default": "0"
   },
   {
    "fieldname": "payment_section",
@@ -184,12 +186,20 @@
    "label": "Payment Details"
   },
   {
-   "default": "Pending",
+   "default": "",
    "fieldname": "payment_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Payment Status",
-   "options": "Pending\nPaid\nFailed\nRefunded"
+   "options": "\nPending\nPaid\nFailed\nRefunded"
+  },
+  {
+   "default": "",
+   "fieldname": "payment_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Mode",
+   "options": "\nOnline\nCash\nCheque\nBank Transfer"
   },
   {
    "fieldname": "razorpay_order_id",

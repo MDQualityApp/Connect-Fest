@@ -2,8 +2,19 @@ import uuid
 from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime, flt, cint
-from connectfest.services.common import extract_request_data, parse_boolean, STALL_LOCK_PREFIX
+from connectfest.services.common import (
+	extract_request_data,
+	parse_boolean,
+	handle_api_errors,
+	generate_stall_id,
+	set_cached_record,
+	save_image_from_base64_or_url,
+	STALL_LOCK_PREFIX,
+	STALL_CACHE_PREFIX,
+	VALID_SOURCES,
+)
 from connectfest.services.pricing import get_tier_pricing
+from connectfest.services.auth import check_admin_permission, ensure_frappe_user
 
 
 def get_stalls(**kwargs):
@@ -174,6 +185,7 @@ def hold_stall(stall_number=None, **kwargs):
 		mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
 		full_name = (data.get("full_name") or data.get("name") or "").strip()
 		company_name = (data.get("company_name") or "").strip()
+		reg_id = (data.get("registration_id") or kwargs.get("registration_id") or "").strip()
 
 		if not stall_num:
 			frappe.local.response["http_status_code"] = 400
@@ -183,18 +195,22 @@ def hold_stall(stall_number=None, **kwargs):
 			frappe.local.response["http_status_code"] = 404
 			return {"status": "error", "message": f"Stall '{stall_num}' does not exist"}
 
-		# Enforce 1 User = 1 Stall rule
-		if email or mobile_no:
-			existing = frappe.db.sql("""
-				SELECT registration_id, stall_number, stall_category FROM `tabConnectFest Registration`
-				WHERE (email = %(email)s OR mobile_no = %(mobile)s) AND payment_status = 'Paid'
+		# Prevent duplicate payment/hold for the same stall if already Paid & Confirmed
+		if (email or mobile_no) and stall_num:
+			existing_same_stall = frappe.db.sql("""
+				SELECT registration_id, stall_number FROM `tabConnectFest Registration`
+				WHERE (email = %(email)s OR (mobile_no = %(mobile)s AND %(mobile)s != ''))
+				  AND stall_number = %(stall_num)s
+				  AND payment_status = 'Paid'
 				LIMIT 1
-			""", {"email": email, "mobile": mobile_no}, as_dict=True)
-			if existing:
+			""", {"email": email, "mobile": mobile_no, "stall_num": stall_num}, as_dict=True)
+			if existing_same_stall:
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Each exhibitor is limited to 1 stall! You already have an active booked stall: {existing[0].stall_number}."
+					"message": f"Stall '{stall_num}' has already been paid and confirmed for your account. Multiple payments are strictly prohibited!",
+					"payment_status": "Paid",
+					"stall_number": stall_num,
 				}
 
 		stall = frappe.get_doc("ConnectFest Stall", stall_num)
@@ -237,15 +253,23 @@ def hold_stall(stall_number=None, **kwargs):
 			redis_acquired = True
 
 		if not redis_acquired and (not existing_token or existing_token != stall.hold_token):
-			frappe.local.response["http_status_code"] = 409
-			return {
-				"status": "error",
-				"message": f"Stall {stall_num} is currently held by another attendee completing payment. Please select a different stall."
-			}
+			if stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at > now_dt:
+				frappe.local.response["http_status_code"] = 409
+				return {
+					"status": "error",
+					"message": f"Stall {stall_num} is currently held by another attendee completing payment. Please select a different stall."
+				}
+			else:
+				try:
+					cache.set(raw_key, new_token, ex=600)
+				except Exception:
+					pass
 
 		stall.status = "Hold"
 		stall.hold_token = new_token
 		stall.hold_expires_at = expires_at
+		if reg_id:
+			stall.booked_by_registration = reg_id
 		stall.booked_by_name = full_name
 		stall.booked_by_email = email
 		stall.booked_by_mobile = mobile_no
@@ -1109,5 +1133,415 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 		result["newly_created"] = seed_res.get("newly_created", 0)
 
 	return result
+
+
+@handle_api_errors("ConnectFest Admin Clear All Bookings Error")
+def admin_clear_all_bookings(**kwargs):
+	"""
+	Admin Testing API: Clears exhibitors, visitors, and resets all 220 stalls to Available.
+	Parameters:
+	- clear_exhibitors: 1 (default) = Delete all records from tabConnectFest Registration
+	- clear_visitors: 1 (default) = Delete all records from tabConnectFest Visitor Registration
+	- reset_stalls: 1 (default) = Reset all stalls to Available and wipe booking fields & locks
+	- clear_otps: 1 (default) = Delete all records from tabConnectFest OTP
+	- clear_queues: 1 (default) = Flush Redis queue and lock keys
+	"""
+	data = extract_request_data(kwargs)
+
+	sess_user = getattr(frappe.session, "user", None)
+	is_admin = (sess_user and sess_user != "Guest" and check_admin_permission("clear all bookings") is None)
+	is_dev = bool(frappe.conf.get("developer_mode", False))
+
+	confirmed = parse_boolean(data.get("confirm", True))
+	if not confirmed:
+		return {
+			"status": "error",
+			"message": "Please pass 'confirm': true to confirm wiping test event registrations and bookings.",
+		}
+
+	if not is_admin and not is_dev:
+		err = check_admin_permission("clear all bookings")
+		if err:
+			return err
+
+	clear_ex = parse_boolean(data.get("clear_exhibitors", True))
+	clear_vis = parse_boolean(data.get("clear_visitors", True))
+	reset_st = parse_boolean(data.get("reset_stalls", True))
+	clear_otp = parse_boolean(data.get("clear_otps", True))
+	clear_q = parse_boolean(data.get("clear_queues", True))
+
+	summary = {}
+
+	# 1. Clear Exhibitor Registrations
+	if clear_ex:
+		count_before = frappe.db.count("ConnectFest Registration")
+		frappe.db.sql("DELETE FROM `tabConnectFest Registration`")
+		frappe.db.commit()
+		summary["exhibitors_deleted"] = count_before
+
+	# 2. Clear Visitor Registrations
+	if clear_vis:
+		count_before = frappe.db.count("ConnectFest Visitor Registration")
+		frappe.db.sql("DELETE FROM `tabConnectFest Visitor Registration`")
+		frappe.db.commit()
+		summary["visitors_deleted"] = count_before
+
+	# 3. Reset Stalls
+	if reset_st:
+		frappe.db.sql("""
+			UPDATE `tabConnectFest Stall`
+			SET status = 'Available',
+			    booked_by_registration = NULL,
+			    booked_by_name = NULL,
+			    booked_by_company = NULL,
+			    hold_expires_at = NULL,
+			    is_blocked_by_admin = 0,
+			    blocked_reason = NULL,
+			    payment_mode = NULL
+		""")
+		frappe.db.commit()
+		summary["stalls_reset_to_available"] = frappe.db.count("ConnectFest Stall", filters={"status": "Available"})
+
+	# 4. Clear OTPs
+	if clear_otp:
+		try:
+			frappe.db.sql("DELETE FROM `tabConnectFest OTP`")
+			frappe.db.commit()
+			summary["otps_cleared"] = True
+		except Exception:
+			pass
+
+	# 5. Clear Redis Queues & Locks
+	if clear_q:
+		try:
+			cache = frappe.cache()
+			keys_to_delete = [
+				"cf:stall_queue",
+				"cf:visitor_queue",
+				"cf:stall_counter",
+				"cf:visitor_counter",
+			]
+			for k in keys_to_delete:
+				cache.delete_value(k)
+			for pattern in ["cf:stall_lock:*", "cf:stall:*", "cf:visitor:*"]:
+				cache.delete_keys(pattern)
+			summary["redis_queues_and_locks_cleared"] = True
+		except Exception as e:
+			summary["redis_cleanup_note"] = str(e)
+
+	# 6. Clear Site Cache
+	frappe.clear_cache()
+
+	return {
+		"status": "success",
+		"message": "All test bookings, registrations, and stall holds have been completely wiped. System is fresh!",
+		"summary": summary,
+		"current_state": {
+			"exhibitors_count": frappe.db.count("ConnectFest Registration"),
+			"visitors_count": frappe.db.count("ConnectFest Visitor Registration"),
+			"booked_stalls": frappe.db.count("ConnectFest Stall", filters={"status": "Booked"}),
+			"available_stalls": frappe.db.count("ConnectFest Stall", filters={"status": "Available"}),
+			"total_stalls": frappe.db.count("ConnectFest Stall"),
+		},
+	}
+
+
+@handle_api_errors("ConnectFest Admin Book Stall Error")
+def admin_book_stall(**kwargs):
+	"""
+	Admin API: Directly book one or multiple stalls for an attendee on behalf of an admin.
+	Supports Cash and Online payment modes.
+	"""
+	err = check_admin_permission("admin book stall")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+
+	email = (data.get("email") or data.get("user_email") or "").strip().lower()
+	mobile_no = (data.get("mobile_no") or data.get("phone") or data.get("mobile") or "").strip()
+	full_name = (data.get("full_name") or data.get("name") or "").strip()
+	company_name = (data.get("company_name") or data.get("company") or "").strip()
+	location = (data.get("location") or "").strip()
+	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
+
+	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
+	region_name = (data.get("region_name") or "").strip()
+	chapter_name = (data.get("chapter_name") or "").strip()
+	industry = (data.get("industry") or "").strip()
+	segment = (data.get("segment") or "").strip()
+	raw_source = (data.get("source_of_info") or data.get("source") or "").strip()
+	matched_source = None
+	for src in VALID_SOURCES:
+		if src.lower() == raw_source.lower():
+			matched_source = src
+			break
+	if not matched_source:
+		matched_source = "BNI Chapter" if is_bni_member else "Other"
+	source_of_info = matched_source
+
+	raw_pay_mode = (data.get("payment_mode") or "Cash").strip()
+	if raw_pay_mode.lower() in ("cash", "offline"):
+		payment_mode = "Cash"
+	elif raw_pay_mode.lower() in ("online", "razorpay", "upi", "card"):
+		payment_mode = "Online"
+	elif raw_pay_mode.lower() == "cheque":
+		payment_mode = "Cheque"
+	elif raw_pay_mode.lower() in ("bank transfer", "neft", "rtgs", "bank_transfer"):
+		payment_mode = "Bank Transfer"
+	else:
+		payment_mode = raw_pay_mode.capitalize()
+
+	# Payment status: default to "Paid" for Cash / Admin booking unless explicitly specified
+	raw_pay_status = data.get("payment_status")
+	if raw_pay_status is not None and str(raw_pay_status).strip() != "":
+		payment_status = str(raw_pay_status).strip().capitalize()
+	else:
+		payment_status = "Paid"
+
+	reference_id = (data.get("reference_id") or data.get("transaction_id") or data.get("receipt_no") or data.get("razorpay_payment_id") or "").strip()
+	remarks = (data.get("remarks") or data.get("notes") or "").strip()
+
+	# Auto-fill missing user details from existing records if email/mobile provided
+	if email or mobile_no:
+		existing = frappe.db.sql("""
+			SELECT full_name, company_name, company_logo, location, mobile_no, email,
+			       is_bni_member, region_name, chapter_name, industry, segment
+			FROM `tabConnectFest Registration`
+			WHERE (%(email)s != '' AND email = %(email)s) OR (%(mobile)s != '' AND mobile_no = %(mobile)s)
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
+		if existing:
+			ex = existing[0]
+			if not full_name: full_name = ex.get("full_name") or ""
+			if not company_name: company_name = ex.get("company_name") or ""
+			if not location: location = ex.get("location") or ""
+			if not mobile_no: mobile_no = ex.get("mobile_no") or ""
+			if not email: email = (ex.get("email") or "").strip().lower()
+			if not raw_logo: raw_logo = ex.get("company_logo") or ""
+			if data.get("is_bni_member") is None:
+				is_bni_member = bool(ex.get("is_bni_member"))
+			if not region_name: region_name = ex.get("region_name") or ""
+			if not chapter_name: chapter_name = ex.get("chapter_name") or ""
+			if not industry: industry = ex.get("industry") or ""
+			if not segment: segment = ex.get("segment") or ""
+
+	# Check User table for name or phone if still missing
+	if email and not full_name:
+		u_fn = frappe.db.get_value("User", email, "full_name")
+		if u_fn: full_name = u_fn
+	if email and not mobile_no:
+		u_mob = frappe.db.get_value("User", email, "mobile_no") or frappe.db.get_value("User", email, "phone")
+		if u_mob: mobile_no = u_mob
+
+	# Validations
+	errors = []
+	if not email:
+		errors.append("Email (email or user_email) is required")
+	elif "@" not in email:
+		errors.append("Valid Email Address is required")
+
+	if not mobile_no:
+		errors.append("Mobile Number (mobile_no) is required")
+	elif len("".join(filter(str.isdigit, mobile_no))) != 10:
+		errors.append("Valid 10-digit Mobile Number is required")
+
+	if not full_name:
+		errors.append("Name (full_name) is required")
+
+	if not company_name:
+		errors.append("Company Name (company_name) is required")
+
+	# Parse stalls: supports single stall, comma-separated, or list
+	raw_stalls = data.get("stall_numbers") or data.get("stall_number") or data.get("stall_no") or data.get("stalls")
+	stall_list = []
+	if isinstance(raw_stalls, list):
+		stall_list = [str(s).strip() for s in raw_stalls if str(s).strip()]
+	elif isinstance(raw_stalls, str):
+		stall_list = [s.strip() for s in raw_stalls.split(",") if s.strip()]
+
+	if not stall_list:
+		errors.append("Stall Number(s) (stall_number or stall_numbers) is required! E.g. 'PR-05' or 'PR-05, PR-06'")
+
+	if errors:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	# Verify and validate each stall
+	dynamic_prices = get_tier_pricing()
+	stall_docs = {}
+	for st_num in stall_list:
+		if not frappe.db.exists("ConnectFest Stall", st_num):
+			frappe.local.response["http_status_code"] = 404
+			return {"status": "error", "message": f"Stall '{st_num}' does not exist in ConnectFest inventory"}
+
+		st_doc = frappe.get_doc("ConnectFest Stall", st_num)
+		if st_doc.status == "Booked" and (st_doc.booked_by_email or "").strip().lower() != email:
+			booked_by = st_doc.booked_by_name or st_doc.booked_by_email or st_doc.booked_by_registration
+			frappe.local.response["http_status_code"] = 409
+			return {
+				"status": "error",
+				"message": f"Stall '{st_num}' is already booked and confirmed by another exhibitor ({booked_by})!"
+			}
+		stall_docs[st_num] = st_doc
+
+	# Process logo image if provided
+	company_logo = save_image_from_base64_or_url(
+		raw_logo,
+		file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no) >= 4 else 'stall'}"
+	)
+
+	# Ensure Frappe User account exists
+	ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+	if company_logo:
+		try:
+			frappe.db.set_value("User", email, "user_image", company_logo)
+		except Exception:
+			pass
+
+	cache = frappe.cache()
+	now_dt = now_datetime()
+	now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+	now_ms = now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+	booked_results = []
+	total_amount = 0.0
+	is_paid = (payment_status == "Paid")
+	booking_status = "Confirmed" if is_paid else "Registered"
+
+	# Book each stall
+	for st_num in stall_list:
+		st_doc = stall_docs[st_num]
+		tier = st_doc.tier or "Regular"
+		price = dynamic_prices.get(tier, st_doc.price)
+		custom_amt = data.get("amount")
+		amount = flt(custom_amt) if (custom_amt is not None and len(stall_list) == 1) else price
+		total_amount += amount
+
+		reg_id = generate_stall_id(cache)
+		pay_id = reference_id or (f"CASH-{reg_id}" if payment_mode == "Cash" and is_paid else (f"ONLINE-ADM-{reg_id}" if is_paid else ""))
+
+		reg_record = {
+			"doctype": "ConnectFest Registration",
+			"name": reg_id,
+			"registration_id": reg_id,
+			"full_name": full_name,
+			"company_name": company_name,
+			"company_logo": company_logo,
+			"location": location,
+			"mobile_no": mobile_no,
+			"email": email,
+			"is_bni_member": 1 if is_bni_member else 0,
+			"region_name": region_name if is_bni_member else "",
+			"chapter_name": chapter_name if is_bni_member else "",
+			"industry": industry,
+			"segment": segment,
+			"source_of_info": source_of_info,
+			"stall_number": st_num,
+			"stall_category": tier,
+			"amount": amount,
+			"payment_status": payment_status,
+			"payment_mode": payment_mode,
+			"razorpay_order_id": remarks or f"admin_order_{reg_id}",
+			"razorpay_payment_id": pay_id,
+			"razorpay_signature": "admin_verified" if is_paid else "",
+			"payment_date": now_str if is_paid else None,
+			"status": "Registered",
+			"creation": now_ms,
+			"modified": now_ms,
+			"modified_by": frappe.session.user or "Administrator",
+			"owner": "Administrator",
+			"docstatus": 0,
+			"idx": 0,
+		}
+
+		doc = frappe.get_doc(reg_record)
+		doc.flags.ignore_permissions = True
+		doc.insert()
+
+		actual_reg_id = doc.registration_id or doc.name
+		reg_record["name"] = doc.name
+		reg_record["registration_id"] = actual_reg_id
+		set_cached_record(cache, f"{STALL_CACHE_PREFIX}{actual_reg_id}", reg_record)
+
+		if is_paid:
+			frappe.db.set_value(
+				"ConnectFest Stall",
+				st_num,
+				{
+					"status": "Booked",
+					"is_blocked_by_admin": 0,
+					"blocked_reason": None,
+					"booked_by_registration": actual_reg_id,
+					"booked_by_name": full_name,
+					"booked_by_company": company_name,
+					"booked_by_email": email,
+					"booked_by_mobile": mobile_no,
+					"payment_mode": payment_mode,
+					"hold_token": None,
+					"hold_expires_at": None,
+				},
+				update_modified=True,
+			)
+			cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{st_num}"))
+
+		booked_results.append({
+			"registration_id": actual_reg_id,
+			"stall_number": st_num,
+			"tier": tier,
+			"amount": amount,
+			"dimensions": st_doc.dimensions,
+			"zone": st_doc.zone,
+			"payment_mode": payment_mode,
+			"payment_status": payment_status,
+			"status": booking_status,
+			"receipt_id": pay_id,
+		})
+
+	frappe.db.commit()
+
+	# Send Confirmation Email to Attendee
+	if is_paid:
+		try:
+			from connectfest.services.notifications import send_booking_confirmation_email
+			send_booking_confirmation_email(
+				email=email,
+				full_name=full_name,
+				company_name=company_name,
+				registration_id=booked_results[0]["registration_id"] if booked_results else "",
+				stall_numbers=", ".join(stall_list),
+				stall_category=stall_docs[stall_list[0]].tier if stall_list else "Exhibitor",
+				amount=total_amount,
+				payment_mode=payment_mode,
+				receipt_id=booked_results[0].get("receipt_id") if booked_results else "",
+				payment_date=now_str
+			)
+		except Exception:
+			pass
+
+	return {
+		"status": "success",
+		"message": f"Successfully booked {len(booked_results)} stall(s) for {full_name} ({email}) with {payment_mode} payment.",
+		"user": {
+			"full_name": full_name,
+			"email": email,
+			"mobile_no": mobile_no,
+			"company_name": company_name,
+			"company_logo": company_logo,
+			"location": location,
+			"is_bni_member": bool(is_bni_member),
+			"region_name": region_name,
+			"chapter_name": chapter_name,
+			"industry": industry,
+			"segment": segment,
+			"source_of_info": source_of_info,
+		},
+		"payment_mode": payment_mode,
+		"payment_status": payment_status,
+		"total_stalls": len(booked_results),
+		"total_amount": total_amount,
+		"stalls": booked_results,
+		"registration_ids": [b["registration_id"] for b in booked_results],
+	}
 
 

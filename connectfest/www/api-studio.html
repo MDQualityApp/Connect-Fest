@@ -852,6 +852,21 @@
         <div class="section-title">9. Event Sponsors & Partners (Public & Admin)</div>
         <div class="endpoint-list" id="sponsorList"></div>
       </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">10. Reports & Data Export (CSV & PDF)</div>
+        <div class="endpoint-list" id="reportsList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">11. Terms & Conditions (CRUD & Policies)</div>
+        <div class="endpoint-list" id="termsList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">12. Email Alerts & Resend Pass</div>
+        <div class="endpoint-list" id="notificationsList"></div>
+      </div>
     </div>
 
     <!-- 2. MIDDLE: REQUEST EDITOR -->
@@ -1158,6 +1173,22 @@
           razorpay_signature: "mock_signature_valid"
         }, null, 2)
       },
+      admin_confirm_payment: {
+        id: "admin_confirm_payment",
+        cat: "payment",
+        title: "3.4 Admin Payment Direct Receipt (Accept Cash or Record Online)",
+        label: "3.4 Admin Cash / Online Payment",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_confirm_payment`,
+        hasBody: true,
+        body: JSON.stringify({
+          registration_id: "CF-2610-000002",
+          stall_number: "A-04",
+          payment_mode: "Cash",
+          receipt_no: "RCP-CASH-2027-001",
+          remarks: "Cash received in full at event registration desk"
+        }, null, 2)
+      },
 
       // 4. DIGITAL PASS & DASHBOARD (PRIVACY SHIELD ACTIVE)
       verify_gate_pass: {
@@ -1392,6 +1423,19 @@
         url: `${HOST}/api/method/connectfest.api.admin_get_user_details?user_email=Administrator`,
         hasBody: false
       },
+      admin_delete_user: {
+        id: "admin_delete_user",
+        cat: "admin",
+        title: "5.11 Admin Delete User (Cascade Cleans Bookings & Releases Stalls)",
+        label: "Delete User (Cascade Cleanup)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_user`,
+        hasBody: true,
+        body: JSON.stringify({
+          email: "sakthi@gmail.com",
+          mobile_no: "8148043523"
+        }, null, 2)
+      },
 
       // 6. ADMIN STALL MANAGEMENT & BUYER REPORTS
       admin_get_stalls_all: {
@@ -1473,10 +1517,57 @@
           stall_number: "PR-50"
         }, null, 2)
       },
+      admin_book_stall_cash: {
+        id: "admin_book_stall_cash",
+        cat: "admin_stall",
+        title: "6.8 Admin Book Stall(s) for Attendee (Cash Payment)",
+        label: "Admin Book Stall (Cash)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_book_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Karthik Raja",
+          email: "karthik.exhibitor@example.com",
+          mobile_no: "9876543210",
+          company_name: "Apex Infotech Solutions",
+          location: "Chennai",
+          is_bni_member: 1,
+          region_name: "Chennai Central",
+          chapter_name: "Crown Champions",
+          industry: "Information Technology",
+          segment: "Software & Cloud Services",
+          stall_numbers: ["PR-15", "PR-16"],
+          payment_mode: "Cash",
+          payment_status: "Paid",
+          receipt_no: "CASH-DESK-1049"
+        }, null, 2)
+      },
+      admin_book_stall_online: {
+        id: "admin_book_stall_online",
+        cat: "admin_stall",
+        title: "6.9 Admin Book Stall for Attendee (Online Payment Mode)",
+        label: "Admin Book Stall (Online)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_book_stall`,
+        hasBody: true,
+        body: JSON.stringify({
+          full_name: "Suresh Kumar",
+          email: "suresh.kumar@example.com",
+          mobile_no: "9840123456",
+          company_name: "Zenith Robotics",
+          location: "Coimbatore",
+          is_bni_member: 0,
+          source_of_info: "Admin Booking",
+          stall_number: "ST-08",
+          payment_mode: "Online",
+          payment_status: "Paid",
+          reference_id: "pay_manual_rzp_7781"
+        }, null, 2)
+      },
       admin_restore_defaults: {
         id: "admin_restore_defaults",
         cat: "admin_stall",
-        title: "6.8 Admin Restore Defaults (Re-seeds 5 Tiers & 220 Stalls On-Demand)",
+        title: "6.10 Admin Restore Defaults (Re-seeds 5 Tiers & 220 Stalls On-Demand)",
         label: "Restore Defaults (5 Tiers + 220 Stalls)",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.admin_restore_defaults`,
@@ -1485,6 +1576,23 @@
           reset_pricing: 1,
           reset_stalls: 1,
           reset_booked: 0
+        }, null, 2)
+      },
+      admin_clear_all_bookings: {
+        id: "admin_clear_all_bookings",
+        cat: "admin_stall",
+        title: "6.11 Admin Wipe All Test Bookings & Reset 220 Stalls to Available",
+        label: "Clear All Test Data (Reset 220 Stalls)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_clear_all_bookings`,
+        hasBody: true,
+        body: JSON.stringify({
+          clear_exhibitors: 1,
+          clear_visitors: 1,
+          reset_stalls: 1,
+          clear_otps: 1,
+          clear_queues: 1,
+          confirm: true
         }, null, 2)
       },
 
@@ -1748,6 +1856,143 @@
         body: JSON.stringify({
           sponsor_ids: ["SPON-00127"]
         }, null, 2)
+      },
+
+      // ==========================================
+      // 10. REPORTS & EXPORTS (CSV & PDF DOWNLOADS)
+      // ==========================================
+      admin_export_bookings_csv: {
+        id: "admin_export_bookings_csv",
+        cat: "report",
+        title: "10.1 Admin Export All Bookings & Attendees (CSV Download)",
+        label: "Export All Bookings (CSV)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_export_bookings_csv?role=all`,
+        hasBody: false
+      },
+      admin_export_bookings_pdf: {
+        id: "admin_export_bookings_pdf",
+        cat: "report",
+        title: "10.2 Admin Export Bookings & Passes PDF Report (WeasyPrint)",
+        label: "Export Exhibitors (PDF)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_export_bookings_pdf?role=exhibitor`,
+        hasBody: false
+      },
+      admin_get_bookings_report: {
+        id: "admin_get_bookings_report",
+        cat: "report",
+        title: "10.3 Admin Bookings Summary Analytics & JSON Report",
+        label: "Bookings Analytics & Links",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_bookings_report?role=all`,
+        hasBody: false
+      },
+      admin_export_cash_bookings: {
+        id: "admin_export_cash_bookings",
+        cat: "report",
+        title: "10.4 Filter Cash Stalls & Payments (CSV Download)",
+        label: "Cash Bookings (CSV)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_export_bookings_csv?role=exhibitor&payment_mode=cash`,
+        hasBody: false
+      },
+      admin_export_bni_attendees: {
+        id: "admin_export_bni_attendees",
+        cat: "report",
+        title: "10.5 Filter BNI Members with Chapter & Region (CSV Download)",
+        label: "BNI Members (CSV)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_export_bookings_csv?is_bni_member=1`,
+        hasBody: false
+      },
+
+      // ==========================================
+      // 11. TERMS AND CONDITIONS (CRUD & POLICIES)
+      // ==========================================
+      get_terms_and_conditions: {
+        id: "get_terms_and_conditions",
+        cat: "terms",
+        title: "11.1 Public View Terms & Conditions (With Type & Search Filters)",
+        label: "Public Terms (Filtered)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_terms_and_conditions?terms_type=all&search=`,
+        hasBody: false
+      },
+      get_terms_by_type: {
+        id: "get_terms_by_type",
+        cat: "terms",
+        title: "11.2 Public Get Terms by Type (Checkout & Registration Modal)",
+        label: "Terms by Type (Exhibitor)",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.get_terms_by_type?terms_type=Exhibitor`,
+        hasBody: false
+      },
+      admin_get_terms_and_conditions: {
+        id: "admin_get_terms_and_conditions",
+        cat: "terms",
+        title: "11.3 Admin View All Terms & Policies (With Breakdown & Filters)",
+        label: "Admin List All Terms",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_terms_and_conditions?terms_type=all`,
+        hasBody: false
+      },
+      admin_create_terms_and_conditions: {
+        id: "admin_create_terms_and_conditions",
+        cat: "terms",
+        title: "11.4 Admin Create New Terms / Policy Document",
+        label: "Create Terms / Policy",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_create_terms_and_conditions`,
+        hasBody: true,
+        body: JSON.stringify({
+          title: "VIP Lounge & Media Access Guidelines 2027",
+          terms_type: "General",
+          summary: "Special rules for VIP badge holders and accredited media crew.",
+          content: "### VIP & Media Guidelines\n1. Priority auditorium seating.\n2. Accredited cameras only in designated press enclosures.\n3. Respect exhibitor privacy during closed-door B2B meetings."
+        }, null, 2)
+      },
+      admin_update_terms_and_conditions: {
+        id: "admin_update_terms_and_conditions",
+        cat: "terms",
+        title: "11.5 Admin Update Terms & Conditions (Content & Summary)",
+        label: "Update Terms Document",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_update_terms_and_conditions`,
+        hasBody: true,
+        body: JSON.stringify({
+          terms_id: "TC-01667",
+          title: "Exhibitor Stall Agreement & Guidelines 2027 (Revised)",
+          summary: "Updated booth power allocation and fabrication guidelines."
+        }, null, 2)
+      },
+      admin_delete_terms_and_conditions: {
+        id: "admin_delete_terms_and_conditions",
+        cat: "terms",
+        title: "11.6 Admin Delete Terms & Conditions Document",
+        label: "Delete Terms (Single/Bulk)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_delete_terms_and_conditions`,
+        hasBody: true,
+        body: JSON.stringify({
+          terms_ids: ["TC-01672"]
+        }, null, 2)
+      },
+
+      // ==========================================
+      // 12. NOTIFICATIONS & EMAIL ALERTS
+      // ==========================================
+      resend_booking_email: {
+        id: "resend_booking_email",
+        cat: "notification",
+        title: "12.1 Resend Booking Confirmation & Pass Email",
+        label: "Resend Booking Email",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.resend_booking_email`,
+        hasBody: true,
+        body: JSON.stringify({
+          registration_id: "CF-2610-000003"
+        }, null, 2)
       }
     };
 
@@ -1763,7 +2008,10 @@
         admin_stall: document.getElementById('adminStallList'),
         pricing: document.getElementById('pricingList'),
         gallery: document.getElementById('galleryList'),
-        sponsor: document.getElementById('sponsorList')
+        sponsor: document.getElementById('sponsorList'),
+        report: document.getElementById('reportsList'),
+        terms: document.getElementById('termsList'),
+        notification: document.getElementById('notificationsList')
       };
 
       Object.values(lists).forEach(l => { if (l) l.innerHTML = ''; });
@@ -1873,7 +2121,34 @@
         const res = await fetch(url, options);
         const duration = Math.round(performance.now() - startTime);
 
-        const data = await res.json().catch(() => null);
+        let data = null;
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/pdf') || contentType.includes('text/csv')) {
+          const blob = await res.blob();
+          const disposition = res.headers.get('content-disposition') || '';
+          let filename = contentType.includes('application/pdf') ? 'connectfest_report.pdf' : 'connectfest_bookings.csv';
+          const match = disposition.match(/filename="?([^"]+)"?/);
+          if (match && match[1]) filename = match[1];
+          const downloadUrl = URL.createObjectURL(blob);
+          data = {
+            status: "success",
+            download_ready: true,
+            file_name: filename,
+            file_type: contentType.includes('application/pdf') ? "PDF Document (WeasyPrint Generated)" : "CSV Spreadsheet (UTF-8 BOM)",
+            file_size_bytes: blob.size,
+            file_size_formatted: `${(blob.size / 1024).toFixed(1)} KB`,
+            action: "Your download has started automatically in your browser!"
+          };
+          // Trigger browser file download automatically
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          data = await res.json().catch(() => null);
+        }
         currentRawData = data;
 
         resMeta.style.display = 'flex';

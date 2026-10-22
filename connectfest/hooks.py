@@ -164,13 +164,14 @@ after_migrate = "connectfest.setup.after_migrate"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"User": {
+		"on_trash": "connectfest.services.auth.on_user_trash"
+	},
+	"ConnectFest Registration": {
+		"on_trash": "connectfest.connectfest.doctype.connectfest_registration.connectfest_registration.on_registration_trash"
+	}
+}
 
 # Scheduled Tasks
 # ---------------
