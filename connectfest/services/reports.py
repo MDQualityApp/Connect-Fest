@@ -2,7 +2,7 @@ import io
 import csv
 import frappe
 from frappe.utils import now_datetime, flt, cint
-from connectfest.services.common import extract_request_data, handle_api_errors, parse_boolean
+from connectfest.services.common import extract_request_data, handle_api_errors, parse_boolean, get_base_url
 from connectfest.services.auth import check_admin_permission
 
 
@@ -504,6 +504,8 @@ def admin_get_bookings_report(**kwargs):
 		if data.get(k): query_params.append(f"{k}={data[k]}")
 	q_str = ("?" + "&".join(query_params)) if query_params else ""
 
+	base_url = get_base_url()
+
 	return {
 		"status": "success",
 		"total_records": total_records,
@@ -517,8 +519,8 @@ def admin_get_bookings_report(**kwargs):
 			"online_revenue": online_revenue,
 		},
 		"downloads": {
-			"csv_url": f"/api/method/connectfest.api.admin_export_bookings_csv{q_str}",
-			"pdf_url": f"/api/method/connectfest.api.admin_export_bookings_pdf{q_str}",
+			"csv_url": f"{base_url}/api/method/connectfest.api.admin_export_bookings_csv{q_str}",
+			"pdf_url": f"{base_url}/api/method/connectfest.api.admin_export_bookings_pdf{q_str}",
 		},
 		"filters_applied": data,
 		"records": rows,
@@ -550,6 +552,7 @@ def admin_export(**kwargs):
 	q_str = ("?" + "&".join(query_params)) if query_params else ""
 
 	now_tag = now_datetime().strftime("%Y%m%d_%H%M%S")
+	base_url = get_base_url()
 
 	if fmt == "csv":
 		if download:
@@ -558,7 +561,7 @@ def admin_export(**kwargs):
 		return {
 			"status": "success",
 			"format": "csv",
-			"download_url": f"/api/method/connectfest.api.admin_export_bookings_csv{q_str}",
+			"download_url": f"{base_url}/api/method/connectfest.api.admin_export_bookings_csv{q_str}",
 			"filename": f"connectfest_bookings_{now_tag}.csv",
 			"total_records": len(rows),
 			"filters_applied": data,
@@ -571,7 +574,7 @@ def admin_export(**kwargs):
 		return {
 			"status": "success",
 			"format": "pdf",
-			"download_url": f"/api/method/connectfest.api.admin_export_bookings_pdf{q_str}",
+			"download_url": f"{base_url}/api/method/connectfest.api.admin_export_bookings_pdf{q_str}",
 			"filename": f"connectfest_bookings_{now_tag}.pdf",
 			"total_records": len(rows),
 			"filters_applied": data,
@@ -598,6 +601,22 @@ def download_stall_allocation_letter(**kwargs):
 
 	alloc_data = get_registration_allocation_data(registration_id=reg_id, mobile_no=mobile_no, email=email)
 	if not alloc_data:
+		is_browser = False
+		if hasattr(frappe, "request") and getattr(frappe, "request", None):
+			accept = (frappe.request.headers.get("Accept") or "").lower()
+			if "text/html" in accept:
+				is_browser = True
+
+		if is_browser:
+			clean_target = frappe.utils.escape_html(reg_id or mobile_no or email or "N/A")
+			frappe.respond_as_web_page(
+				title="Allocation Record Not Found",
+				html=f"<p style='font-size:15px;'>No confirmed stall booking found for: <strong>{clean_target}</strong>.</p><p style='color:#64748b; font-size:13px;'>If this was a test booking that was reset or deleted, please check your Attendee Dashboard or contact support.</p>",
+				http_status_code=404,
+				indicator_color="red"
+			)
+			return
+
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": f"No booking registration found for {reg_id or mobile_no or email}"}
 

@@ -18,6 +18,45 @@ def get_email_header_style():
 	"""
 
 
+def get_base_url():
+	"""
+	Dynamically resolves the environment base URL:
+	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns Local URL (e.g. http://localhost:8080).
+	- When executed on Live (connectfestapp.mdqapps.online or custom domain), returns Live HTTPS URL.
+	"""
+	# 1. Check HTTP Request context
+	if hasattr(frappe, "request") and getattr(frappe, "request", None):
+		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip()
+		if host:
+			if "localhost" in host or "127.0.0.1" in host:
+				return f"http://{host}".rstrip("/")
+			elif "mdqapps.online" in host:
+				return f"https://{host}".rstrip("/")
+			else:
+				scheme = getattr(frappe.request, "scheme", "https")
+				return f"{scheme}://{host}".rstrip("/")
+
+	# 2. Check site config / frappe get_url()
+	try:
+		site_url = (frappe.utils.get_url() or "").strip().rstrip("/")
+		if site_url:
+			if "localhost" in site_url or "127.0.0.1" in site_url:
+				return "http://localhost:8080"
+			elif "mdqapps.online" in site_url:
+				return "https://connectfestapp.mdqapps.online"
+			elif site_url.startswith("http"):
+				return site_url
+	except Exception:
+		pass
+
+	# 3. Fallback based on local site
+	site_name = getattr(frappe.local, "site", "") or ""
+	if "localhost" in site_name or "local" in site_name:
+		return "http://localhost:8080"
+
+	return "https://connectfestapp.mdqapps.online"
+
+
 def build_confirmation_html(data):
 	full_name = data.get("full_name") or "Valued Attendee"
 	company_name = data.get("company_name") or ""
@@ -29,6 +68,10 @@ def build_confirmation_html(data):
 	payment_mode = data.get("payment_mode") or "Online"
 	payment_id = data.get("razorpay_payment_id") or data.get("receipt_id") or "N/A"
 	payment_date = data.get("payment_date") or now_datetime().strftime("%d %b %Y, %I:%M %p")
+
+	base_url = get_base_url()
+	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
+	dashboard_url = f"{base_url}/"
 
 	return f"""
 	<div style="{get_email_header_style()}">
@@ -93,22 +136,11 @@ def build_confirmation_html(data):
 				</p>
 			</div>
 
-			<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 4px 8px 8px 4px; padding: 16px; margin-bottom: 24px;">
-				<h4 style="margin: 0 0 6px; color: #166534; font-size: 14px; font-weight: 700;">📄 Stall Allocation Letter &amp; Invoice</h4>
-				<p style="margin: 0; font-size: 13px; color: #15803d; line-height: 1.5;">
-					Your official <strong>Intimation of Stall Allocation &amp; Terms &amp; Conditions</strong> document has been generated and attached to this email. You can also download it directly anytime below.
-				</p>
-			</div>
-
-			<p style="font-size: 14px; color: #64748b; line-height: 1.5; margin: 0 0 24px;">
-				You can access your digital exhibitor badge, floor plan coordinates, and event passes at any time through your Attendee Dashboard using your registered email or phone number.
-			</p>
-
 			<div style="text-align: center; margin-bottom: 28px;">
-				<a href="https://connectfestapp.mdqapps.online/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
-					📥 Download Stall Allocation / Invoice (PDF)
+				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
+					📥 Download PDF
 				</a>
-				<a href="https://connectfestapp.mdqapps.online/" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
+				<a href="{dashboard_url}" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
 					View Attendee Dashboard
 				</a>
 			</div>
@@ -179,7 +211,7 @@ def build_failure_html(data):
 			</p>
 
 			<div style="text-align: center; margin-bottom: 24px;">
-				<a href="https://connectfestapp.mdqapps.online/" style="background: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">Retry Payment Now</a>
+				<a href="{get_base_url()}/" style="background: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">Retry Payment Now</a>
 			</div>
 		</div>
 

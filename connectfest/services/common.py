@@ -237,3 +237,43 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 	return decorator
 
 
+def get_base_url():
+	"""
+	Dynamically resolves the environment base URL:
+	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns Local URL (e.g. http://localhost:8080).
+	- When executed on Live (connectfestapp.mdqapps.online or custom domain), returns Live HTTPS URL.
+	"""
+	# 1. Check HTTP Request context
+	if hasattr(frappe, "request") and getattr(frappe, "request", None):
+		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip()
+		if host:
+			if "localhost" in host or "127.0.0.1" in host:
+				return f"http://{host}".rstrip("/")
+			elif "mdqapps.online" in host:
+				return f"https://{host}".rstrip("/")
+			else:
+				scheme = getattr(frappe.request, "scheme", "https")
+				return f"{scheme}://{host}".rstrip("/")
+
+	# 2. Check site config / frappe get_url()
+	try:
+		site_url = (frappe.utils.get_url() or "").strip().rstrip("/")
+		if site_url:
+			if "localhost" in site_url or "127.0.0.1" in site_url:
+				return "http://localhost:8080"
+			elif "mdqapps.online" in site_url:
+				return "https://connectfestapp.mdqapps.online"
+			elif site_url.startswith("http"):
+				return site_url
+	except Exception:
+		pass
+
+	# 3. Fallback based on local site
+	site_name = getattr(frappe.local, "site", "") or ""
+	if "localhost" in site_name or "local" in site_name:
+		return "http://localhost:8080"
+
+	return "https://connectfestapp.mdqapps.online"
+
+
+

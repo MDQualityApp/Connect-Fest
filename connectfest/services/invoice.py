@@ -204,8 +204,8 @@ def generate_stall_allocation_html(data):
 				<img src="{TIEMA_LOGO_B64}" class="tiema-logo" alt="TIEMA">
 			</td>
 			<td class="footer-text">
-				PP3, TIEMA CENTRE, SIDCO INDUSTRIAL ESTATE, THIRUMUDIVAKKAM, CHENNAI-132<br>
-				admin@tiema.co.in; texpo@tiema.co.in &nbsp; Phone: +91 70929 57777 / +91 74490 12333
+				Chennai Trade Centre, CTC Complex, Mount Poonamallee Road, Nandambakkam, Chennai - 600089<br>
+				support@connectfest2027.com &nbsp; Phone: +91 98400 00000 / +91 70929 57777
 			</td>
 		</tr>
 	</table>
