@@ -1,6 +1,4 @@
 // ConnectFest Realtime Socket.IO Handlers for Frappe
-const redis = require("redis");
-const { get_redis_subscriber } = require("../../frappe/node_utils");
 
 module.exports = function (socket) {
 	// Join general website and stall update rooms

@@ -23,7 +23,23 @@ import redis.asyncio as aioredis
 
 PORT = int(os.environ.get("CONNECTFEST_WS_PORT", 8085))
 HOST = "0.0.0.0"
-REDIS_URL = os.environ.get("REDIS_CACHE_URL", "redis://127.0.0.1:13080")
+
+def get_redis_url():
+	if os.environ.get("REDIS_CACHE_URL"):
+		return os.environ.get("REDIS_CACHE_URL")
+	try:
+		bench_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+		config_path = os.path.join(bench_root, "sites", "common_site_config.json")
+		if os.path.exists(config_path):
+			with open(config_path, "r") as f:
+				conf = json.load(f)
+				if conf.get("redis_cache"):
+					return conf.get("redis_cache")
+	except Exception:
+		pass
+	return "redis://127.0.0.1:13080"
+
+REDIS_URL = get_redis_url()
 CHANNEL = "connectfest:stall_updates"
 
 connected_clients = set()
