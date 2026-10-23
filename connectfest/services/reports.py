@@ -11,13 +11,25 @@ def fetch_report_data(filters=None):
 	Universal fetcher for exhibitor bookings and visitor passes with comprehensive filters.
 	"""
 	filters = filters or {}
-	role = (filters.get("role") or filters.get("user_type") or "all").strip().lower()
-	status_filter = (filters.get("status") or "").strip().lower()
-	payment_status = (filters.get("payment_status") or "").strip()
-	payment_mode = (filters.get("payment_mode") or "").strip().lower()
+	raw_role = filters.get("role") or filters.get("user_type") or "all"
+	role = (raw_role if isinstance(raw_role, str) else "all").strip().lower()
+
+	raw_status = filters.get("status") or ""
+	status_filter = (raw_status if isinstance(raw_status, str) else "").strip().lower()
+
+	raw_pay_status = filters.get("payment_status") or ""
+	payment_status = (raw_pay_status if isinstance(raw_pay_status, str) else "").strip()
+
+	raw_pay_mode = filters.get("payment_mode") or ""
+	payment_mode = (raw_pay_mode if isinstance(raw_pay_mode, str) else "").strip().lower()
+
 	bni_filter = filters.get("is_bni_member") if filters.get("is_bni_member") is not None else filters.get("bni")
-	tier_filter = (filters.get("tier") or filters.get("stall_category") or "").strip().lower()
-	search_query = (filters.get("search") or filters.get("query") or "").strip().lower()
+
+	raw_tier = filters.get("tier") or filters.get("stall_category") or ""
+	tier_filter = (raw_tier if isinstance(raw_tier, str) else "").strip().lower()
+
+	raw_search = filters.get("search") or filters.get("query") or ""
+	search_query = (raw_search if isinstance(raw_search, str) else "").strip().lower()
 
 	rows = []
 
@@ -546,13 +558,23 @@ def admin_export(**kwargs):
 		return err
 
 	data = extract_request_data(kwargs)
-	fmt = (data.get("format") or data.get("export_format") or data.get("type") or "json").strip().lower()
+	raw_fmt = data.get("format") or data.get("export_format")
+	if not raw_fmt and isinstance(data.get("type"), str) and data.get("type").strip().lower() in ("csv", "pdf", "json"):
+		raw_fmt = data.get("type")
+	elif isinstance(raw_fmt, dict):
+		raw_fmt = raw_fmt.get("format") or raw_fmt.get("export_format") or raw_fmt.get("type")
+	if not isinstance(raw_fmt, str):
+		raw_fmt = "json"
+	fmt = raw_fmt.strip().lower()
+	if fmt not in ("csv", "pdf", "json"):
+		fmt = "json"
+
 	download = parse_boolean(data.get("download", 0))
 
 	query_params = []
 	for k in ["role", "status", "payment_status", "payment_mode", "is_bni_member", "tier", "search"]:
 		val = data.get(k)
-		if val is not None and str(val).strip() != "":
+		if val is not None and not isinstance(val, (dict, list)) and str(val).strip() != "":
 			query_params.append(f"{k}={val}")
 	q_str = ("?" + "&".join(query_params)) if query_params else ""
 
