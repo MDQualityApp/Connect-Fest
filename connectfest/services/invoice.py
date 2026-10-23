@@ -50,6 +50,17 @@ def generate_stall_allocation_html(data):
 	area_allotted = data.get("dimensions") or data.get("area_allotted") or "2 X 2"
 	category = (data.get("stall_category") or data.get("tier") or "EXHIBITOR").upper()
 	sponsor = data.get("sponsor") or ""
+	bill = data.get("bill") or ""
+	gst = data.get("gst") or ""
+	address = data.get("address") or ""
+	
+	to_block = f"<strong>To:</strong> {company_name}"
+	if address:
+		to_block += f"<br><span style='font-size: 12px; color: #333;'>{address}</span>"
+	if gst:
+		to_block += f"<br><span style='font-size: 12px; color: #333;'><strong>GSTIN:</strong> {gst}</span>"
+	if bill:
+		to_block += f"<br><span style='font-size: 12px; color: #333;'><strong>Bill To / Ref:</strong> {bill}</span>"
 	
 	# Clean booth number for Ref No.
 	clean_booth = str(booth_no).replace(" ", "").replace("-", "")
@@ -219,7 +230,7 @@ def generate_stall_allocation_html(data):
 			<td style="width: 40%; text-align: right;"><strong>Date:</strong> {doc_date}</td>
 		</tr>
 		<tr>
-			<td colspan="2" style="padding-top: 10px;"><strong>To:</strong> {company_name}</td>
+			<td colspan="2" style="padding-top: 10px;">{to_block}</td>
 		</tr>
 	</table>
 
@@ -372,6 +383,7 @@ def get_registration_allocation_data(registration_id=None, mobile_no=None, email
 		       r.location, r.industry, r.segment, r.is_bni_member, r.region_name, r.chapter_name,
 		       r.stall_number, r.stall_category, r.amount, r.payment_status, r.payment_mode,
 		       r.razorpay_payment_id, r.payment_date, r.creation,
+		       r.bill, r.gst, r.address,
 		       s.dimensions, s.zone, s.block, s.tier
 		FROM `tabConnectFest Registration` r
 		LEFT JOIN `tabConnectFest Stall` s ON s.stall_number = r.stall_number

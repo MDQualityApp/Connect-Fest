@@ -13,6 +13,7 @@
   "mobile_no",
   "status_section",
   "status",
+  "area_of_interest",
   "source_of_info",
   "which_day",
   "pass_code",
@@ -66,6 +67,13 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Registered\nChecked In\nCancelled"
+  },
+  {
+   "fieldname": "area_of_interest",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Area of Interest",
+   "reqd": 0
   },
   {
    "fieldname": "source_of_info",

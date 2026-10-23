@@ -85,6 +85,7 @@ from connectfest.services.payments import (
 	admin_confirm_payment as _admin_confirm_payment,
 )
 from connectfest.services.passes import (
+	admin_verify_gate_pass as _admin_verify_gate_pass,
 	verify_gate_pass as _verify_gate_pass,
 	get_registration as _get_registration,
 	get_my_dashboard as _get_my_dashboard,
@@ -149,7 +150,7 @@ from connectfest.services.terms import (
 # ==============================================================================
 @frappe.whitelist(allow_guest=True)
 def register_stall(**kwargs):
-	"""Exhibitor Registration (Name, Company, Location, BNI, Contact details)."""
+	"""Exhibitor Registration (Name, Company, Location, Bill, GST, Address, BNI, Contact details)."""
 	return _register_stall(**kwargs)
 
 
@@ -167,7 +168,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def register_visitor(**kwargs):
-	"""Visitor Free Registration (Name, Email, Mobile -> QR Pass)."""
+	"""Visitor Free Registration (Name, Email, Mobile, Area of Interest -> QR Pass)."""
 	return _register_visitor(**kwargs)
 
 
@@ -267,9 +268,15 @@ def get_live_stall_updates(limit=50, since=None, **kwargs):
 # 4. PASSES & DASHBOARD APIS
 # ==============================================================================
 @frappe.whitelist(allow_guest=True)
-def verify_gate_pass(pass_code=None, **kwargs):
-	"""Gate entry QR scanner validation with duplicate prevention."""
-	return _verify_gate_pass(pass_code=pass_code, **kwargs)
+def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
+	"""Admin Gate Entry QR scanner validation with day verification and duplicate prevention."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_gate_pass(pass_code=None, day=None, **kwargs):
+	"""Gate entry QR scanner validation alias pointing to admin_verify_gate_pass."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

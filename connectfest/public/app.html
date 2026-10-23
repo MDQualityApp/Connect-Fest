@@ -1111,6 +1111,11 @@
             </div>
 
             <div class="form-group">
+              <label class="form-label">Area of interest</label>
+              <input type="text" id="v-interest" class="form-input" placeholder="e.g. Technology, Retail, Manufacturing">
+            </div>
+
+            <div class="form-group">
               <label class="form-label">Which day?</label>
               <div class="day-selector-group">
                 <button type="button" class="day-pill-btn" onclick="selectDay(this, 'Day 1')">Day 1</button>
@@ -1221,6 +1226,10 @@
         <p style="font-size: 13px; color: var(--text-muted);">Scan QR code from visitor's mobile pass or enter Pass Code (e.g. CF27-000001). Prevents duplicate entry.</p>
         
         <form class="scanner-form" onsubmit="handleGateScan(event)">
+          <select id="scan-day-select" class="form-input" style="width: 140px;">
+            <option value="Day 1">Day 1 Gate</option>
+            <option value="Day 2">Day 2 Gate</option>
+          </select>
           <input type="text" id="scan-code-input" class="form-input" placeholder="Paste scanned QR code payload or type CF27-XXXXXX" required style="flex: 1;">
           <button type="submit" class="btn-get-pass" style="width: auto; padding: 0 28px;">
             ⚡ Verify & Admit
@@ -1353,6 +1362,18 @@
         <div class="form-group">
           <label class="form-label">Mobile Number</label>
           <input type="tel" id="m-mobile" class="form-input" placeholder="10-digit Mobile Number" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Billing Name / Bill To</label>
+          <input type="text" id="m-bill" class="form-input" placeholder="Billing Name / Entity (Optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">GST Number</label>
+          <input type="text" id="m-gst" class="form-input" placeholder="e.g. 33AAAAA0000A1Z5 (Optional)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Billing Address</label>
+          <input type="text" id="m-address" class="form-input" placeholder="Billing Address (Optional)">
         </div>
 
         <button type="submit" id="btn-pay-now" class="btn-get-pass" style="background: #10b981;">
@@ -1684,6 +1705,9 @@
         company_name: document.getElementById('m-company').value,
         email: document.getElementById('m-email').value,
         mobile_no: document.getElementById('m-mobile').value,
+        bill: document.getElementById('m-bill') ? document.getElementById('m-bill').value.trim() : "",
+        gst: document.getElementById('m-gst') ? document.getElementById('m-gst').value.trim() : "",
+        address: document.getElementById('m-address') ? document.getElementById('m-address').value.trim() : "",
         stall_number: activeHoldStall,
         source_of_info: "Website",
         create_order: 1,
@@ -1797,6 +1821,7 @@
         full_name: document.getElementById('v-name').value,
         mobile_no: document.getElementById('v-mobile').value,
         email: document.getElementById('v-email').value,
+        area_of_interest: document.getElementById('v-interest') ? document.getElementById('v-interest').value.trim() : "",
         which_day: currentSelectedDay,
         source_of_info: "Website"
       };
@@ -2054,12 +2079,14 @@
       const input = document.getElementById('scan-code-input');
       const box = document.getElementById('gate-scan-result');
       const val = input.value.trim();
+      const daySelect = document.getElementById('scan-day-select');
+      const dayVal = daySelect ? daySelect.value : 'Day 1';
 
       try {
-        const res = await fetch(`${HOST}/api/method/connectfest.api.verify_gate_pass`, {
+        const res = await fetch(`${HOST}/api/method/connectfest.api.admin_verify_gate_pass`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pass_code: val })
+          body: JSON.stringify({ pass_code: val, day: dayVal })
         });
         const data = await res.json();
         const msg = data.message;
@@ -2070,6 +2097,9 @@
           box.innerHTML = `<strong>${msg.message}</strong><br>Attendee: <strong>${msg.pass.full_name}</strong> &bull; Access: ${msg.pass.which_day} &bull; Time: ${msg.pass.checked_in_at}`;
           loadAdminData();
         } else if (msg.status === 'duplicate_entry') {
+          box.className = "alert-banner warning";
+          box.innerHTML = `<strong>${msg.message}</strong>`;
+        } else if (msg.status === 'invalid_day') {
           box.className = "alert-banner warning";
           box.innerHTML = `<strong>${msg.message}</strong>`;
         } else {

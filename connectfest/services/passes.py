@@ -8,13 +8,35 @@ from connectfest.services.common import (
 )
 
 
-def verify_gate_pass(pass_code=None, **kwargs):
+def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	"""
-	Gate Entry QR Scanner API.
-	Validates visitor pass QR code at gate, marks checked_in = 1, and prevents duplicate re-entry.
+	Admin Gate Entry QR Scanner API.
+	- Validates visitor pass at gate.
+	- Validates Day matching: Passes registered for 'Day 1' cannot be used on 'Day 2', and vice versa.
+	- Prevents duplicate check-in. On duplicate scan, strictly omits personal details and returns alert.
 	"""
+	sess_user = getattr(frappe.session, "user", None)
+	if sess_user and sess_user != "Guest":
+		from connectfest.services.auth import is_admin_user
+		if not is_admin_user(sess_user):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"verified": False,
+				"message": "Access Denied: Gate entry verification is strictly restricted to Event Administrators and gate staff!",
+			}
+
 	data = extract_request_data(kwargs)
 	code = (pass_code or data.get("pass_code") or data.get("qr_code") or data.get("code") or "").strip()
+	scan_day = (day or data.get("day") or data.get("scan_day") or data.get("which_day") or data.get("current_day") or "").strip()
+
+	if not scan_day:
+		now_dt = now_datetime()
+		date_str = now_dt.strftime("%Y-%m-%d")
+		if date_str == "2027-02-21":
+			scan_day = "Day 2"
+		elif date_str == "2027-02-20":
+			scan_day = "Day 1"
 
 	if not code:
 		frappe.local.response["http_status_code"] = 400
@@ -22,11 +44,19 @@ def verify_gate_pass(pass_code=None, **kwargs):
 
 	if ":" in code:
 		parts = code.split(":")
-		if len(parts) >= 2:
+		found_code = None
+		for p in parts:
+			p_clean = p.strip()
+			if p_clean.startswith("CF27-") or p_clean.startswith("VIS-") or p_clean.startswith("CF-"):
+				found_code = p_clean
+				break
+		if found_code:
+			code = found_code
+		elif len(parts) >= 2:
 			code = parts[1]
 
 	visitor = frappe.db.sql("""
-		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at
+		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
 		LIMIT 1
@@ -42,12 +72,26 @@ def verify_gate_pass(pass_code=None, **kwargs):
 
 	rec = visitor[0]
 
+	# 1. Day Validation: Day 1 vs Day 2 check
+	if scan_day:
+		norm_scan = "Day 1" if "1" in str(scan_day) else ("Day 2" if "2" in str(scan_day) else str(scan_day).strip())
+		vis_day = (rec.which_day or "Both days").strip()
+		norm_vis = "Day 1" if "1" in vis_day else ("Day 2" if "2" in vis_day else vis_day)
+
+		if norm_vis.lower() != "both days" and norm_scan.lower() != norm_vis.lower():
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "invalid_day",
+				"verified": False,
+				"message": f"❌ ACCESS DENIED (Day Mismatch): This pass is valid for {vis_day} only! It cannot be scanned on {norm_scan}.",
+			}
+
+	# 2. Duplicate Scan Check (No personal details returned!)
 	if rec.checked_in:
 		return {
 			"status": "duplicate_entry",
 			"verified": False,
-			"message": f"⚠️ ALREADY CHECKED IN! This pass ({rec.pass_code}) was already scanned at {rec.checked_in_at}. Duplicate entry denied.",
-			"data": rec,
+			"message": f"⚠️ ALREADY SCANNED! This pass ({rec.pass_code}) was already scanned at {rec.checked_in_at}. Duplicate entry denied.",
 		}
 
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
@@ -68,10 +112,16 @@ def verify_gate_pass(pass_code=None, **kwargs):
 			"which_day": rec.which_day,
 			"email": rec.email,
 			"mobile_no": rec.mobile_no,
+			"area_of_interest": rec.get("area_of_interest") or "",
 			"checked_in_at": now_str,
 			"venue": "Chennai Trade Centre, Nandambakkam",
 		},
 	}
+
+
+def verify_gate_pass(pass_code=None, day=None, **kwargs):
+	"""Alias pointing to admin_verify_gate_pass."""
+	return admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
 
 
 def get_registration(registration_id):
@@ -199,7 +249,8 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			SELECT registration_id, full_name, company_name, company_logo, location,
 			       mobile_no, email, is_bni_member, region_name, chapter_name,
 			       industry, segment, stall_number, stall_category, amount, payment_status,
-			       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, status, creation
+			       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, status, creation,
+			       bill, gst, address
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
 			ORDER BY creation DESC
@@ -209,7 +260,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		visitor_pass = None
 		visitors = frappe.db.sql(f"""
 			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code,
-			       qr_payload, status, checked_in, checked_in_at, creation
+			       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE ({where_str})
 			ORDER BY creation DESC LIMIT 1
@@ -263,6 +314,9 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"company_name": sb.company_name,
 					"company_logo": sb.company_logo or "",
 					"location": sb.location or "",
+					"bill": sb.get("bill") or "",
+					"gst": sb.get("gst") or "",
+					"address": sb.get("address") or "",
 					"industry": sb.industry or "",
 					"segment": sb.segment or "",
 					"is_bni_member": bool(sb.is_bni_member),
@@ -300,6 +354,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				"email": v.email if is_authorized else mask_email(v.email),
 				"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
 				"which_day": v.which_day,
+				"area_of_interest": v.get("area_of_interest") or "",
 				"access": "BOTH DAYS" if v.which_day == "Both days" else v.which_day.upper(),
 				"status": v.status,
 				"checked_in": v.checked_in,

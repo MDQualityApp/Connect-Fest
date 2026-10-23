@@ -980,6 +980,9 @@
           company_name: "Apex Logistics",
           company_logo: "https://connectfest.in/assets/apex-logo.png",
           location: "Chennai",
+          bill: "Apex Logistics Pvt Ltd",
+          gst: "33AABCA1234F1Z5",
+          address: "No. 42, Anna Salai, Guindy, Chennai - 600032",
           source_of_info: "Social Media",
           mobile_no: "9876543210",
           email: "manoj@apexlogistics.com",
@@ -1025,6 +1028,7 @@
           full_name: "Priya Dharshini",
           email: "priya@example.com",
           mobile_no: "9845123456",
+          area_of_interest: "Supply Chain & Retail",
           which_day: "Both days",
           source_of_info: "WhatsApp"
         }, null, 2)
@@ -1194,13 +1198,14 @@
       verify_gate_pass: {
         id: "verify_gate_pass",
         cat: "pass",
-        title: "4.1 Gate Entry QR Scanner (Fast 1-Scan Verification)",
-        label: "Gate QR Scanner",
+        title: "4.1 Admin Gate Entry QR Scanner (Day 1/Day 2 Verification & Duplicate Denial)",
+        label: "Admin Gate Pass Scan",
         method: "POST",
-        url: `${HOST}/api/method/connectfest.api.verify_gate_pass`,
+        url: `${HOST}/api/method/connectfest.api.admin_verify_gate_pass`,
         hasBody: true,
         getBody: () => JSON.stringify({
-          pass_code: savedPassCode
+          pass_code: savedPassCode,
+          day: "Day 1"
         }, null, 2)
       },
       get_current_user_profile: {

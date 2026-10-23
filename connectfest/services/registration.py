@@ -42,6 +42,9 @@ def register_stall(**kwargs):
 	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
 	company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
 	location = (data.get("location") or "").strip()
+	bill = (data.get("bill") or data.get("billing_name") or data.get("bill_to") or "").strip()
+	gst = (data.get("gst") or data.get("gst_number") or data.get("gstin") or "").strip()
+	address = (data.get("address") or data.get("billing_address") or "").strip()
 	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
 
 	region_name = (data.get("region_name") or "").strip()
@@ -77,7 +80,8 @@ def register_stall(**kwargs):
 		# 1. Check existing exhibitor registrations
 		all_ex = frappe.db.sql("""
 			SELECT name, registration_id, full_name, company_name, email, mobile_no,
-			       stall_number, stall_category, amount, payment_status, status
+			       stall_number, stall_category, amount, payment_status, status,
+			       bill, gst, address
 			FROM `tabConnectFest Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
 			ORDER BY creation DESC
@@ -261,6 +265,9 @@ def register_stall(**kwargs):
 		"company_name": company_name,
 		"company_logo": company_logo,
 		"location": location,
+		"bill": bill,
+		"gst": gst,
+		"address": address,
 		"mobile_no": mobile_no,
 		"email": email,
 		"is_bni_member": is_bni_member,
@@ -453,6 +460,9 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					"company_name": prev.get("company_name") or "",
 					"company_logo": prev.get("company_logo") or "",
 					"location": prev.get("location") or "Chennai",
+					"bill": prev.get("bill") or "",
+					"gst": prev.get("gst") or "",
+					"address": prev.get("address") or "",
 					"mobile_no": prev.get("mobile_no") or frappe.db.get_value("User", sess_user, "mobile_no") or "",
 					"email": sess_user,
 					"is_bni_member": prev.get("is_bni_member") or 0,
@@ -607,6 +617,7 @@ def register_visitor(**kwargs):
 	email = (data.get("email") or data.get("email_address") or "").strip().lower()
 	mobile_no = (data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip()
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
+	area_of_interest = (data.get("area_of_interest") or data.get("areas_of_interest") or data.get("interest") or "").strip()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
 	matched_source = None
 	for src in VALID_SOURCES:
@@ -647,7 +658,7 @@ def register_visitor(**kwargs):
 
 	# Check for Existing Registration (Strict Uniqueness on Email & Mobile)
 	existing = frappe.db.sql("""
-		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at
+		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE email = %(email)s OR mobile_no = %(mobile)s
 		LIMIT 1
@@ -687,6 +698,7 @@ def register_visitor(**kwargs):
 				"mobile_no": rec.mobile_no,
 				"which_day": rec.which_day or "Both days",
 				"access": "BOTH DAYS" if (rec.which_day or "Both days") == "Both days" else rec.which_day.upper(),
+				"area_of_interest": rec.area_of_interest or "",
 				"venue": "Chennai Trade Centre, Nandambakkam",
 				"dates": "20 & 21 Feb 2027",
 				"qr_payload": rec.qr_payload or f"CONNECTFEST2027:{rec.pass_code}:{rec.email}",
@@ -748,6 +760,7 @@ def register_visitor(**kwargs):
 		"full_name": full_name,
 		"email": email,
 		"mobile_no": mobile_no,
+		"area_of_interest": area_of_interest,
 		"which_day": which_day,
 		"pass_code": pass_code,
 		"qr_payload": qr_payload,
@@ -768,6 +781,7 @@ def register_visitor(**kwargs):
 		"full_name": full_name,
 		"email": email,
 		"mobile_no": mobile_no,
+		"area_of_interest": area_of_interest,
 		"which_day": which_day,
 		"access": "BOTH DAYS" if which_day == "Both days" else which_day.upper(),
 		"venue": "Chennai Trade Centre, Nandambakkam",
@@ -818,7 +832,8 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 	if em or mb:
 		stalls = frappe.db.sql("""
 			SELECT registration_id, full_name, company_name, email, mobile_no, stall_number, stall_category,
-			       amount, payment_status, payment_mode, payment_date, status, creation
+			       amount, payment_status, payment_mode, payment_date, status, creation,
+			       bill, gst, address
 			FROM `tabConnectFest Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s) AND payment_status = 'Paid'
 			ORDER BY creation DESC
@@ -828,7 +843,7 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 			stall_booking = stalls[0]
 
 		visitors = frappe.db.sql("""
-			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info
+			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
 			ORDER BY creation DESC LIMIT 1

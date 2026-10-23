@@ -207,7 +207,8 @@ def get_current_user_profile(**kwargs):
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
 		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
-		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation
+		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation,
+		       bill, gst, address
 		FROM `tabConnectFest Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
@@ -216,7 +217,7 @@ def get_current_user_profile(**kwargs):
 	# Fetch visitor pass details (Visitor)
 	visitors_raw = frappe.db.sql("""
 		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code,
-		       qr_payload, status, checked_in, checked_in_at, creation
+		       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
@@ -235,6 +236,9 @@ def get_current_user_profile(**kwargs):
 	region_name = (primary_reg.region_name if primary_reg else "") or ""
 	chapter_name = (primary_reg.chapter_name if primary_reg else "") or ""
 	source_of_info = (primary_reg.source_of_info if primary_reg else "") or ""
+	bill = (primary_reg.get("bill") if primary_reg else "") or ""
+	gst = (primary_reg.get("gst") if primary_reg else "") or ""
+	address = (primary_reg.get("address") if primary_reg else "") or ""
 
 	stalls = []
 	pending_registrations = []
@@ -271,6 +275,9 @@ def get_current_user_profile(**kwargs):
 			"company_name": sb.company_name or company_name,
 			"company_logo": sb.company_logo or company_logo,
 			"location": sb.location or location,
+			"bill": sb.get("bill") or "",
+			"gst": sb.get("gst") or "",
+			"address": sb.get("address") or "",
 			"industry": sb.industry or industry,
 			"segment": sb.segment or segment,
 			"is_bni_member": bool(sb.is_bni_member),
@@ -304,6 +311,7 @@ def get_current_user_profile(**kwargs):
 			"registration_id": v.registration_id,
 			"pass_code": v.pass_code,
 			"which_day": v.which_day,
+			"area_of_interest": v.get("area_of_interest") or "",
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
 			"status": v.status or "Registered",
 			"checked_in": int(v.checked_in or 0),
@@ -338,6 +346,9 @@ def get_current_user_profile(**kwargs):
 		"region_name": region_name,
 		"chapter_name": chapter_name,
 		"source_of_info": source_of_info,
+		"bill": bill,
+		"gst": gst,
+		"address": address,
 
 		# Single Comprehensive Stall Booking Object & Multi-Stall Support
 		"has_stall_booking": bool(stalls),
@@ -628,7 +639,8 @@ def admin_get_all_users(**kwargs):
 			"company_logo", "location", "is_bni_member", "region_name", "chapter_name",
 			"industry", "segment", "source_of_info", "stall_number", "stall_category",
 			"amount", "payment_status", "payment_mode", "razorpay_order_id",
-			"razorpay_payment_id", "payment_date", "status", "creation", "modified"
+			"razorpay_payment_id", "payment_date", "status", "creation", "modified",
+			"bill", "gst", "address"
 		],
 		order_by="creation desc",
 		limit_page_length=0
@@ -643,7 +655,8 @@ def admin_get_all_users(**kwargs):
 		"ConnectFest Visitor Registration",
 		fields=[
 			"registration_id", "full_name", "email", "mobile_no", "which_day",
-			"source_of_info", "pass_code", "checked_in", "checked_in_at", "status", "creation", "modified"
+			"source_of_info", "pass_code", "checked_in", "checked_in_at", "status", "creation", "modified",
+			"area_of_interest"
 		],
 		order_by="creation desc",
 		limit_page_length=0
@@ -737,6 +750,9 @@ def admin_get_all_users(**kwargs):
 					"payment_mode": r.get("payment_mode") or ("Cash" if (r.get("razorpay_payment_id") or "").startswith("CASH") else "Online"),
 					"payment_date": str(r.payment_date or ""),
 					"status": r.status or "Registered",
+					"bill": r.get("bill") or "",
+					"gst": r.get("gst") or "",
+					"address": r.get("address") or "",
 					"is_bni_member": bool(r.get("is_bni_member")),
 					"region_name": r.get("region_name") or "",
 					"chapter_name": r.get("chapter_name") or "",
@@ -754,6 +770,9 @@ def admin_get_all_users(**kwargs):
 				"company_name": latest_ex.company_name or "",
 				"company_logo": latest_ex.company_logo or "",
 				"location": latest_ex.location or "",
+				"bill": latest_ex.get("bill") or "",
+				"gst": latest_ex.get("gst") or "",
+				"address": latest_ex.get("address") or "",
 				"is_bni_member": bool(latest_ex.get("is_bni_member")),
 				"region_name": latest_ex.get("region_name") or "",
 				"chapter_name": latest_ex.get("chapter_name") or "",
@@ -780,6 +799,7 @@ def admin_get_all_users(**kwargs):
 				"which_day": vis_doc.which_day or "Both days",
 				"checked_in": cint(vis_doc.checked_in),
 				"checked_in_at": str(vis_doc.checked_in_at or ""),
+				"area_of_interest": vis_doc.get("area_of_interest") or "",
 				"source_of_info": vis_doc.get("source_of_info") or "",
 				"status": vis_doc.status or "Registered",
 			}
@@ -804,6 +824,10 @@ def admin_get_all_users(**kwargs):
 			"company_name": primary_company,
 			"company_logo": user_image,
 			"location": primary_location,
+			"bill": (ex_doc.get("bill") if ex_doc else "") or "",
+			"gst": (ex_doc.get("gst") if ex_doc else "") or "",
+			"address": (ex_doc.get("address") if ex_doc else "") or "",
+			"area_of_interest": (vis_doc.get("area_of_interest") if vis_doc else "") or "",
 			"is_bni_member": primary_bni,
 			"region_name": primary_region,
 			"chapter_name": primary_chapter,

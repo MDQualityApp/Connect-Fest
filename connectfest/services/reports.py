@@ -27,7 +27,8 @@ def fetch_report_data(filters=None):
 			SELECT name, registration_id, full_name, email, mobile_no, company_name,
 			       location, is_bni_member, region_name, chapter_name, industry, segment,
 			       source_of_info, stall_number, stall_category, amount, payment_status,
-			       payment_mode, razorpay_payment_id, payment_date, status, creation
+			       payment_mode, razorpay_payment_id, payment_date, status, creation,
+			       bill, gst, address
 			FROM `tabConnectFest Registration`
 			ORDER BY creation DESC
 		"""
@@ -88,6 +89,9 @@ def fetch_report_data(filters=None):
 				"mobile_no": r.get("mobile_no") or "",
 				"company_name": r.get("company_name") or "",
 				"location": r.get("location") or "",
+				"bill": r.get("bill") or "-",
+				"gst": r.get("gst") or "-",
+				"address": r.get("address") or "-",
 				"is_bni_member": "Yes" if is_bni else "No",
 				"region_name": r.get("region_name") or "-",
 				"chapter_name": r.get("chapter_name") or "-",
@@ -109,7 +113,8 @@ def fetch_report_data(filters=None):
 	if role in ("all", "visitor", "visitors") and (not tier_filter or tier_filter == "all"):
 		vis_query = """
 			SELECT name, registration_id, full_name, email, mobile_no, which_day,
-			       pass_code, source_of_info, checked_in, checked_in_at, status, creation
+			       pass_code, source_of_info, checked_in, checked_in_at, status, creation,
+			       area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			ORDER BY creation DESC
 		"""
@@ -163,6 +168,7 @@ def fetch_report_data(filters=None):
 				"receipt_id": v.get("pass_code") or "-",
 				"payment_date": "-",
 				"source_of_info": v.get("source_of_info") or "-",
+				"area_of_interest": v.get("area_of_interest") or "-",
 				"status": "Checked In" if v.get("checked_in") else (v.get("status") or "Registered"),
 				"creation": str(v.get("creation") or "")[:19],
 			})
