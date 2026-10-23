@@ -15,12 +15,16 @@ def _load_image_b64(filename):
 	path = os.path.join(_TEMPLATES_DIR, filename)
 	if os.path.exists(path):
 		with open(path, "rb") as f:
-			return f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+			ext = "png" if filename.lower().endswith(".png") else "jpeg"
+			return f"data:image/{ext};base64,{base64.b64encode(f.read()).decode('utf-8')}"
 	return ""
 
-TEXPO_LOGO_B64 = _load_image_b64("texpo_logo.jpg")
-TIEMA_LOGO_B64 = _load_image_b64("tiema_logo.jpg")
+CONNECTFEST_LOGO_B64 = _load_image_b64("connectfest_logo.png")
+BNI_LOGO_B64 = _load_image_b64("bni_logo.png")
 SIGNATURE_B64 = _load_image_b64("signature.jpg")
+# Backward-compatibility aliases
+TEXPO_LOGO_B64 = CONNECTFEST_LOGO_B64
+TIEMA_LOGO_B64 = BNI_LOGO_B64
 
 
 def format_doc_date(dt_val):
@@ -42,7 +46,7 @@ def format_doc_date(dt_val):
 def generate_stall_allocation_html(data):
 	"""
 	Constructs high-fidelity 3-page HTML for Stall Allocation Letter / Sales Invoice
-	matching the official TEXPO 2026 / TIEMA template format.
+	matching the official ConnectFest 2027 template format.
 	"""
 	company_name = data.get("company_name") or data.get("full_name") or "Valued Exhibitor"
 	booth_no = data.get("stall_numbers") or data.get("stall_number") or "Assigned"
@@ -64,7 +68,7 @@ def generate_stall_allocation_html(data):
 	
 	# Clean booth number for Ref No.
 	clean_booth = str(booth_no).replace(" ", "").replace("-", "")
-	ref_no = data.get("ref_no") or f"TEXPO2026/EXH/PA/{clean_booth}"
+	ref_no = data.get("ref_no") or f"CONNECTFEST2027/EXH/PA/{clean_booth}"
 	doc_date = format_doc_date(data.get("payment_date") or data.get("creation"))
 
 	html = f"""<!DOCTYPE html>
@@ -75,10 +79,10 @@ def generate_stall_allocation_html(data):
 <style>
 	@page {{
 		size: A4 portrait;
-		margin-top: 30mm;
-		margin-bottom: 28mm;
-		margin-left: 20mm;
-		margin-right: 20mm;
+		margin-top: 24mm;
+		margin-bottom: 22mm;
+		margin-left: 18mm;
+		margin-right: 18mm;
 		@top-right {{
 			content: element(pageHeader);
 			vertical-align: bottom;
@@ -106,15 +110,28 @@ def generate_stall_allocation_html(data):
 		position: running(pageHeader);
 		text-align: right;
 	}}
-	.texpo-logo {{
-		height: 48px;
+	.header-table {{
+		margin-left: auto;
+		border-collapse: collapse;
+	}}
+	.header-table td {{
+		padding: 0;
+	}}
+	.bni-header-logo {{
+		height: 34px;
 		width: auto;
+		display: block;
+	}}
+	.cf-header-logo {{
+		height: 46px;
+		width: auto;
+		display: block;
 	}}
 
 	div.page-footer {{
 		position: running(pageFooter);
 		width: 100%;
-		border-top: 1.5px solid #0891b2;
+		border-top: 1.5px solid #c8102e;
 		padding-top: 6px;
 	}}
 	.footer-table {{
@@ -125,13 +142,14 @@ def generate_stall_allocation_html(data):
 		vertical-align: middle;
 		padding: 0;
 	}}
-	.tiema-logo {{
-		height: 38px;
+	.footer-bni-logo {{
+		height: 26px;
 		width: auto;
+		display: block;
 	}}
 	.footer-text {{
-		font-size: 9.5px;
-		color: #0284c7;
+		font-size: 9px;
+		color: #374151;
 		text-align: right;
 		line-height: 1.45;
 		font-family: Arial, sans-serif;
@@ -144,8 +162,8 @@ def generate_stall_allocation_html(data):
 	/* Page 1 Specific */
 	.meta-table {{
 		width: 100%;
-		margin-bottom: 22px;
-		font-size: 13.5px;
+		margin-bottom: 14px;
+		font-size: 13px;
 	}}
 	.meta-table td {{
 		padding: 0;
@@ -153,29 +171,31 @@ def generate_stall_allocation_html(data):
 	.subject {{
 		text-align: center;
 		font-weight: bold;
-		font-size: 14.5px;
-		margin: 24px 0 22px 0;
+		font-size: 14px;
+		margin: 14px 0 12px 0;
 	}}
 	.content-p {{
-		margin: 0 0 15px 0;
+		margin: 0 0 10px 0;
 		text-align: justify;
+		line-height: 1.45;
 	}}
 	.allotment-table {{
 		width: 440px;
 		border-collapse: collapse;
-		margin: 18px 0 22px 0;
-		font-size: 13px;
+		margin: 12px 0 14px 0;
+		font-size: 12.5px;
 	}}
 	.allotment-table td {{
 		border: 1px solid #000000;
-		padding: 6px 14px;
+		padding: 5px 12px;
 	}}
 	.signature-area {{
-		margin-top: 25px;
+		margin-top: 14px;
+		page-break-inside: avoid;
 	}}
 	.sig-img {{
-		height: 38px;
-		margin: 4px 0;
+		height: 36px;
+		margin: 3px 0;
 	}}
 
 	/* Terms & Conditions Pages */
@@ -205,18 +225,27 @@ def generate_stall_allocation_html(data):
 
 <!-- RUNNING HEADER & FOOTER -->
 <div class="page-header">
-	<img src="{TEXPO_LOGO_B64}" class="texpo-logo" alt="TEXPO">
+	<table class="header-table">
+		<tr>
+			<td style="vertical-align: middle; padding-right: 12px;">
+				<img src="{BNI_LOGO_B64}" class="bni-header-logo" alt="BNI">
+			</td>
+			<td style="vertical-align: middle; border-left: 1.5px solid #d1d5db; padding-left: 12px;">
+				<img src="{CONNECTFEST_LOGO_B64}" class="cf-header-logo" alt="ConnectFest 2027">
+			</td>
+		</tr>
+	</table>
 </div>
 
 <div class="page-footer">
 	<table class="footer-table">
 		<tr>
-			<td style="width: 120px; text-align: left;">
-				<img src="{TIEMA_LOGO_B64}" class="tiema-logo" alt="TIEMA">
+			<td style="width: 80px; text-align: left; vertical-align: middle;">
+				<img src="{BNI_LOGO_B64}" class="footer-bni-logo" alt="BNI">
 			</td>
 			<td class="footer-text">
-				Chennai Trade Centre, CTC Complex, Mount Poonamallee Road, Nandambakkam, Chennai - 600089<br>
-				support@connectfest2027.com &nbsp; Phone: +91 98400 00000 / +91 70929 57777
+				<strong>ConnectFest 2027</strong> &bull; 20 &amp; 21 Feb 2027 &bull; Chennai Trade Centre, Nandambakkam, Chennai - 600089<br>
+				support@connectfest2027.com &nbsp;&bull;&nbsp; Phone: +91 98400 00000 / +91 70929 57777
 			</td>
 		</tr>
 	</table>
@@ -276,7 +305,7 @@ def generate_stall_allocation_html(data):
 	<div class="signature-area">
 		<div>Warm regards,</div>
 		<img src="{SIGNATURE_B64}" class="sig-img" alt="Signature"><br>
-		<strong>TEXPO 2026 Committee</strong>
+		<strong>ConnectFest 2027 Organizing Committee</strong>
 	</div>
 </div>
 

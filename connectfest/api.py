@@ -699,7 +699,7 @@ def admin_export(**kwargs):
 def download_stall_allocation_letter(registration_id=None, mobile_no=None, email=None, **kwargs):
 	"""
 	Downloads official 3-page Stall Allocation Letter & Sales Invoice (PDF)
-	in the exact TEXPO 2026 / TIEMA template format.
+	in the official ConnectFest 2027 template format.
 	"""
 	return _download_stall_allocation_letter(registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
 

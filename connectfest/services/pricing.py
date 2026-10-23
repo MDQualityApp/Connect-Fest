@@ -348,6 +348,7 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 			return {"status": "error", "message": f"Tier '{t_name}' does not exist"}
 
 		doc = frappe.get_doc("ConnectFest Tier Pricing", doc_name)
+		doc.reload()
 		if price is not None or "price" in data:
 			doc.price = flt(price if price is not None else data["price"])
 		if gst_percent is not None or "gst_percent" in data:
@@ -357,7 +358,19 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 		if is_active is not None or "is_active" in data:
 			doc.is_active = int(is_active if is_active is not None else data["is_active"])
 
-		doc.save(ignore_permissions=True)
+		try:
+			doc.save(ignore_permissions=True)
+		except frappe.TimestampMismatchError:
+			doc.reload()
+			if price is not None or "price" in data:
+				doc.price = flt(price if price is not None else data["price"])
+			if gst_percent is not None or "gst_percent" in data:
+				doc.gst_percent = flt(gst_percent if gst_percent is not None else data["gst_percent"])
+			if description is not None or "description" in data:
+				doc.description = (description if description is not None else data["description"] or "").strip()
+			if is_active is not None or "is_active" in data:
+				doc.is_active = int(is_active if is_active is not None else data["is_active"])
+			doc.save(ignore_permissions=True)
 
 		# Sync new price to all available stalls of this tier
 		frappe.db.set_value("ConnectFest Stall", {"tier": doc.tier_name, "status": "Available"}, "price", doc.price, update_modified=False)
@@ -371,7 +384,19 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 		elif t_lower == "premium": settings.price_premium = doc.price
 		elif t_lower == "standard": settings.price_standard = doc.price
 		elif t_lower == "regular": settings.price_regular = doc.price
-		settings.save(ignore_permissions=True)
+
+		try:
+			settings.save(ignore_permissions=True)
+		except frappe.TimestampMismatchError:
+			settings.reload()
+			if "title" in t_lower or "sponsor" in t_lower:
+				if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = doc.price
+			elif t_lower == "silver": settings.price_silver = doc.price
+			elif t_lower == "premium": settings.price_premium = doc.price
+			elif t_lower == "standard": settings.price_standard = doc.price
+			elif t_lower == "regular": settings.price_regular = doc.price
+			settings.save(ignore_permissions=True)
+
 		frappe.db.commit()
 
 		invalidate_pricing_cache()
