@@ -11,7 +11,6 @@
   "company_name",
   "company_logo",
   "location",
-  "address",
   "gst",
   "bill",
   "column_break_contact",
@@ -73,13 +72,6 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Location",
-   "reqd": 0
-  },
-  {
-   "fieldname": "address",
-   "fieldtype": "Small Text",
-   "in_list_view": 1,
-   "label": "Address",
    "reqd": 0
   },
   {

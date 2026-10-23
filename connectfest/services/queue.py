@@ -40,7 +40,6 @@ def flush_registration_queue(batch_size=BATCH_CHUNK_SIZE):
 			"location",
 			"bill",
 			"gst",
-			"address",
 			"mobile_no",
 			"email",
 			"is_bni_member",

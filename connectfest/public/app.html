@@ -1372,8 +1372,8 @@
           <input type="text" id="m-gst" class="form-input" placeholder="e.g. 33AAAAA0000A1Z5 (Optional)">
         </div>
         <div class="form-group">
-          <label class="form-label">Billing Address</label>
-          <input type="text" id="m-address" class="form-input" placeholder="Billing Address (Optional)">
+          <label class="form-label">City / Location</label>
+          <input type="text" id="m-location" class="form-input" placeholder="e.g. Chennai, Coimbatore">
         </div>
 
         <button type="submit" id="btn-pay-now" class="btn-get-pass" style="background: #10b981;">
@@ -1707,7 +1707,7 @@
         mobile_no: document.getElementById('m-mobile').value,
         bill: document.getElementById('m-bill') ? document.getElementById('m-bill').value.trim() : "",
         gst: document.getElementById('m-gst') ? document.getElementById('m-gst').value.trim() : "",
-        address: document.getElementById('m-address') ? document.getElementById('m-address').value.trim() : "",
+        location: document.getElementById('m-location') ? document.getElementById('m-location').value.trim() : "Chennai",
         stall_number: activeHoldStall,
         source_of_info: "Website",
         create_order: 1,

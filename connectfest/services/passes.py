@@ -124,6 +124,16 @@ def verify_gate_pass(pass_code=None, day=None, **kwargs):
 	return admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
 
 
+def admin_verify_pass(pass_code=None, day=None, **kwargs):
+	"""Alias pointing to admin_verify_gate_pass."""
+	return admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+def verify_pass(pass_code=None, day=None, **kwargs):
+	"""Alias pointing to admin_verify_gate_pass."""
+	return admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
 def get_registration(registration_id):
 	"""Universal lookup by Registration ID for both Stalls and Visitors."""
 	sess_user = getattr(frappe.session, "user", None)
@@ -250,7 +260,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			       mobile_no, email, is_bni_member, region_name, chapter_name,
 			       industry, segment, stall_number, stall_category, amount, payment_status,
 			       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, status, creation,
-			       bill, gst, address
+			       bill, gst
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
 			ORDER BY creation DESC
@@ -316,7 +326,6 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"location": sb.location or "",
 					"bill": sb.get("bill") or "",
 					"gst": sb.get("gst") or "",
-					"address": sb.get("address") or "",
 					"industry": sb.industry or "",
 					"segment": sb.segment or "",
 					"is_bni_member": bool(sb.is_bni_member),

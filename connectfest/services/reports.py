@@ -28,7 +28,7 @@ def fetch_report_data(filters=None):
 			       location, is_bni_member, region_name, chapter_name, industry, segment,
 			       source_of_info, stall_number, stall_category, amount, payment_status,
 			       payment_mode, razorpay_payment_id, payment_date, status, creation,
-			       bill, gst, address
+			       bill, gst
 			FROM `tabConnectFest Registration`
 			ORDER BY creation DESC
 		"""
@@ -91,7 +91,6 @@ def fetch_report_data(filters=None):
 				"location": r.get("location") or "",
 				"bill": r.get("bill") or "-",
 				"gst": r.get("gst") or "-",
-				"address": r.get("address") or "-",
 				"is_bni_member": "Yes" if is_bni else "No",
 				"region_name": r.get("region_name") or "-",
 				"chapter_name": r.get("chapter_name") or "-",

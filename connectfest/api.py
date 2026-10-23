@@ -274,8 +274,32 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def admin_verify_gate_passs(pass_code=None, day=None, **kwargs):
+	"""Typo-tolerant alias for admin_verify_gate_pass."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def verify_gate_pass(pass_code=None, day=None, **kwargs):
 	"""Gate entry QR scanner validation alias pointing to admin_verify_gate_pass."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_verify_pass(pass_code=None, day=None, **kwargs):
+	"""Admin Verify Pass alias."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_pass(pass_code=None, day=None, **kwargs):
+	"""Verify Pass alias."""
+	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def Verify_Pass(pass_code=None, day=None, **kwargs):
+	"""Verify_Pass alias matching Hoppscotch collection."""
 	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
 
 
