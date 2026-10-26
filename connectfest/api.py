@@ -178,6 +178,44 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 	return _check_user_booking_status(email=email, mobile_no=mobile_no, **kwargs)
 
 
+@frappe.whitelist(allow_guest=True)
+def cleanup_loadtest_data(secret_key=None, **kwargs):
+	"""
+	Secure cleanup endpoint for load test dummy data (@loadtest.connectfest.local and STALL-TEST-%).
+	Can be triggered locally or via live HTTP request with secret_key.
+	"""
+	from connectfest.services.auth import is_admin_user
+	from connectfest.services.common import extract_request_data
+	data = extract_request_data(kwargs)
+	key = (secret_key or data.get("secret_key") or "").strip()
+	sess_user = getattr(frappe.session, "user", None)
+	valid_key = "cf_loadtest_cleanup_2027"
+
+	if not is_admin_user(sess_user) and key != valid_key:
+		frappe.local.response["http_status_code"] = 403
+		return {"status": "forbidden", "message": "Admin authorization or valid secret_key required."}
+
+	pattern = "%@loadtest.connectfest.local"
+	stall_pattern = "STALL-TEST-%"
+
+	frappe.db.sql("DELETE FROM `tabConnectFest Registration` WHERE email LIKE %s", (pattern,))
+	frappe.db.sql("DELETE FROM `tabConnectFest Visitor Registration` WHERE email LIKE %s", (pattern,))
+
+	users = frappe.db.sql("SELECT email FROM `tabUser` WHERE email LIKE %s", (pattern,), as_dict=True)
+	if users:
+		u_emails = [u["email"] for u in users]
+		format_strings = ','.join(['%s'] * len(u_emails))
+		frappe.db.sql(f"DELETE FROM `tabHas Role` WHERE parent IN ({format_strings})", tuple(u_emails))
+	frappe.db.sql("DELETE FROM `tabUser` WHERE email LIKE %s", (pattern,))
+	frappe.db.sql("DELETE FROM `tabConnectFest Stall` WHERE stall_number LIKE %s", (stall_pattern,))
+
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"message": "All test registrations, test users, and test stalls cleaned successfully without disturbing existing data!"
+	}
+
+
 # ==============================================================================
 # 2. PAYMENT & NUQID CHECKOUT APIS
 # ==============================================================================

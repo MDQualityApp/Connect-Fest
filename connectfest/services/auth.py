@@ -58,6 +58,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			user = frappe.get_doc({
 				"doctype": "User",
 				"email": clean_email,
+				"username": clean_email,
 				"first_name": first_name,
 				"last_name": last_name,
 				"phone": phone_for_user,
@@ -69,16 +70,39 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			})
 			user.flags.ignore_permissions = True
 			user.flags.ignore_password_policy = True
+			orig_in_import = getattr(frappe.flags, "in_import", False)
+			frappe.flags.in_import = True
+			import time, random
+			inserted = False
+			last_err = None
 			try:
-				user.insert(ignore_if_duplicate=True)
-			except Exception as insert_err:
-				# If duplicate mobile_no collision still occurs, retry inserting with blank mobile_no
-				if "mobile_no" in str(insert_err):
-					user.mobile_no = ""
-					user.insert(ignore_if_duplicate=True)
-				else:
-					raise insert_err
-			frappe.db.commit()
+				for attempt in range(5):
+					try:
+						user.insert(ignore_if_duplicate=True)
+						frappe.db.commit()
+						inserted = True
+						break
+					except Exception as insert_err:
+						last_err = insert_err
+						err_str = str(insert_err)
+						if "1213" in err_str or "Deadlock" in err_str or "Lock wait timeout" in err_str:
+							time.sleep(random.uniform(0.05, 0.15) * (attempt + 1))
+							continue
+						elif "mobile_no" in err_str:
+							user.mobile_no = ""
+							try:
+								user.insert(ignore_if_duplicate=True)
+								frappe.db.commit()
+								inserted = True
+								break
+							except Exception:
+								pass
+						else:
+							raise insert_err
+				if not inserted and last_err:
+					raise last_err
+			finally:
+				frappe.flags.in_import = orig_in_import
 			return user.name
 		else:
 			# User already exists - ensure enabled and update phone if missing
