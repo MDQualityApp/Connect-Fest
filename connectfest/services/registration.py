@@ -415,59 +415,141 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				else:
 					record = r
 
-	# Auto-resolve or create registration for logged-in exhibitor
-	if not reg_id and sess_user and sess_user != "Guest":
+	# Check visitor restriction BEFORE creating or auto-resolving registrations
+	if (reg_id and str(reg_id).startswith("VIS-")) or (reg_id and (frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id))):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+		}
+
+	# Identify candidate email and mobile
+	user_email = (data.get("email") or (sess_user if sess_user and sess_user != "Guest" else "")).strip().lower()
+	user_mobile = (data.get("mobile_no") or data.get("phone") or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else "") or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else "") or "").strip()
+
+	# If the user is registered as a visitor by email or mobile, forbid stall selection
+	if not reg_id:
+		is_vis = False
+		if user_email and frappe.db.exists("ConnectFest Visitor Registration", {"email": user_email}):
+			is_vis = True
+		elif user_mobile and frappe.db.exists("ConnectFest Visitor Registration", {"mobile_no": user_mobile}):
+			is_vis = True
+		if is_vis:
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+			}
+
+	# Auto-resolve or create registration for logged-in exhibitor or provided user details
+	if not reg_id and (user_email or user_mobile):
 		# Priority 1: Existing pending registration for this exact stall
-		p1 = frappe.db.get_value(
-			"ConnectFest Registration",
-			{"email": sess_user, "stall_number": stall_num, "payment_status": ("!=", "Paid")},
-			"registration_id"
-		)
+		p1 = None
+		if user_email:
+			p1 = frappe.db.get_value(
+				"ConnectFest Registration",
+				{"email": user_email, "stall_number": stall_num, "payment_status": ("!=", "Paid")},
+				"registration_id"
+			)
+		if not p1 and user_mobile:
+			p1 = frappe.db.get_value(
+				"ConnectFest Registration",
+				{"mobile_no": user_mobile, "stall_number": stall_num, "payment_status": ("!=", "Paid")},
+				"registration_id"
+			)
+
 		if p1:
 			reg_id = p1
 		else:
 			# Priority 2: Existing pending registration with no stall selected yet
-			p2 = frappe.db.get_value(
-				"ConnectFest Registration",
-				{"email": sess_user, "stall_number": ("in", ["", None]), "payment_status": ("!=", "Paid")},
-				"registration_id",
-				order_by="creation desc"
-			)
+			p2 = None
+			if user_email:
+				p2 = frappe.db.get_value(
+					"ConnectFest Registration",
+					{"email": user_email, "stall_number": ("in", ["", None]), "payment_status": ("!=", "Paid")},
+					"registration_id",
+					order_by="creation desc"
+				)
+			if not p2 and user_mobile:
+				p2 = frappe.db.get_value(
+					"ConnectFest Registration",
+					{"mobile_no": user_mobile, "stall_number": ("in", ["", None]), "payment_status": ("!=", "Paid")},
+					"registration_id",
+					order_by="creation desc"
+				)
+
 			if p2:
 				reg_id = p2
 			else:
 				# Priority 3: User already has paid registrations (e.g. A-01), but wants to buy an additional stall (e.g. A-02)!
-				# Automatically create a new registration record for this additional stall!
-				new_reg_id = generate_stall_id(cache)
-				prev_regs = frappe.get_all(
-					"ConnectFest Registration",
-					filters={"email": sess_user},
-					fields=["*"],
-					order_by="creation asc",
-					limit=1
-				)
+				# Or exhibitor registration details (including company_name) were passed in request.
+				prev_regs = []
+				if user_email:
+					prev_regs = frappe.get_all(
+						"ConnectFest Registration",
+						filters={"email": user_email},
+						fields=["*"],
+						order_by="creation asc",
+						limit=1
+					)
+				if not prev_regs and user_mobile:
+					prev_regs = frappe.get_all(
+						"ConnectFest Registration",
+						filters={"mobile_no": user_mobile},
+						fields=["*"],
+						order_by="creation asc",
+						limit=1
+					)
 				prev = prev_regs[0] if prev_regs else {}
+
+				company_name = (data.get("company_name") or prev.get("company_name") or "").strip()
+				if not company_name:
+					frappe.local.response["http_status_code"] = 400
+					return {
+						"status": "error",
+						"message": "Company Name (company_name) is required. Please complete exhibitor registration before selecting a stall, or provide 'registration_id'.",
+					}
+
+				new_reg_id = generate_stall_id(cache)
 				dynamic_prices = get_tier_pricing()
 				tier = stall_doc.tier
 				price = dynamic_prices.get(tier, stall_doc.price)
 
+				full_name = (
+					data.get("full_name")
+					or prev.get("full_name")
+					or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else None)
+					or sess_user
+					or "Exhibitor"
+				).strip()
+
+				raw_source = data.get("source_of_info") or prev.get("source_of_info") or "Website"
+				matched_source = raw_source if raw_source in VALID_SOURCES else "Other"
+
+				is_bni = parse_boolean(data.get("is_bni_member", prev.get("is_bni_member") or 0))
+				region_name = (data.get("region_name") or prev.get("region_name") or "").strip()
+				chapter_name = (data.get("chapter_name") or prev.get("chapter_name") or "").strip()
+				if is_bni and not (region_name and chapter_name):
+					is_bni = 0
+
 				new_doc = frappe.get_doc({
 					"doctype": "ConnectFest Registration",
+					"name": new_reg_id,
 					"registration_id": new_reg_id,
-					"full_name": prev.get("full_name") or frappe.db.get_value("User", sess_user, "full_name") or sess_user,
-					"company_name": prev.get("company_name") or "",
-					"company_logo": prev.get("company_logo") or "",
-					"location": prev.get("location") or "Chennai",
-					"bill": prev.get("bill") or "",
-					"gst": prev.get("gst") or "",
-					"mobile_no": prev.get("mobile_no") or frappe.db.get_value("User", sess_user, "mobile_no") or "",
-					"email": sess_user,
-					"is_bni_member": prev.get("is_bni_member") or 0,
-					"region_name": prev.get("region_name") or "",
-					"chapter_name": prev.get("chapter_name") or "",
-					"industry": prev.get("industry") or "",
-					"segment": prev.get("segment") or "",
-					"source_of_info": prev.get("source_of_info") or "Direct",
+					"full_name": full_name,
+					"company_name": company_name,
+					"company_logo": data.get("company_logo") or prev.get("company_logo") or "",
+					"location": data.get("location") or prev.get("location") or "Chennai",
+					"bill": data.get("bill") or prev.get("bill") or "",
+					"gst": data.get("gst") or prev.get("gst") or "",
+					"mobile_no": user_mobile or prev.get("mobile_no") or "",
+					"email": user_email or prev.get("email") or "",
+					"is_bni_member": is_bni,
+					"region_name": region_name if is_bni else "",
+					"chapter_name": chapter_name if is_bni else "",
+					"industry": data.get("industry") or prev.get("industry") or "",
+					"segment": data.get("segment") or prev.get("segment") or "",
+					"source_of_info": matched_source,
 					"stall_number": stall_num,
 					"stall_category": tier,
 					"amount": price,
@@ -479,14 +561,9 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				frappe.db.commit()
 				reg_id = new_reg_id
 				record = new_doc.as_dict()
-
-	# Check visitor restriction
-	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
-		frappe.local.response["http_status_code"] = 403
-		return {
-			"status": "forbidden",
-			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
-		}
+				set_cached_record(cache, f"{STALL_CACHE_PREFIX}{new_reg_id}", record)
+				if new_doc.name != new_reg_id:
+					set_cached_record(cache, f"{STALL_CACHE_PREFIX}{new_doc.name}", record)
 
 	if not reg_id:
 		frappe.local.response["http_status_code"] = 400

@@ -28,6 +28,7 @@ from connectfest.services.common import (
 	set_cached_record,
 	generate_stall_id,
 	generate_visitor_id,
+	before_request,
 )
 from connectfest.services.pricing import (
 	get_tier_pricing,
