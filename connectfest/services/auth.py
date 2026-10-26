@@ -36,20 +36,19 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 						phone_for_user = ""
 
 			# Ensure role exists in tabRole
-			if role and not frappe.db.exists("Role", role):
-				try:
-					r_doc = frappe.get_doc({
-						"doctype": "Role",
-						"role_name": role,
-						"desk_access": 0,
-					})
-					r_doc.insert(ignore_permissions=True)
-					frappe.db.commit()
-				except Exception:
-					pass
-
 			roles_list = []
-			if role and frappe.db.exists("Role", role):
+			if role:
+				if role not in ("Website User", "System Manager", "All") and not frappe.db.exists("Role", role):
+					try:
+						r_doc = frappe.get_doc({
+							"doctype": "Role",
+							"role_name": role,
+							"desk_access": 0,
+						})
+						r_doc.insert(ignore_permissions=True)
+						frappe.db.commit()
+					except Exception:
+						pass
 				roles_list.append({"doctype": "Has Role", "role": role})
 
 			names = (full_name or clean_email.split("@")[0]).strip().split(" ", 1)
@@ -70,6 +69,8 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			})
 			user.flags.ignore_permissions = True
 			user.flags.ignore_password_policy = True
+			user.flags.ignore_validate = True
+			user.flags.ignore_links = True
 			user.on_update = lambda *args, **kwargs: None
 			orig_in_import = getattr(frappe.flags, "in_import", False)
 			frappe.flags.in_import = True
@@ -106,25 +107,32 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 				frappe.flags.in_import = orig_in_import
 			return user.name
 		else:
-			# User already exists - ensure enabled and update phone if missing
-			u_doc = frappe.get_doc("User", clean_email)
-			changed = False
-			if not u_doc.enabled:
-				u_doc.enabled = 1
-				changed = True
-			if clean_mob:
-				if not u_doc.phone:
-					u_doc.phone = clean_mob
-					changed = True
-				if not u_doc.mobile_no and not frappe.db.exists("User", {"mobile_no": clean_mob}):
-					u_doc.mobile_no = clean_mob
-					changed = True
-			if changed:
-				u_doc.flags.ignore_permissions = True
-				u_doc.flags.ignore_password_policy = True
-				u_doc.on_update = lambda *args, **kwargs: None
-				u_doc.save()
-				frappe.db.commit()
+			# User already exists - check if already enabled and phone matches without loading full User Doc
+			user_vals = frappe.db.get_value("User", clean_email, ["enabled", "phone", "mobile_no"], as_dict=True)
+			if user_vals:
+				needs_enable = not user_vals.get("enabled")
+				needs_phone = bool(clean_mob and not user_vals.get("phone"))
+				needs_mob = bool(clean_mob and not user_vals.get("mobile_no"))
+
+				if needs_enable or needs_phone or needs_mob:
+					u_doc = frappe.get_doc("User", clean_email)
+					changed = False
+					if not u_doc.enabled:
+						u_doc.enabled = 1
+						changed = True
+					if clean_mob:
+						if not u_doc.phone:
+							u_doc.phone = clean_mob
+							changed = True
+						if not u_doc.mobile_no and not frappe.db.exists("User", {"mobile_no": clean_mob}):
+							u_doc.mobile_no = clean_mob
+							changed = True
+					if changed:
+						u_doc.flags.ignore_permissions = True
+						u_doc.flags.ignore_password_policy = True
+						u_doc.on_update = lambda *args, **kwargs: None
+						u_doc.save()
+						frappe.db.commit()
 		return clean_email
 	except Exception as e:
 		frappe.clear_messages()
@@ -216,11 +224,11 @@ def get_current_user_profile(**kwargs):
 			}
 		target_user = requested_email
 
-	if frappe.db.exists("User", target_user):
-		user_doc = frappe.get_doc("User", target_user)
-		user_full_name = user_doc.full_name
+	user_vals = frappe.db.get_value("User", target_user, ["full_name", "mobile_no", "phone"], as_dict=True)
+	if user_vals:
+		user_full_name = user_vals.get("full_name") or target_user
 		user_roles = [r for r in frappe.get_roles(target_user) if r not in ("All", "Guest")]
-		user_mobile = (user_doc.mobile_no or user_doc.phone or "").strip()
+		user_mobile = (user_vals.get("mobile_no") or user_vals.get("phone") or "").strip()
 	else:
 		user_full_name = target_user
 		user_roles = ["Website User"]

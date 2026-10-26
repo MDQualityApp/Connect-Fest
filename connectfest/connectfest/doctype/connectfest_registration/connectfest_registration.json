@@ -45,7 +45,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Registration ID",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "full_name",
@@ -95,13 +96,15 @@
   {
    "fieldname": "mobile_no",
    "fieldtype": "Data",
-   "label": "Mobile Number"
+   "label": "Mobile Number",
+   "search_index": 1
   },
   {
    "fieldname": "email",
    "fieldtype": "Data",
    "label": "Email",
-   "options": "Email"
+   "options": "Email",
+   "search_index": 1
   },
   {
    "default": "Registered",
@@ -109,7 +112,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Registered\nAttended\nCancelled"
+   "options": "Registered\nAttended\nCancelled",
+   "search_index": 1
   },
   {
    "fieldname": "bni_details_section",
@@ -177,7 +181,8 @@
    "in_list_view": 1,
    "label": "Stall Number",
    "options": "ConnectFest Stall",
-   "reqd": 0
+   "reqd": 0,
+   "search_index": 1
   },
   {
    "default": "",
@@ -207,7 +212,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Payment Status",
-   "options": "\nPending\nPaid\nFailed\nRefunded"
+   "options": "\nPending\nPaid\nFailed\nRefunded",
+   "search_index": 1
   },
   {
    "default": "",

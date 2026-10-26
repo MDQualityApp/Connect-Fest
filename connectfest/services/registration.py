@@ -292,18 +292,12 @@ def register_stall(**kwargs):
 		"idx": 0,
 	}
 
-	# Ensure Frappe User account exists
-	ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-	if company_logo:
-		try:
-			frappe.db.set_value("User", email, "user_image", company_logo)
-		except Exception:
-			pass
-
 	# Direct Reliable Insert into Database & Redis Cache
 	try:
 		doc = frappe.get_doc({"doctype": "ConnectFest Registration", **record})
 		doc.flags.ignore_permissions = True
+		doc.flags.ignore_validate = True
+		doc.flags.ignore_links = True
 		doc.insert()
 		frappe.db.commit()
 
@@ -313,6 +307,29 @@ def register_stall(**kwargs):
 		set_cached_record(cache, f"{STALL_CACHE_PREFIX}{actual_reg_id}", record)
 		if doc.name != actual_reg_id:
 			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
+
+		# Provision Frappe User account (Sync if requested, otherwise async via queue)
+		if sync_mode:
+			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+			if company_logo:
+				try:
+					frappe.db.set_value("User", email, "user_image", company_logo)
+				except Exception:
+					pass
+		else:
+			try:
+				frappe.enqueue(
+					"connectfest.services.auth.ensure_frappe_user",
+					email=email,
+					full_name=full_name,
+					mobile_no=mobile_no,
+					role="Website User",
+					queue="short",
+					now=False,
+					enqueue_after_commit=True,
+				)
+			except Exception:
+				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 
 		response_data = {
 			"status": "success",
@@ -724,7 +741,7 @@ def register_visitor(**kwargs):
 			acq_m = cache.set(lock_mob_key, "1", nx=True, ex=10) if lock_mob_key else True
 			if not (acq_e and acq_m):
 				# Another concurrent thread is currently creating this registration!
-				time.sleep(0.35)
+				time.sleep(0.05)
 			else:
 				has_lock = True
 		except Exception:
@@ -868,10 +885,31 @@ def register_visitor(**kwargs):
 	try:
 		doc = frappe.get_doc({"doctype": "ConnectFest Visitor Registration", **record})
 		doc.flags.ignore_permissions = True
+		doc.flags.ignore_validate = True
+		doc.flags.ignore_links = True
 		doc.insert()
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
-		ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+
+		# Provision Frappe User account (Sync if requested, otherwise async via queue)
+		sync_mode = parse_boolean(data.get("sync", 0))
+		if sync_mode:
+			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+		else:
+			try:
+				frappe.enqueue(
+					"connectfest.services.auth.ensure_frappe_user",
+					email=email,
+					full_name=full_name,
+					mobile_no=mobile_no,
+					role="Website User",
+					queue="short",
+					now=False,
+					enqueue_after_commit=True,
+				)
+			except Exception:
+				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+
 		return {
 			"status": "success",
 			"type": "visitor",

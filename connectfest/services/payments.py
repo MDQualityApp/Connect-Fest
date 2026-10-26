@@ -26,7 +26,7 @@ def get_razorpay_config():
 	mock_mode = True
 
 	try:
-		settings = frappe.get_single("ConnectFest Settings")
+		settings = frappe.get_cached_doc("ConnectFest Settings")
 		key_id = settings.razorpay_key_id
 		key_secret = settings.get_password("razorpay_key_secret", raise_exception=False)
 	except Exception:
@@ -629,6 +629,8 @@ def verify_razorpay_payment(**kwargs):
 			update_modified=True,
 		)
 		frappe.db.commit()
+		from connectfest.services.stalls import invalidate_stalls_cache
+		invalidate_stalls_cache()
 		from connectfest.services.common import STALL_LOCK_PREFIX
 		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
 		try:
@@ -1198,6 +1200,8 @@ def admin_confirm_payment(**kwargs):
 	stall_doc.save(ignore_permissions=True)
 
 	frappe.db.commit()
+	from connectfest.services.stalls import invalidate_stalls_cache
+	invalidate_stalls_cache()
 
 	# Clear Redis locks
 	try:

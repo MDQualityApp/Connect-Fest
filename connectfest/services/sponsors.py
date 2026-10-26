@@ -91,6 +91,18 @@ def _format_sponsor_doc(doc_or_dict):
 	}
 
 
+SPONSORS_CACHE_KEY = "connectfest:sponsors:active_default"
+
+
+def invalidate_sponsors_cache():
+	"""Invalidates Redis cache keys for sponsors."""
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(SPONSORS_CACHE_KEY))
+	except Exception:
+		pass
+
+
 # ==============================================================================
 # 1. PUBLIC WEBSITE SPONSORS APIS (For Visitors / Attendees / Public)
 # ==============================================================================
@@ -106,6 +118,7 @@ def get_sponsors(**kwargs):
 	  * 'sponsors': Complete flat list
 	  * 'grouped_by_category': Sponsors categorized under tiers (Title, Platinum, Gold, etc.)
 	  * 'categories': Available category list for tabs/filters
+	- Redis cached for sub-millisecond response time.
 	"""
 	data = extract_request_data(kwargs)
 	category = (data.get("category") or data.get("sponsor_category") or data.get("tier") or "").strip()
@@ -117,6 +130,20 @@ def get_sponsors(**kwargs):
 	page = max(1, cint(raw_page)) if raw_page else 1
 	limit = min(200, max(1, cint(raw_limit))) if raw_limit else 0
 	offset = (page - 1) * limit if limit > 0 else 0
+
+	is_default_query = not category and not search and featured_only is None and page == 1 and limit == 0
+	cache = frappe.cache()
+	cache_key = cache.make_key(SPONSORS_CACHE_KEY)
+
+	if is_default_query:
+		try:
+			cached = cache.get(cache_key)
+			if cached:
+				if isinstance(cached, bytes):
+					cached = cached.decode("utf-8")
+				return json.loads(cached)
+		except Exception:
+			pass
 
 	conditions = ["is_active = 1"]
 	params = {}
@@ -159,7 +186,7 @@ def get_sponsors(**kwargs):
 	""", as_dict=True)
 	available_categories = ["All"] + [c.sponsor_category for c in db_cats]
 
-	return {
+	res = {
 		"status": "success",
 		"total_sponsors": total_count,
 		"featured_count": featured_count,
@@ -167,6 +194,14 @@ def get_sponsors(**kwargs):
 		"active_category": category or "All",
 		"sponsors": formatted_sponsors,
 	}
+
+	if is_default_query:
+		try:
+			cache.setex(cache_key, 300, json.dumps(res, default=str))
+		except Exception:
+			pass
+
+	return res
 
 
 @handle_api_errors("ConnectFest Public Get Sponsor Details Error")
@@ -274,6 +309,7 @@ def admin_create_sponsor(sponsor_name=None, sponsor_category=None, sponsored_for
 	doc.flags.ignore_permissions = True
 	doc.insert()
 	frappe.db.commit()
+	invalidate_sponsors_cache()
 
 	return {
 		"status": "success",
@@ -420,6 +456,7 @@ def admin_update_sponsor(sponsor_id=None, name=None, sponsor_name=None, sponsor_
 	doc.flags.ignore_permissions = True
 	doc.save()
 	frappe.db.commit()
+	invalidate_sponsors_cache()
 
 	return {
 		"status": "success",
@@ -476,6 +513,7 @@ def admin_delete_sponsor(sponsor_id=None, name=None, sponsor_ids=None, ids=None,
 			not_found_ids.append({"id": sid, "reason": "Not found"})
 
 	frappe.db.commit()
+	invalidate_sponsors_cache()
 
 	if not deleted_ids:
 		frappe.local.response["http_status_code"] = 404
@@ -562,6 +600,7 @@ def admin_toggle_sponsor_status(sponsor_id=None, name=None, sponsor_ids=None, id
 		updated_ids.append(sid)
 
 	frappe.db.commit()
+	invalidate_sponsors_cache()
 
 	if not updated_ids:
 		frappe.local.response["http_status_code"] = 404

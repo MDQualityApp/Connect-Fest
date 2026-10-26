@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import timedelta
 import frappe
@@ -16,11 +17,23 @@ from connectfest.services.common import (
 from connectfest.services.pricing import get_tier_pricing
 from connectfest.services.auth import check_admin_permission, ensure_frappe_user
 
+STALLS_INVENTORY_CACHE_KEY = "connectfest:stalls:public_inventory"
+
+
+def invalidate_stalls_cache():
+	"""Invalidates Redis cache for floor map and stalls inventory."""
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(STALLS_INVENTORY_CACHE_KEY))
+	except Exception:
+		pass
+
 
 def get_stalls(**kwargs):
 	"""
 	Universal Floor Map & Real-Time Inventory API.
 	Returns all 220 stalls with zone, dimensions, blueprint coordinates, live booking status, and pricing.
+	Cached in Redis with sub-second responsiveness.
 	"""
 	try:
 		from frappe.utils import cint
@@ -33,6 +46,20 @@ def get_stalls(**kwargs):
 		raw_limit = data.get("limit") or data.get("page_size")
 		page = max(1, cint(raw_page)) if raw_page else 1
 		limit = cint(raw_limit) if raw_limit and str(raw_limit).lower() != "all" else 0
+
+		is_default = not filter_tier and not filter_status and not search_term and (limit == 0 or limit >= 220) and page == 1
+		cache = frappe.cache()
+		cache_key = cache.make_key(STALLS_INVENTORY_CACHE_KEY)
+
+		if is_default:
+			try:
+				cached = cache.get(cache_key)
+				if cached:
+					if isinstance(cached, bytes):
+						cached = cached.decode("utf-8")
+					return json.loads(cached)
+			except Exception:
+				pass
 
 		stalls = frappe.get_all(
 			"ConnectFest Stall",
@@ -61,7 +88,6 @@ def get_stalls(**kwargs):
 		)
 
 		now_dt = now_datetime()
-		cache = frappe.cache()
 		pricing = get_tier_pricing()
 
 		total_stalls = len(stalls)
@@ -72,6 +98,7 @@ def get_stalls(**kwargs):
 		for t_name, t_price in pricing.items():
 			tier_summary[t_name] = {"total": 0, "available": 0, "booked": 0, "price": flt(t_price)}
 
+		holds_released = 0
 		for stall in stalls:
 			t = stall.tier or "Regular"
 			if t not in tier_summary:
@@ -89,6 +116,7 @@ def get_stalls(**kwargs):
 				}, update_modified=False)
 				stall["status"] = "Available"
 				cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall.stall_number}"))
+				holds_released += 1
 
 			# Only count unblocked stalls in public stats
 			if not stall.is_blocked_by_admin and stall.status != "Blocked":
@@ -108,7 +136,8 @@ def get_stalls(**kwargs):
 				elif t == "Standard": stall["zone"] = "Zone B - West Aisles"
 				else: stall["zone"] = "Zone E - South Entrance Corridor"
 
-		frappe.db.commit()
+		if holds_released > 0:
+			frappe.db.commit()
 
 		# Apply Filters (Public Security: Blocked stalls are strictly hidden from users)
 		filtered_stalls = []
@@ -145,7 +174,7 @@ def get_stalls(**kwargs):
 			{"name": "Wi-Fi & Cleaning", "detail": "High-speed event Wi-Fi and daily booth cleaning", "included": True},
 		]
 
-		return {
+		res = {
 			"status": "success",
 			"filters_applied": {
 				"tier": filter_tier or None,
@@ -167,6 +196,14 @@ def get_stalls(**kwargs):
 			"facilities_overview": facilities_overview,
 			"stalls": paginated_stalls,
 		}
+
+		if is_default:
+			try:
+				cache.setex(cache_key, 15, json.dumps(res, default=str))
+			except Exception:
+				pass
+
+		return res
 	except Exception as e:
 		frappe.log_error("ConnectFest Get Stalls Error", frappe.get_traceback())
 		frappe.local.response["http_status_code"] = 500
@@ -280,6 +317,7 @@ def hold_stall(stall_number=None, **kwargs):
 		stall.booked_by_company = company_name
 		stall.save(ignore_permissions=True)
 		frappe.db.commit()
+		invalidate_stalls_cache()
 
 		dynamic_prices = get_tier_pricing()
 		current_price = dynamic_prices.get(stall.tier, stall.price)
@@ -317,6 +355,7 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 			stall.hold_expires_at = None
 			stall.save(ignore_permissions=True)
 			frappe.db.commit()
+			invalidate_stalls_cache()
 
 	cache = frappe.cache()
 	cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
@@ -392,6 +431,7 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 
 	stall.save(ignore_permissions=True)
 	frappe.db.commit()
+	invalidate_stalls_cache()
 
 	return {
 		"status": "success",
@@ -683,6 +723,7 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 	doc.flags.ignore_permissions = True
 	doc.insert()
 	frappe.db.commit()
+	invalidate_stalls_cache()
 
 	return {
 		"status": "success",
@@ -749,6 +790,7 @@ def admin_update_stall(stall_number=None, **kwargs):
 
 	stall.save(ignore_permissions=True)
 	frappe.db.commit()
+	invalidate_stalls_cache()
 
 	return {
 		"status": "success",
@@ -799,6 +841,7 @@ def admin_delete_stall(stall_number=None, **kwargs):
 
 	frappe.db.delete("ConnectFest Stall", {"name": s_num})
 	frappe.db.commit()
+	invalidate_stalls_cache()
 
 	return {
 		"status": "success",
@@ -1521,6 +1564,7 @@ def admin_book_stall(**kwargs):
 		})
 
 	frappe.db.commit()
+	invalidate_stalls_cache()
 
 	# Send Confirmation Email to Attendee
 	if is_paid:

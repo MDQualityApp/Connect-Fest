@@ -84,7 +84,19 @@ def _parse_images_payload(raw_images, file_prefix="gallery"):
 	return result
 
 
-def _format_gallery_doc(doc_or_dict, include_images=True):
+GALLERY_CACHE_KEY = "connectfest:gallery:published_default"
+
+
+def invalidate_gallery_cache():
+	"""Invalidates Redis cache keys for gallery."""
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(GALLERY_CACHE_KEY))
+	except Exception:
+		pass
+
+
+def _format_gallery_doc(doc_or_dict, include_images=True, images_by_parent=None):
 	"""Standardizes gallery item output dictionary for frontend JSON consumption."""
 	if isinstance(doc_or_dict, dict):
 		name = doc_or_dict.get("name")
@@ -111,7 +123,9 @@ def _format_gallery_doc(doc_or_dict, include_images=True):
 
 	images_list = []
 	if include_images:
-		if hasattr(doc_or_dict, "images") and doc_or_dict.images:
+		if images_by_parent is not None:
+			images_list = images_by_parent.get(name, [])
+		elif hasattr(doc_or_dict, "images") and doc_or_dict.images:
 			for row in doc_or_dict.images:
 				images_list.append({
 					"image": row.image,
@@ -170,6 +184,7 @@ def get_gallery(**kwargs):
 	- Returns only published gallery items.
 	- STRICT SORTING: Pinned items (is_pinned = 1) come FIRST!
 	- Supports optional filtering by category, search term, and pagination.
+	- Redis cached for sub-millisecond public response time.
 	"""
 	data = extract_request_data(kwargs)
 	category = (data.get("category") or "").strip()
@@ -181,6 +196,20 @@ def get_gallery(**kwargs):
 	page = max(1, cint(raw_page)) if raw_page else 1
 	limit = min(100, max(1, cint(raw_limit))) if raw_limit else 50
 	offset = (page - 1) * limit
+
+	is_default_query = not category and not search and pinned_only is None and page == 1 and limit == 50
+	cache = frappe.cache()
+	cache_key = cache.make_key(GALLERY_CACHE_KEY)
+
+	if is_default_query:
+		try:
+			cached = cache.get(cache_key)
+			if cached:
+				if isinstance(cached, bytes):
+					cached = cached.decode("utf-8")
+				return json.loads(cached)
+		except Exception:
+			pass
 
 	# Base query conditions
 	conditions = ["is_published = 1"]
@@ -223,7 +252,25 @@ def get_gallery(**kwargs):
 		LIMIT %(limit)s OFFSET %(offset)s
 	""", {**params, "limit": limit, "offset": offset}, as_dict=True)
 
-	formatted_items = [_format_gallery_doc(it, include_images=True) for it in items]
+	# Batch fetch images in a single SQL query (Fixes N+1 query problem)
+	images_by_parent = {}
+	item_names = [it["name"] for it in items if it.get("name")]
+	if item_names:
+		placeholders = ", ".join(["%s"] * len(item_names))
+		child_images = frappe.db.sql(f"""
+			SELECT parent, image, caption, display_order
+			FROM `tabConnectFest Gallery Item Image`
+			WHERE parent IN ({placeholders}) AND parenttype = 'ConnectFest Gallery'
+			ORDER BY display_order ASC, idx ASC
+		""", tuple(item_names), as_dict=True)
+		for img in child_images:
+			images_by_parent.setdefault(img["parent"], []).append({
+				"image": img["image"],
+				"caption": img.get("caption") or "",
+				"display_order": cint(img.get("display_order")),
+			})
+
+	formatted_items = [_format_gallery_doc(it, include_images=True, images_by_parent=images_by_parent) for it in items]
 
 	# Distinct published categories for tab filters on website
 	db_cats = frappe.db.sql("""
@@ -233,7 +280,7 @@ def get_gallery(**kwargs):
 	""", as_dict=True)
 	available_categories = ["All"] + [c.category for c in db_cats]
 
-	return {
+	res = {
 		"status": "success",
 		"total_items": total_count,
 		"pinned_count": pinned_count,
@@ -249,6 +296,14 @@ def get_gallery(**kwargs):
 		"active_category": category or "All",
 		"gallery": formatted_items,
 	}
+
+	if is_default_query:
+		try:
+			cache.setex(cache_key, 300, json.dumps(res, default=str))
+		except Exception:
+			pass
+
+	return res
 
 
 @handle_api_errors("ConnectFest Public Gallery Item Error")
@@ -359,6 +414,7 @@ def admin_create_gallery_item(title=None, images=None, description=None, categor
 	doc.flags.ignore_permissions = True
 	doc.insert()
 	frappe.db.commit()
+	invalidate_gallery_cache()
 
 	return {
 		"status": "success",
@@ -517,6 +573,7 @@ def admin_update_gallery_item(gallery_id=None, name=None, title=None, descriptio
 	doc.flags.ignore_permissions = True
 	doc.save()
 	frappe.db.commit()
+	invalidate_gallery_cache()
 
 	return {
 		"status": "success",
@@ -576,6 +633,7 @@ def admin_delete_gallery_item(gallery_id=None, name=None, gallery_ids=None, ids=
 			not_found_ids.append({"id": gid, "reason": "Not found"})
 
 	frappe.db.commit()
+	invalidate_gallery_cache()
 
 	if not deleted_ids:
 		frappe.local.response["http_status_code"] = 404
@@ -670,6 +728,7 @@ def admin_toggle_gallery_pin(gallery_id=None, name=None, gallery_ids=None, ids=N
 			unpinned_ids.append(gid)
 
 	frappe.db.commit()
+	invalidate_gallery_cache()
 
 	total_updated = len(pinned_ids) + len(unpinned_ids)
 	if total_updated == 0:

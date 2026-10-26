@@ -59,6 +59,18 @@ def _format_terms_doc(doc_or_dict):
 	}
 
 
+TERMS_CACHE_KEY = "connectfest:terms:all_default"
+
+
+def invalidate_terms_cache():
+	"""Invalidates Redis cache keys for terms and conditions."""
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(TERMS_CACHE_KEY))
+	except Exception:
+		pass
+
+
 # ==============================================================================
 # 1. PUBLIC TERMS AND CONDITIONS APIS
 # ==============================================================================
@@ -72,6 +84,7 @@ def get_terms_and_conditions(**kwargs):
 	- search / query: searches in title, summary, or content
 	- terms_id / id / name: specific record ID (e.g. TC-01681)
 	- page, limit: optional pagination
+	- Redis cached for sub-millisecond response time.
 	"""
 	data = extract_request_data(kwargs)
 	terms_type = (data.get("terms_type") or data.get("type") or "").strip()
@@ -83,6 +96,20 @@ def get_terms_and_conditions(**kwargs):
 	page = max(1, cint(raw_page)) if raw_page else 1
 	limit = min(200, max(1, cint(raw_limit))) if raw_limit else 0
 	offset = (page - 1) * limit if limit > 0 else 0
+
+	is_default_query = not terms_type and not search and not terms_id and limit == 0
+	cache = frappe.cache()
+	cache_key = cache.make_key(TERMS_CACHE_KEY)
+
+	if is_default_query:
+		try:
+			cached = cache.get(cache_key)
+			if cached:
+				if isinstance(cached, bytes):
+					cached = cached.decode("utf-8")
+				return json.loads(cached)
+		except Exception:
+			pass
 
 	conditions = ["1=1"]
 	params = {}
@@ -133,6 +160,12 @@ def get_terms_and_conditions(**kwargs):
 	if limit > 0:
 		response["page"] = page
 		response["limit"] = limit
+
+	if is_default_query:
+		try:
+			cache.setex(cache_key, 300, json.dumps(response, default=str))
+		except Exception:
+			pass
 
 	return response
 
@@ -328,6 +361,7 @@ def admin_create_terms_and_conditions(**kwargs):
 	doc.summary = summary
 	doc.insert(ignore_permissions=True)
 	frappe.db.commit()
+	invalidate_terms_cache()
 
 	return {
 		"status": "success",
@@ -369,6 +403,7 @@ def admin_update_terms_and_conditions(terms_id=None, **kwargs):
 
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
+	invalidate_terms_cache()
 
 	return {
 		"status": "success",
@@ -406,6 +441,7 @@ def admin_delete_terms_and_conditions(terms_id=None, terms_ids=None, **kwargs):
 			failed.append({"id": doc_id, "error": str(e)})
 
 	frappe.db.commit()
+	invalidate_terms_cache()
 
 	return {
 		"status": "success",

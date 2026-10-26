@@ -47,7 +47,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Tier",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "dimensions",
@@ -74,7 +75,8 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Available\nHold\nBooked\nBlocked",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "block",
@@ -133,7 +135,8 @@
   {
    "fieldname": "booked_by_registration",
    "fieldtype": "Data",
-   "label": "Registration ID"
+   "label": "Registration ID",
+   "search_index": 1
   },
   {
    "fieldname": "booked_by_name",

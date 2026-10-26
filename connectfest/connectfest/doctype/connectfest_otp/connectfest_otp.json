@@ -21,7 +21,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Mobile Number",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "email",
@@ -44,7 +45,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "OTP Code",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "default": "Pending",

@@ -35,62 +35,44 @@ def fetch_report_data(filters=None):
 
 	# 1. Fetch Exhibitors (if role is all or exhibitor)
 	if role in ("all", "exhibitor", "exhibitors"):
-		ex_query = """
+		ex_conds = ["1=1"]
+		ex_params = {}
+		if payment_status and payment_status.lower() != "all":
+			ex_conds.append("LOWER(payment_status) = %(p_status)s")
+			ex_params["p_status"] = payment_status.lower()
+		if bni_filter is not None and str(bni_filter).strip() not in ("", "all"):
+			target_bni = 1 if str(bni_filter).strip().lower() in ("1", "true", "yes") else 0
+			ex_conds.append("is_bni_member = %(bni)s")
+			ex_params["bni"] = target_bni
+		if tier_filter and tier_filter != "all":
+			ex_conds.append("LOWER(stall_category) = %(tier)s")
+			ex_params["tier"] = tier_filter.lower()
+		if status_filter and status_filter != "all":
+			ex_conds.append("LOWER(status) = %(st_filter)s")
+			ex_params["st_filter"] = status_filter.lower()
+		if search_query:
+			ex_conds.append("(LOWER(registration_id) LIKE %(q)s OR LOWER(full_name) LIKE %(q)s OR LOWER(company_name) LIKE %(q)s OR LOWER(email) LIKE %(q)s OR mobile_no LIKE %(q)s OR LOWER(stall_number) LIKE %(q)s)")
+			ex_params["q"] = f"%{search_query}%"
+
+		ex_where = " AND ".join(ex_conds)
+		ex_query = f"""
 			SELECT name, registration_id, full_name, email, mobile_no, company_name,
 			       location, is_bni_member, region_name, chapter_name, industry, segment,
 			       source_of_info, stall_number, stall_category, amount, payment_status,
 			       payment_mode, razorpay_payment_id, payment_date, status, creation,
 			       bill, gst
 			FROM `tabConnectFest Registration`
+			WHERE {ex_where}
 			ORDER BY creation DESC
 		"""
-		ex_records = frappe.db.sql(ex_query, as_dict=True)
+		ex_records = frappe.db.sql(ex_query, ex_params, as_dict=True)
 
 		for r in ex_records:
 			pay_mode = r.get("payment_mode") or ("Cash" if (r.get("razorpay_payment_id") or "").startswith("CASH") else ("Online" if r.get("payment_status") == "Paid" else "N/A"))
 			is_bni = bool(r.get("is_bni_member"))
 
-			# Filter Checks
-			if payment_status and payment_status.lower() != "all":
-				if (r.get("payment_status") or "").lower() != payment_status.lower():
-					continue
-
 			if payment_mode and payment_mode != "all":
 				if pay_mode.lower() != payment_mode:
-					continue
-
-			if bni_filter is not None and str(bni_filter).strip() not in ("", "all"):
-				target_bni = str(bni_filter).strip().lower() in ("1", "true", "yes")
-				if is_bni != target_bni:
-					continue
-
-			if tier_filter and tier_filter != "all":
-				if (r.get("stall_category") or "").lower() != tier_filter:
-					continue
-
-			if status_filter and status_filter != "all":
-				if (r.get("status") or "").lower() != status_filter:
-					continue
-
-			if search_query:
-				q = search_query
-				combined = " ".join([
-					str(r.get("registration_id") or ""),
-					str(r.get("full_name") or ""),
-					str(r.get("email") or ""),
-					str(r.get("mobile_no") or ""),
-					str(r.get("company_name") or ""),
-					str(r.get("location") or ""),
-					str(r.get("stall_number") or ""),
-					str(r.get("stall_category") or ""),
-					str(r.get("region_name") or ""),
-					str(r.get("chapter_name") or ""),
-					str(r.get("industry") or ""),
-					str(r.get("segment") or ""),
-					str(r.get("source_of_info") or ""),
-					pay_mode,
-				]).lower()
-				if q not in combined:
 					continue
 
 			rows.append({
@@ -122,17 +104,34 @@ def fetch_report_data(filters=None):
 
 	# 2. Fetch Visitors (if role is all or visitor, and tier filter not specified)
 	if role in ("all", "visitor", "visitors") and (not tier_filter or tier_filter == "all"):
-		vis_query = """
+		vis_conds = ["1=1"]
+		vis_params = {}
+		if status_filter and status_filter != "all":
+			vis_conds.append("LOWER(status) = %(st_filter)s")
+			vis_params["st_filter"] = status_filter.lower()
+		if search_query:
+			vis_conds.append("(LOWER(registration_id) LIKE %(q)s OR LOWER(full_name) LIKE %(q)s OR LOWER(email) LIKE %(q)s OR mobile_no LIKE %(q)s OR LOWER(pass_code) LIKE %(q)s)")
+			vis_params["q"] = f"%{search_query}%"
+
+		vis_where = " AND ".join(vis_conds)
+		vis_query = f"""
 			SELECT name, registration_id, full_name, email, mobile_no, which_day,
 			       pass_code, source_of_info, checked_in, checked_in_at, status, creation,
 			       area_of_interest
 			FROM `tabConnectFest Visitor Registration`
+			WHERE {vis_where}
 			ORDER BY creation DESC
 		"""
-		vis_records = frappe.db.sql(vis_query, as_dict=True)
+		vis_records = frappe.db.sql(vis_query, vis_params, as_dict=True)
 
 		for v in vis_records:
 			if payment_status and payment_status.lower() not in ("all", "free", "paid"):
+				continue
+			if payment_mode and payment_mode not in ("all", "free"):
+				continue
+			if bni_filter is not None and str(bni_filter).strip() not in ("", "all"):
+				if str(bni_filter).strip().lower() in ("1", "true", "yes"):
+					continue
 				continue
 			if payment_mode and payment_mode not in ("all", "free"):
 				continue

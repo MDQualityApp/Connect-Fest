@@ -27,7 +27,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Registration ID",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "full_name",
@@ -46,14 +47,16 @@
    "in_list_view": 1,
    "label": "Email Address",
    "options": "Email",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "mobile_no",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Mobile Number",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "status_section",
@@ -94,7 +97,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Pass Code",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "qr_payload",
@@ -107,7 +111,8 @@
    "fieldname": "checked_in",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Checked In"
+   "label": "Checked In",
+   "search_index": 1
   },
   {
    "fieldname": "checked_in_at",
