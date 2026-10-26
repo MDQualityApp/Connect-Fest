@@ -417,13 +417,13 @@ def admin_delete_terms_and_conditions(terms_id=None, terms_ids=None, **kwargs):
 
 
 # ==============================================================================
-# 3. SEED DEFAULT TERMS AND CONDITIONS
+# 3. SETUP DEFAULT TERMS AND CONDITIONS
 # ==============================================================================
 
-@handle_api_errors("ConnectFest Seed Default Terms Error")
-def seed_default_terms(**kwargs):
+@handle_api_errors("ConnectFest Setup Default Terms Error")
+def setup_default_terms(**kwargs):
 	"""
-	Seeds realistic default Terms and Conditions for ConnectFest 2027.
+	Sets up realistic default Terms and Conditions for ConnectFest 2027.
 	Safe to run multiple times: updates existing terms or creates if missing.
 	"""
 	default_terms_list = [
@@ -572,6 +572,10 @@ def seed_default_terms(**kwargs):
 
 	return {
 		"status": "success",
-		"message": f"Successfully seeded {len(seeded)} default Terms and Conditions documents.",
+		"message": f"Successfully initialized {len(seeded)} default Terms and Conditions documents.",
 		"seeded": seeded,
 	}
+
+
+# Backward-compatibility alias
+seed_default_terms = setup_default_terms

@@ -67,6 +67,7 @@ from connectfest.services.stalls import (
 	admin_book_stall as _admin_book_stall,
 	admin_restore_defaults as _admin_restore_defaults,
 	admin_clear_all_bookings as _admin_clear_all_bookings,
+	setup_default_stalls as _setup_default_stalls,
 	seed_default_stalls as _seed_default_stalls,
 )
 from connectfest.services.registration import (
@@ -118,6 +119,7 @@ from connectfest.services.sponsors import (
 	admin_update_sponsor as _admin_update_sponsor,
 	admin_delete_sponsor as _admin_delete_sponsor,
 	admin_toggle_sponsor_status as _admin_toggle_sponsor_status,
+	setup_default_sponsors as _setup_default_sponsors,
 	seed_default_sponsors as _seed_default_sponsors,
 )
 from connectfest.services.notifications import (
@@ -140,6 +142,7 @@ from connectfest.services.terms import (
 	admin_create_terms_and_conditions as _admin_create_terms_and_conditions,
 	admin_update_terms_and_conditions as _admin_update_terms_and_conditions,
 	admin_delete_terms_and_conditions as _admin_delete_terms_and_conditions,
+	setup_default_terms as _setup_default_terms,
 	seed_default_terms as _seed_default_terms,
 )
 
@@ -534,9 +537,11 @@ def admin_reset_test_data(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def seed_stalls():
-	"""Seeding API: Populates or verifies 220 stalls and pricing tiers while preserving bookings."""
-	return _seed_default_stalls(preserve_booked=True)
+def setup_stalls():
+	"""Setup API: Populates or verifies 220 stalls and pricing tiers while preserving bookings."""
+	return _setup_default_stalls(preserve_booked=True)
+
+seed_stalls = setup_stalls
 
 
 @frappe.whitelist(allow_guest=True)
@@ -672,9 +677,11 @@ def admin_toggle_sponsor_status(sponsor_id=None, sponsor_ids=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def seed_default_sponsors():
-	"""Seeds default realistic sponsors for ConnectFest 2027."""
-	return _seed_default_sponsors()
+def setup_default_sponsors():
+	"""Sets up default realistic sponsors for ConnectFest 2027."""
+	return _setup_default_sponsors()
+
+seed_default_sponsors = setup_default_sponsors
 
 
 # ==============================================================================
@@ -808,7 +815,9 @@ def admin_delete_terms(terms_ids=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def seed_default_terms():
-	"""Seeds default realistic terms and conditions for ConnectFest 2027."""
-	return _seed_default_terms()
+def setup_default_terms():
+	"""Sets up default realistic terms and conditions for ConnectFest 2027."""
+	return _setup_default_terms()
+
+seed_default_terms = setup_default_terms
 

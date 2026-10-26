@@ -276,4 +276,19 @@ def get_base_url():
 	return "https://connectfestapp.mdqapps.online"
 
 
+def before_request():
+	"""
+	Runtime hook executed before processing any HTTP request.
+	Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs,
+	even if site_config.json does not have explicit flags.
+	"""
+	frappe.local.allow_cors = "*"
+	if hasattr(frappe.local, "conf") and frappe.local.conf:
+		frappe.local.conf.allow_cors = "*"
+		req = getattr(frappe, "request", None)
+		if req and hasattr(req, "path") and req.path:
+			if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
+				frappe.local.conf.ignore_csrf = True
+
+
 

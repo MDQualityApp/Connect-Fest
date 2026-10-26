@@ -2,9 +2,9 @@ import frappe
 from frappe.utils import now_datetime, flt
 import uuid
 
-def seed_1000_stalls_and_users():
+def generate_1000_stalls_and_users():
     """
-    Seeds 1,000+ stalls, 1,000 Users, and 1,000 Confirmed & Paid Registrations in ConnectFest.
+    Populates 1,000+ stalls, 1,000 Users, and 1,000 Confirmed & Paid Registrations in ConnectFest.
     Preserves existing user rithinaveena2001@gmail.com and stall A-01.
     """
     frappe.init(site="connectfest.localhost")
@@ -210,4 +210,4 @@ def seed_1000_stalls_and_users():
     print(f"Total Booked Stalls: {total_booked_stalls}")
 
 if __name__ == "__main__":
-    seed_1000_stalls_and_users()
+    generate_1000_stalls_and_users()

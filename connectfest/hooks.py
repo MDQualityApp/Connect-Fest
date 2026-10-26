@@ -220,7 +220,7 @@ scheduler_events = {
 
 # Request Events
 # ----------------
-# before_request = ["connectfest.utils.before_request"]
+before_request = ["connectfest.services.common.before_request"]
 # after_request = ["connectfest.utils.after_request"]
 
 # Job Events

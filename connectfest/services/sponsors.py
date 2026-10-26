@@ -580,9 +580,9 @@ def admin_toggle_sponsor_status(sponsor_id=None, name=None, sponsor_ids=None, id
 	}
 
 
-def seed_default_sponsors():
+def setup_default_sponsors():
 	"""
-	Seeds default realistic sponsors for ConnectFest 2027 if none exist.
+	Sets up default realistic sponsors for ConnectFest 2027 if none exist.
 	"""
 	if not frappe.db.table_exists("ConnectFest Sponsor"):
 		return
@@ -654,4 +654,8 @@ def seed_default_sponsors():
 		doc.insert()
 
 	frappe.db.commit()
-	print("ConnectFest: Seeded 5 official ConnectFest 2027 sponsors.")
+	print("ConnectFest: Initialized 5 official ConnectFest 2027 sponsors.")
+
+
+# Backward-compatibility alias
+seed_default_sponsors = setup_default_sponsors

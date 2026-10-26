@@ -24,6 +24,7 @@
   "booking_details_section",
   "booked_by_registration",
   "booked_by_name",
+  "payment_mode",
   "column_break_booking",
   "booked_by_company",
   "booked_by_email",
@@ -138,6 +139,13 @@
    "fieldname": "booked_by_name",
    "fieldtype": "Data",
    "label": "Booked By Name"
+  },
+  {
+   "fieldname": "payment_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Mode",
+   "options": "\nOnline\nCash\nCheque\nBank Transfer"
   },
   {
    "fieldname": "column_break_booking",

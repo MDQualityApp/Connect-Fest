@@ -608,21 +608,24 @@ def verify_razorpay_payment(**kwargs):
 		em = (cached_item.get("email") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")
 		mb = (cached_item.get("mobile_no") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no")
 
+		stall_update_fields = {
+			"status": "Booked",
+			"is_blocked_by_admin": 0,
+			"booked_by_registration": reg_id,
+			"booked_by_name": fn,
+			"booked_by_company": cp,
+			"booked_by_email": em,
+			"booked_by_mobile": mb,
+			"hold_token": "",
+			"hold_expires_at": None,
+		}
+		if frappe.db.has_column("ConnectFest Stall", "payment_mode"):
+			stall_update_fields["payment_mode"] = "Online"
+
 		frappe.db.set_value(
 			"ConnectFest Stall",
 			stall_num,
-			{
-				"status": "Booked",
-				"payment_mode": "Online",
-				"is_blocked_by_admin": 0,
-				"booked_by_registration": reg_id,
-				"booked_by_name": fn,
-				"booked_by_company": cp,
-				"booked_by_email": em,
-				"booked_by_mobile": mb,
-				"hold_token": "",
-				"hold_expires_at": None,
-			},
+			stall_update_fields,
 			update_modified=True,
 		)
 		frappe.db.commit()
@@ -1181,7 +1184,8 @@ def admin_confirm_payment(**kwargs):
 	# Update stall doc
 	stall_doc.reload()
 	stall_doc.status = "Booked"
-	stall_doc.payment_mode = payment_mode
+	if hasattr(stall_doc, "payment_mode") or frappe.db.has_column("ConnectFest Stall", "payment_mode"):
+		stall_doc.payment_mode = payment_mode
 	stall_doc.booked_by_registration = actual_reg_id
 	stall_doc.booked_by_name = reg_doc.full_name
 	stall_doc.booked_by_company = reg_doc.company_name

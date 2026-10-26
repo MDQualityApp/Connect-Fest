@@ -70,6 +70,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			})
 			user.flags.ignore_permissions = True
 			user.flags.ignore_password_policy = True
+			user.on_update = lambda *args, **kwargs: None
 			orig_in_import = getattr(frappe.flags, "in_import", False)
 			frappe.flags.in_import = True
 			import time, random
@@ -121,6 +122,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			if changed:
 				u_doc.flags.ignore_permissions = True
 				u_doc.flags.ignore_password_policy = True
+				u_doc.on_update = lambda *args, **kwargs: None
 				u_doc.save()
 				frappe.db.commit()
 		return clean_email

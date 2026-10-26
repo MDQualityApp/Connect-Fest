@@ -928,17 +928,17 @@ def build_connectfest_220_stalls():
 DEFAULT_STALLS_SPEC = build_connectfest_220_stalls()
 
 
-def seed_default_stalls(preserve_booked=True):
+def setup_default_stalls(preserve_booked=True):
 	"""
-	Universal Stall & Tier Seeding Function for ConnectFest 2027.
-	Seeds all 220 official floor-plan stalls (Blocks A to P + Title Sponsor TS-01) with SVG coordinates & dimensions.
+	Universal Stall & Tier Setup / Initialization Function for ConnectFest 2027.
+	Sets up all 220 official floor-plan stalls (Blocks A to P + Title Sponsor TS-01) with SVG coordinates & dimensions.
 	- 220 stalls:
 	  * Title Sponsor: 1 stall (TS-01, 12x4m, Grand Central Arena)
 	  * Silver: 37 stalls (4x3m, 6x3m, 8x3m, 6x4m, 8x4m, 6x5m)
 	  * Premium: 81 stalls (3x3m, 5x2m, 5x3m, 6x2m)
 	  * Standard: 59 stalls (3x2m)
 	  * Regular: 42 stalls (2x2m)
-	- Seeds default 5 tier pricing in 'ConnectFest Tier Pricing'.
+	- Sets up default 5 tier pricing in 'ConnectFest Tier Pricing'.
 	- Preserves booked stalls & registrations.
 	- 100% Idempotent and safe to run multiple times.
 	"""
@@ -1061,7 +1061,7 @@ def seed_default_stalls(preserve_booked=True):
 
 	total_stalls = frappe.db.count("ConnectFest Stall")
 	try:
-		print(f"ConnectFest: Seeded/Verified 220 stalls (Total: {total_stalls}, Newly Created: {created_count}, Updated: {updated_count})")
+		print(f"ConnectFest: Initialized/Verified 220 stalls (Total: {total_stalls}, Newly Created: {created_count}, Updated: {updated_count})")
 	except Exception:
 		pass
 
@@ -1071,6 +1071,10 @@ def seed_default_stalls(preserve_booked=True):
 		"newly_created": created_count,
 		"updated": updated_count,
 	}
+
+
+# Backward-compatibility alias
+seed_default_stalls = setup_default_stalls
 
 
 def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kwargs):
@@ -1132,9 +1136,9 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 			""")
 			result["booked_stalls_preserved"] = booked_count
 
-		seed_res = seed_default_stalls(preserve_booked=not r_booked)
-		result["stalls_restored"] = seed_res.get("total_stalls", 0)
-		result["newly_created"] = seed_res.get("newly_created", 0)
+		setup_res = setup_default_stalls(preserve_booked=not r_booked)
+		result["stalls_restored"] = setup_res.get("total_stalls", 0)
+		result["newly_created"] = setup_res.get("newly_created", 0)
 
 	return result
 
