@@ -1314,6 +1314,8 @@ def admin_book_stall(**kwargs):
 	full_name = (data.get("full_name") or data.get("name") or "").strip()
 	company_name = (data.get("company_name") or data.get("company") or "").strip()
 	location = (data.get("location") or "").strip()
+	bill = (data.get("bill") or data.get("billing_name") or data.get("bill_to") or "").strip()
+	gst = (data.get("gst") or data.get("gst_number") or data.get("gstin") or "").strip()
 	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
 
 	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
@@ -1357,7 +1359,7 @@ def admin_book_stall(**kwargs):
 	if email or mobile_no:
 		existing = frappe.db.sql("""
 			SELECT full_name, company_name, company_logo, location, mobile_no, email,
-			       is_bni_member, region_name, chapter_name, industry, segment
+			       is_bni_member, region_name, chapter_name, industry, segment, bill, gst
 			FROM `tabConnectFest Registration`
 			WHERE (%(email)s != '' AND email = %(email)s) OR (%(mobile)s != '' AND mobile_no = %(mobile)s)
 			ORDER BY creation DESC LIMIT 1
@@ -1370,6 +1372,8 @@ def admin_book_stall(**kwargs):
 			if not mobile_no: mobile_no = ex.get("mobile_no") or ""
 			if not email: email = (ex.get("email") or "").strip().lower()
 			if not raw_logo: raw_logo = ex.get("company_logo") or ""
+			if not bill: bill = (ex.get("bill") or "").strip()
+			if not gst: gst = (ex.get("gst") or "").strip()
 			if data.get("is_bni_member") is None:
 				is_bni_member = bool(ex.get("is_bni_member"))
 			if not region_name: region_name = ex.get("region_name") or ""
@@ -1419,14 +1423,28 @@ def admin_book_stall(**kwargs):
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
 	# Verify and validate each stall
+	from connectfest.services.pricing import get_tier_details
 	dynamic_prices = get_tier_pricing()
 	stall_docs = {}
 	for st_num in stall_list:
 		if not frappe.db.exists("ConnectFest Stall", st_num):
-			frappe.local.response["http_status_code"] = 404
-			return {"status": "error", "message": f"Stall '{st_num}' does not exist in ConnectFest inventory"}
+			# Auto-provision stall in ConnectFest inventory for Admin booking
+			# without disturbing existing inventory
+			st_doc = frappe.get_doc({
+				"doctype": "ConnectFest Stall",
+				"name": st_num,
+				"stall_number": st_num,
+				"tier": "Standard",
+				"price": dynamic_prices.get("Standard", 35000.0),
+				"dimensions": "3 x 3 m",
+				"zone": "Main Exhibition Hall",
+				"status": "Available",
+			})
+			st_doc.flags.ignore_permissions = True
+			st_doc.insert()
+		else:
+			st_doc = frappe.get_doc("ConnectFest Stall", st_num)
 
-		st_doc = frappe.get_doc("ConnectFest Stall", st_num)
 		if st_doc.status == "Booked" and (st_doc.booked_by_email or "").strip().lower() != email:
 			booked_by = st_doc.booked_by_name or st_doc.booked_by_email or st_doc.booked_by_registration
 			frappe.local.response["http_status_code"] = 409
@@ -1457,6 +1475,8 @@ def admin_book_stall(**kwargs):
 
 	booked_results = []
 	total_amount = 0.0
+	total_base_amount = 0.0
+	total_tax_amount = 0.0
 	is_paid = (payment_status == "Paid")
 	booking_status = "Confirmed" if is_paid else "Registered"
 
@@ -1464,10 +1484,21 @@ def admin_book_stall(**kwargs):
 	for st_num in stall_list:
 		st_doc = stall_docs[st_num]
 		tier = st_doc.tier or "Regular"
-		price = dynamic_prices.get(tier, st_doc.price)
+		tier_info = get_tier_details(tier)
+		base_price = flt(tier_info.get("base_price") or tier_info.get("price") or st_doc.price)
+		gst_pct = flt(tier_info.get("gst_percent", 18.0))
 		custom_amt = data.get("amount")
-		amount = flt(custom_amt) if (custom_amt is not None and len(stall_list) == 1) else price
+		if custom_amt is not None and len(stall_list) == 1:
+			amount = flt(custom_amt)
+			base_price = round(amount / (1.0 + gst_pct / 100.0), 2)
+			tax_amount = round(amount - base_price, 2)
+		else:
+			tax_amount = round(base_price * (gst_pct / 100.0), 2)
+			amount = round(base_price + tax_amount, 2)
+
 		total_amount += amount
+		total_base_amount += base_price
+		total_tax_amount += tax_amount
 
 		reg_id = generate_stall_id(cache)
 		pay_id = reference_id or (f"CASH-{reg_id}" if payment_mode == "Cash" and is_paid else (f"ONLINE-ADM-{reg_id}" if is_paid else ""))
@@ -1480,6 +1511,8 @@ def admin_book_stall(**kwargs):
 			"company_name": company_name,
 			"company_logo": company_logo,
 			"location": location,
+			"bill": bill,
+			"gst": gst,
 			"mobile_no": mobile_no,
 			"email": email,
 			"is_bni_member": 1 if is_bni_member else 0,
@@ -1554,7 +1587,11 @@ def admin_book_stall(**kwargs):
 			"registration_id": actual_reg_id,
 			"stall_number": st_num,
 			"tier": tier,
+			"base_amount": base_price,
+			"gst_percent": gst_pct,
+			"tax_amount": tax_amount,
 			"amount": amount,
+			"total_amount": amount,
 			"dimensions": st_doc.dimensions,
 			"zone": st_doc.zone,
 			"payment_mode": payment_mode,
@@ -1595,6 +1632,8 @@ def admin_book_stall(**kwargs):
 			"company_name": company_name,
 			"company_logo": company_logo,
 			"location": location,
+			"bill": bill,
+			"gst": gst,
 			"is_bni_member": bool(is_bni_member),
 			"region_name": region_name,
 			"chapter_name": chapter_name,
@@ -1602,10 +1641,18 @@ def admin_book_stall(**kwargs):
 			"segment": segment,
 			"source_of_info": source_of_info,
 		},
+		"billing": {
+			"bill_to": bill or company_name or full_name,
+			"gst_number": gst or "",
+			"total_base_amount": round(total_base_amount, 2),
+			"total_tax_amount": round(total_tax_amount, 2),
+			"total_amount": round(total_amount, 2),
+			"currency": "INR",
+		},
 		"payment_mode": payment_mode,
 		"payment_status": payment_status,
 		"total_stalls": len(booked_results),
-		"total_amount": total_amount,
+		"total_amount": round(total_amount, 2),
 		"stalls": booked_results,
 		"registration_ids": [b["registration_id"] for b in booked_results],
 	}

@@ -1078,13 +1078,13 @@
         id: "select_stall",
         cat: "stall",
         title: "2.2 Select / Assign Stall to Registration (Before Payment)",
-        label: "Select Stall (PR-08)",
+        label: "Select Stall (A-08)",
         method: "POST",
         url: `${HOST}/api/method/connectfest.api.select_stall`,
         hasBody: true,
         getBody: () => JSON.stringify({
           registration_id: savedRegId,
-          stall_number: savedStallNum
+          stall_number: savedStallNum || "A-08"
         }, null, 2)
       },
       hold_stall: {
@@ -1096,7 +1096,7 @@
         url: `${HOST}/api/method/connectfest.api.hold_stall`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-08",
+          stall_number: "A-08",
           full_name: "Karthik Raja",
           email: "karthik@titaniumlabs.com",
           mobile_no: "9876501234",
@@ -1112,7 +1112,7 @@
         url: `${HOST}/api/method/connectfest.api.release_stall_hold`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-08"
+          stall_number: "A-08"
         }, null, 2)
       },
       admin_block: {
@@ -1124,7 +1124,7 @@
         url: `${HOST}/api/method/connectfest.api.toggle_stall_block`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-15",
+          stall_number: "A-10",
           action: "block",
           reason: "Reserved for Chief Sponsor"
         }, null, 2)
@@ -1138,7 +1138,7 @@
         url: `${HOST}/api/method/connectfest.api.toggle_stall_block`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-15",
+          stall_number: "A-10",
           action: "unblock"
         }, null, 2)
       },
@@ -1502,9 +1502,9 @@
         id: "admin_get_stall",
         cat: "admin_stall",
         title: "6.5 Admin Get Stall Details (By Stall Number)",
-        label: "Get Stall (PR-02)",
+        label: "Get Stall (A-08)",
         method: "GET",
-        url: `${HOST}/api/method/connectfest.api.admin_get_stall?stall_number=PR-02`,
+        url: `${HOST}/api/method/connectfest.api.admin_get_stall?stall_number=A-08`,
         hasBody: false
       },
       admin_update_stall: {
@@ -1516,10 +1516,10 @@
         url: `${HOST}/api/method/connectfest.api.admin_update_stall`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-50",
+          stall_number: "A-08",
           tier: "Premium",
-          price: 48000.0,
-          dimensions: "3.5 x 3 m"
+          price: 45000.0,
+          dimensions: "3 x 3 m"
         }, null, 2)
       },
       admin_delete_stall: {
@@ -1531,7 +1531,7 @@
         url: `${HOST}/api/method/connectfest.api.admin_delete_stall`,
         hasBody: true,
         body: JSON.stringify({
-          stall_number: "PR-50"
+          stall_number: "TEMP-99"
         }, null, 2)
       },
       admin_book_stall_cash: {
@@ -1548,12 +1548,14 @@
           mobile_no: "9876543210",
           company_name: "Apex Infotech Solutions",
           location: "Chennai",
+          bill: "Apex Infotech Solutions Pvt Ltd",
+          gst: "33AABCA1234F1Z5",
           is_bni_member: 1,
           region_name: "Chennai Central",
           chapter_name: "Crown Champions",
           industry: "Information Technology",
           segment: "Software & Cloud Services",
-          stall_numbers: ["PR-15", "PR-16"],
+          stall_numbers: ["STALL-005", "STALL-006"],
           payment_mode: "Cash",
           payment_status: "Paid",
           receipt_no: "CASH-DESK-1049"
@@ -1573,9 +1575,11 @@
           mobile_no: "9840123456",
           company_name: "Zenith Robotics",
           location: "Coimbatore",
+          bill: "Zenith Robotics Pvt Ltd",
+          gst: "33AABCA5678F1Z2",
           is_bni_member: 0,
           source_of_info: "Admin Booking",
-          stall_number: "ST-08",
+          stall_number: "B-01",
           payment_mode: "Online",
           payment_status: "Paid",
           reference_id: "pay_manual_rzp_7781"

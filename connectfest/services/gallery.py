@@ -571,7 +571,16 @@ def admin_update_gallery_item(gallery_id=None, name=None, title=None, descriptio
 		doc.cover_image = doc.images[0].image
 
 	doc.flags.ignore_permissions = True
-	doc.save()
+	try:
+		doc.save()
+	except Exception as e:
+		if "1205" in str(e) or "Lock wait timeout" in str(e):
+			frappe.db.rollback()
+			import time
+			time.sleep(0.5)
+			doc.save()
+		else:
+			raise
 	frappe.db.commit()
 	invalidate_gallery_cache()
 
