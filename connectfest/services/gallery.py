@@ -781,15 +781,15 @@ admin_pin_gallery_items = admin_toggle_gallery_pin
 admin_bulk_pin_gallery_items = admin_toggle_gallery_pin
 
 
-@handle_api_errors("ConnectFest Admin Upload Gallery Image Error")
-def admin_upload_gallery_image(file=None, filedata=None, filename=None, is_private=0, **kwargs):
+@handle_api_errors("ConnectFest Upload File Error")
+def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs):
 	"""
-	Admin Helper API to upload an image directly.
+	Universal Public Upload File / Image API.
 	Supports:
-	1. Multipart form-data file upload (Hoppscotch/Postman `file`)
-	2. Base64 data URL
+	1. Multipart form-data file upload (Hoppscotch/Postman/Frontend 'file', 'image', 'photo', 'visitor_image')
+	2. Base64 data URL string
 	3. Raw binary file content
-	Returns public /files/... URL that can be directly used in gallery images.
+	Returns public /files/... URL that can be directly used in visitor registration, stalls, or gallery.
 	"""
 	data = extract_request_data(kwargs)
 	fname = (filename or data.get("filename") or "").strip()
@@ -797,35 +797,46 @@ def admin_upload_gallery_image(file=None, filedata=None, filename=None, is_priva
 	# Check multipart/form-data files
 	uploaded_file = None
 	if getattr(frappe, "request", None) and getattr(frappe.request, "files", None):
-		uploaded_file = frappe.request.files.get("file") or frappe.request.files.get("image") or frappe.request.files.get("filedata")
+		uploaded_file = (
+			frappe.request.files.get("file")
+			or frappe.request.files.get("image")
+			or frappe.request.files.get("photo")
+			or frappe.request.files.get("visitor_image")
+			or frappe.request.files.get("filedata")
+		)
 
 	saved_url = ""
 	if uploaded_file:
 		from frappe.utils.file_manager import save_file
 		file_content = uploaded_file.read()
-		actual_fname = uploaded_file.filename or fname or f"gallery_{uuid.uuid4().hex[:8]}.jpg"
+		actual_fname = uploaded_file.filename or fname or f"file_{uuid.uuid4().hex[:8]}.jpg"
 		saved = save_file(actual_fname, file_content, dt=None, dn=None, is_private=0)
 		saved_url = saved.file_url
 		fname = actual_fname
 	else:
-		raw_content = file or filedata or data.get("file") or data.get("filedata") or data.get("image")
+		raw_content = file or filedata or data.get("file") or data.get("image") or data.get("photo") or data.get("visitor_image") or data.get("filedata")
 		if not raw_content:
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "No file or image data provided in request. Use 'file' in multipart/form-data or send base64 image data."}
+			return {"status": "error", "message": "No file or image data provided in request. Use 'file' in multipart/form-data or send base64 data."}
 
-		saved_url = save_image_from_base64_or_url(raw_content, file_name_prefix="gallery")
+		saved_url = save_image_from_base64_or_url(raw_content, file_name_prefix="file")
 		if not fname:
-			fname = f"gallery_{uuid.uuid4().hex[:8]}.jpg"
+			fname = f"file_{uuid.uuid4().hex[:8]}.jpg"
 
 	if not saved_url:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "Failed to upload or decode image. Ensure valid image file/data."}
+		return {"status": "error", "message": "Failed to upload or decode file/image. Ensure valid file or image data."}
 
 	full_url = frappe.utils.get_url(saved_url) if saved_url.startswith("/") else saved_url
 	return {
 		"status": "success",
-		"message": "Image uploaded successfully",
+		"message": "File uploaded successfully",
 		"file_url": saved_url,
 		"full_url": full_url,
 		"filename": fname,
 	}
+
+
+# Backward-compatible aliases
+admin_upload_gallery_image = upload_file
+upload_gallery_image = upload_file
