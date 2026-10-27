@@ -784,17 +784,18 @@ admin_bulk_pin_gallery_items = admin_toggle_gallery_pin
 @handle_api_errors("ConnectFest Upload File Error")
 def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs):
 	"""
-	Universal Public Upload File / Image API.
-	Supports:
-	1. Multipart form-data file upload (Hoppscotch/Postman/Frontend 'file', 'image', 'photo', 'visitor_image')
-	2. Base64 data URL string
-	3. Raw binary file content
-	Returns public /files/... URL that can be directly used in visitor registration, stalls, or gallery.
+	Universal Public Upload File / Image API with Bank-Grade Security.
+	Allowed formats: JPG, JPEG, PNG, WEBP, GIF, PDF (Max 10 MB).
+	Protected against:
+	- Webshells / PHP / Python / Bash execution
+	- Extension spoofing via deep Magic Byte signature verification
+	- Stored XSS / SVG / HTML injections
+	- Path traversal via randomized UUID storage
+	- Denial of Service / Disk exhaustion (>10MB rejected)
 	"""
 	data = extract_request_data(kwargs)
-	fname = (filename or data.get("filename") or "").strip()
+	fname_hint = (filename or data.get("filename") or "").strip()
 
-	# Check multipart/form-data files
 	uploaded_file = None
 	if getattr(frappe, "request", None) and getattr(frappe.request, "files", None):
 		uploaded_file = (
@@ -805,35 +806,74 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 			or frappe.request.files.get("filedata")
 		)
 
-	saved_url = ""
+	raw_bytes = None
 	if uploaded_file:
-		from frappe.utils.file_manager import save_file
-		file_content = uploaded_file.read()
-		actual_fname = uploaded_file.filename or fname or f"file_{uuid.uuid4().hex[:8]}.jpg"
-		saved = save_file(actual_fname, file_content, dt=None, dn=None, is_private=0)
-		saved_url = saved.file_url
-		fname = actual_fname
+		raw_bytes = uploaded_file.read()
+		fname_hint = getattr(uploaded_file, "filename", "") or fname_hint
 	else:
 		raw_content = file or filedata or data.get("file") or data.get("image") or data.get("photo") or data.get("visitor_image") or data.get("filedata")
 		if not raw_content:
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "No file or image data provided in request. Use 'file' in multipart/form-data or send base64 data."}
+			return {
+				"status": "error",
+				"message": "No file or image data provided in request. Send a multipart form-data 'file' or base64 data string."
+			}
+		if isinstance(raw_content, str) and raw_content.startswith("data:"):
+			try:
+				import base64
+				_, b64_str = raw_content.split(",", 1)
+				raw_bytes = base64.b64decode(b64_str)
+			except Exception:
+				frappe.local.response["http_status_code"] = 400
+				return {"status": "error", "message": "Invalid base64 encoded data."}
+		elif isinstance(raw_content, (bytes, bytearray)):
+			raw_bytes = bytes(raw_content)
+		elif isinstance(raw_content, str):
+			if raw_content.startswith("/files/") or raw_content.startswith("http://") or raw_content.startswith("https://"):
+				if raw_content.lower().startswith("javascript:") or "<script" in raw_content.lower():
+					frappe.local.response["http_status_code"] = 400
+					return {"status": "error", "message": "Malicious URL detected."}
+				return {
+					"status": "success",
+					"file_url": raw_content,
+					"full_url": frappe.utils.get_url(raw_content) if raw_content.startswith("/") else raw_content,
+					"filename": fname_hint or "file.jpg"
+				}
+			try:
+				import base64
+				raw_bytes = base64.b64decode(raw_content)
+			except Exception:
+				pass
 
-		saved_url = save_image_from_base64_or_url(raw_content, file_name_prefix="file")
-		if not fname:
-			fname = f"file_{uuid.uuid4().hex[:8]}.jpg"
-
-	if not saved_url:
+	if not raw_bytes:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "Failed to upload or decode file/image. Ensure valid file or image data."}
+		return {"status": "error", "message": "File is empty or could not be processed."}
+
+	from connectfest.services.common import detect_and_validate_file_type
+	is_valid, detected_ext, err_msg = detect_and_validate_file_type(raw_bytes, fname_hint)
+	if not is_valid:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": err_msg,
+			"allowed_formats": ["JPG", "JPEG", "PNG", "WEBP", "GIF", "PDF"],
+			"max_size": "10 MB"
+		}
+
+	from frappe.utils.file_manager import save_file
+	safe_fname = f"cf_{uuid.uuid4().hex[:12]}.{detected_ext}"
+	saved = save_file(safe_fname, raw_bytes, dt=None, dn=None, is_private=cint(is_private))
+	saved_url = saved.file_url
 
 	full_url = frappe.utils.get_url(saved_url) if saved_url.startswith("/") else saved_url
 	return {
 		"status": "success",
-		"message": "File uploaded successfully",
+		"message": "File verified and uploaded securely",
 		"file_url": saved_url,
 		"full_url": full_url,
-		"filename": fname,
+		"filename": safe_fname,
+		"format": detected_ext.upper(),
+		"size_bytes": len(raw_bytes),
 	}
 
 

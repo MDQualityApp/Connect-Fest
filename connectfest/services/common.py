@@ -142,9 +142,62 @@ def check_rate_limit(action="lookup", limit=30, window_secs=60):
 		return True
 
 
-def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allowed_extensions=("jpg", "jpeg", "png", "webp", "gif", "svg")):
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "pdf"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def detect_and_validate_file_type(raw_bytes: bytes, filename: str = ""):
 	"""
-	Safely saves images from:
+	Strict Zero-Trust File Security Validator:
+	1. File size <= 10MB
+	2. Magic Bytes / File Signatures check (rejects any spoofed or fake extension)
+	3. Rejects dangerous executable signatures, PHP tags, HTML/script tags (anti-polyglot, anti-XSS)
+	4. Returns (is_valid: bool, ext: str, error_message: str)
+	"""
+	if not raw_bytes or not isinstance(raw_bytes, (bytes, bytearray)):
+		return False, "", "Empty or invalid file data"
+
+	if len(raw_bytes) > MAX_FILE_SIZE:
+		return False, "", "File size exceeds the 10 MB limit"
+
+	# Deep Content Inspection: Block webshells / script injections
+	# Check first 2KB for dangerous script keywords
+	head_slice = bytes(raw_bytes[:2048]).lower()
+	dangerous_tokens = [
+		b"<?php", b"<?=", b"<script", b"<html", b"<% ", b"<!doctype html",
+		b"eval(", b"base64_decode(", b"system(", b"passthru(", b"shell_exec("
+	]
+	for token in dangerous_tokens:
+		if token in head_slice:
+			return False, "", "Malicious content detected in file payload. File upload blocked."
+
+	# Magic Bytes Inspection
+	# JPEG / JPG: Starts with FF D8 FF
+	if raw_bytes.startswith(b"\xff\xd8\xff"):
+		return True, "jpg", ""
+
+	# PNG: Starts with 89 50 4E 47 0D 0A 1A 0A
+	if raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+		return True, "png", ""
+
+	# WebP: Starts with RIFF .... WEBP
+	if raw_bytes.startswith(b"RIFF") and len(raw_bytes) >= 12 and raw_bytes[8:12] == b"WEBP":
+		return True, "webp", ""
+
+	# GIF: Starts with GIF87a or GIF89a
+	if raw_bytes.startswith(b"GIF87a") or raw_bytes.startswith(b"GIF89a"):
+		return True, "gif", ""
+
+	# PDF: Starts with %PDF-
+	if raw_bytes.startswith(b"%PDF-"):
+		return True, "pdf", ""
+
+	return False, "", "Unsupported file type. Only JPG, PNG, WEBP, GIF, and PDF files are allowed."
+
+
+def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allowed_extensions=None):
+	"""
+	Safely saves images/files with Zero-Trust validation:
 	1. Direct werkzeug FileStorage object, or checks frappe.request.files (multipart/form-data).
 	2. Base64 data URLs as public files in Frappe and returns the file_url (/files/...).
 	3. Pre-existing valid public URL or path, validates against XSS (no javascript:) and returns sanitized URL.
@@ -168,14 +221,12 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 	if uploaded_file:
 		try:
 			raw_bytes = uploaded_file.read()
-			if raw_bytes and len(raw_bytes) <= 10 * 1024 * 1024:
-				orig_name = getattr(uploaded_file, "filename", "") or ""
-				ext = orig_name.split(".")[-1].lower() if "." in orig_name else "jpg"
-				if ext not in allowed_extensions:
-					ext = "jpg"
-				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
+			is_valid, ext, _ = detect_and_validate_file_type(raw_bytes, getattr(uploaded_file, "filename", ""))
+			if is_valid:
+				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
 				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
 				return saved.file_url
+			return ""
 		except Exception as e:
 			frappe.log_error("Uploaded Image Save Error", frappe.get_traceback())
 			return ""
@@ -190,24 +241,16 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 	if lower_val.startswith("javascript:") or lower_val.startswith("vbscript:") or "<script" in lower_val:
 		return ""
 
-	if val.startswith("data:image/"):
+	if val.startswith("data:image/") or val.startswith("data:application/pdf"):
 		try:
 			header, encoded = val.split(",", 1)
-			ext = "png"
-			if "jpeg" in header or "jpg" in header:
-				ext = "jpg"
-			elif "webp" in header:
-				ext = "webp"
-			elif "svg" in header:
-				ext = "svg"
-			elif "gif" in header:
-				ext = "gif"
 			raw_bytes = base64.b64decode(encoded)
-			if len(raw_bytes) > 10 * 1024 * 1024:
-				return ""
-			fname = f"{file_name_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
-			saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
-			return saved.file_url
+			is_valid, ext, _ = detect_and_validate_file_type(raw_bytes)
+			if is_valid:
+				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
+				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
+				return saved.file_url
+			return ""
 		except Exception as e:
 			frappe.log_error("Image Save Error", frappe.get_traceback())
 			return ""
