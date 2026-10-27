@@ -56,8 +56,10 @@ from connectfest.services.auth import (
 )
 from connectfest.services.stalls import (
 	get_stalls as _get_stalls,
+	get_stall_detail as _get_stall_detail,
 	hold_stall as _hold_stall,
 	release_stall_hold as _release_stall_hold,
+	release_expired_holds as _release_expired_holds,
 	toggle_stall_block as _toggle_stall_block,
 	get_admin_dashboard_data as _get_admin_dashboard_data,
 	admin_get_stalls as _admin_get_stalls,
@@ -289,6 +291,12 @@ def get_stalls(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def get_stall_detail(stall_number=None, **kwargs):
+	"""Returns public details for a specific stall."""
+	return _get_stall_detail(stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def hold_stall(stall_number=None, **kwargs):
 	"""Locks stall in Redis for 10 minutes during checkout."""
 	return _hold_stall(stall_number=stall_number, **kwargs)
@@ -298,6 +306,12 @@ def hold_stall(stall_number=None, **kwargs):
 def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	"""Releases temporary stall hold."""
 	return _release_stall_hold(stall_number=stall_number, hold_token=hold_token, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def release_expired_holds(**kwargs):
+	"""Releases all expired 10-minute stall holds across the system."""
+	return _release_expired_holds()
 
 
 @frappe.whitelist(allow_guest=True)
@@ -463,6 +477,12 @@ def update_profile(**kwargs):
 # ==============================================================================
 # 5. ADMIN PRICING & QUEUE APIS
 # ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def get_tier_pricing(**kwargs):
+	"""Public API: Returns all active pricing tiers with GST details."""
+	return _get_all_tier_pricing(**kwargs)
+
+
 @frappe.whitelist(allow_guest=True)
 def get_all_tier_pricing(**kwargs):
 	"""Returns all active pricing tiers with Base Price, GST %, GST Amount, Total, and Plan Description."""

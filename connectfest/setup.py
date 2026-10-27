@@ -20,10 +20,8 @@ def setup_site_config_defaults():
 			updates["ignore_csrf"] = True
 		if not site_conf.get("throttle_user_limit"):
 			updates["throttle_user_limit"] = 100000
-		if not site_conf.get("max_queued_jobs"):
-			updates["max_queued_jobs"] = 100000
-		if site_conf.get("pause_scheduler") != 1:
-			updates["pause_scheduler"] = 1
+		if site_conf.get("pause_scheduler"):
+			updates["pause_scheduler"] = 0
 
 		if updates:
 			for key, val in updates.items():
@@ -34,12 +32,7 @@ def setup_site_config_defaults():
 		print(f"ConnectFest setup_site_config_defaults warning: {e}")
 
 	try:
-		frappe.db.set_single_value("System Settings", "enable_scheduler", 0)
-	except Exception:
-		pass
-
-	try:
-		frappe.db.delete("Scheduled Job Type", {"method": ["like", "%connectfest%"]})
+		frappe.db.set_single_value("System Settings", "enable_scheduler", 1)
 	except Exception:
 		pass
 

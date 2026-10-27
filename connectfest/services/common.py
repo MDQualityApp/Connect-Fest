@@ -314,11 +314,27 @@ def get_base_url():
 	return "https://connectfestapp.mdqapps.online"
 
 
+def check_expired_holds_lazy():
+	"""
+	Lightweight lazy safety net:
+	Every 10 seconds, checks and releases expired stall holds across incoming traffic,
+	ensuring zero stalls stay stuck in 'Hold' even if background workers or crons are paused.
+	"""
+	try:
+		cache = frappe.cache()
+		if cache.set(cache.make_key("cf_hold_cleanup_throttle"), "1", nx=True, ex=10):
+			from connectfest.services.stalls import release_expired_holds
+			release_expired_holds()
+	except Exception:
+		pass
+
+
 def before_request():
 	"""
 	Runtime hook executed before processing any HTTP request.
 	Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs,
 	even if site_config.json does not have explicit flags.
+	Also performs lightweight background cleanup of expired holds.
 	"""
 	frappe.local.allow_cors = "*"
 	if hasattr(frappe.local, "conf") and frappe.local.conf:
@@ -327,6 +343,8 @@ def before_request():
 		if req and hasattr(req, "path") and req.path:
 			if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
 				frappe.local.conf.ignore_csrf = True
+
+	check_expired_holds_lazy()
 
 
 

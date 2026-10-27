@@ -619,8 +619,16 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				old_doc.status = "Available"
 				old_doc.hold_token = None
 				old_doc.hold_expires_at = None
+				old_doc.booked_by_registration = None
+				old_doc.booked_by_name = None
+				old_doc.booked_by_company = None
+				old_doc.booked_by_email = None
+				old_doc.booked_by_mobile = None
+				old_doc.payment_mode = None
 				old_doc.save(ignore_permissions=True)
 				frappe.db.commit()
+				from connectfest.services.stalls import invalidate_stalls_cache
+				invalidate_stalls_cache()
 
 	dynamic_prices = get_tier_pricing()
 	tier = stall_doc.tier

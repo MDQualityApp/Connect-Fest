@@ -29,6 +29,77 @@ def invalidate_stalls_cache():
 		pass
 
 
+def release_expired_holds():
+	"""
+	Scheduled task & background worker to release all expired stall holds.
+	Cleans up database records, Redis atomic locks, floor map caches, and broadcasts real-time events.
+	Runs every minute via Frappe Scheduler, or triggered on-demand / lazy.
+	"""
+	try:
+		now_dt = now_datetime()
+		expired = frappe.db.sql("""
+			SELECT name, stall_number, tier, price, dimensions, is_blocked_by_admin, blocked_reason
+			FROM `tabConnectFest Stall`
+			WHERE status = 'Hold'
+			  AND hold_expires_at IS NOT NULL
+			  AND hold_expires_at <= %s
+		""", (now_dt,), as_dict=True)
+
+		if not expired:
+			return {"status": "success", "released_count": 0, "message": "No expired holds found"}
+
+		cache = frappe.cache()
+		released_stalls = []
+		for s in expired:
+			stall_id = s.get("name") or s.get("stall_number")
+			stall_num = s.get("stall_number") or stall_id
+			frappe.db.set_value("ConnectFest Stall", stall_id, {
+				"status": "Available",
+				"hold_token": None,
+				"hold_expires_at": None,
+				"booked_by_registration": None,
+				"booked_by_name": None,
+				"booked_by_company": None,
+				"booked_by_email": None,
+				"booked_by_mobile": None,
+				"payment_mode": None,
+			}, update_modified=False)
+			try:
+				cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+			except Exception:
+				pass
+			released_stalls.append(s)
+
+		frappe.db.commit()
+		invalidate_stalls_cache()
+
+		try:
+			from connectfest.services.realtime import broadcast_stall_update
+			for s in released_stalls:
+				stall_num = s.get("stall_number") or s.get("name")
+				broadcast_stall_update(stall_num, "Available", {
+					"tier": s.get("tier"),
+					"price": s.get("price"),
+					"dimensions": s.get("dimensions"),
+					"is_blocked_by_admin": bool(s.get("is_blocked_by_admin")),
+					"blocked_reason": s.get("blocked_reason"),
+					"booked_by_company": None,
+					"booked_by_name": None,
+					"hold_expires_at": None,
+				})
+		except Exception:
+			pass
+
+		return {
+			"status": "success",
+			"released_count": len(released_stalls),
+			"stalls": [s.get("stall_number") or s.get("name") for s in released_stalls]
+		}
+	except Exception:
+		frappe.log_error("ConnectFest release_expired_holds error", frappe.get_traceback())
+		return {"status": "error", "message": "Failed to release expired holds"}
+
+
 def get_stalls(**kwargs):
 	"""
 	Universal Floor Map & Real-Time Inventory API.
@@ -36,6 +107,12 @@ def get_stalls(**kwargs):
 	Cached in Redis with sub-second responsiveness.
 	"""
 	try:
+		# Auto-release any expired holds before returning inventory
+		try:
+			release_expired_holds()
+		except Exception:
+			pass
+
 		from frappe.utils import cint
 		data = extract_request_data(kwargs)
 		filter_tier = (data.get("tier") or data.get("stall_category") or "").strip()
@@ -113,8 +190,19 @@ def get_stalls(**kwargs):
 					"status": "Available",
 					"hold_token": None,
 					"hold_expires_at": None,
+					"booked_by_registration": None,
+					"booked_by_name": None,
+					"booked_by_company": None,
+					"booked_by_email": None,
+					"booked_by_mobile": None,
+					"payment_mode": None,
 				}, update_modified=False)
 				stall["status"] = "Available"
+				stall["hold_token"] = None
+				stall["hold_expires_at"] = None
+				stall["booked_by_registration"] = None
+				stall["booked_by_name"] = None
+				stall["booked_by_company"] = None
 				cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall.stall_number}"))
 				holds_released += 1
 
@@ -272,8 +360,23 @@ def hold_stall(stall_number=None, **kwargs):
 
 		now_dt = now_datetime()
 		existing_token = data.get("hold_token")
-		if stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at > now_dt:
-			if not existing_token or existing_token != stall.hold_token:
+		if stall.status == "Hold" and stall.hold_expires_at:
+			if stall.hold_expires_at <= now_dt:
+				stall.status = "Available"
+				stall.hold_token = None
+				stall.hold_expires_at = None
+				stall.booked_by_registration = None
+				stall.booked_by_name = None
+				stall.booked_by_company = None
+				stall.booked_by_email = None
+				stall.booked_by_mobile = None
+				stall.payment_mode = None
+				try:
+					cache = frappe.cache()
+					cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+				except Exception:
+					pass
+			elif not existing_token or existing_token != stall.hold_token:
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
@@ -353,6 +456,12 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 			stall.status = "Available"
 			stall.hold_token = None
 			stall.hold_expires_at = None
+			stall.booked_by_registration = None
+			stall.booked_by_name = None
+			stall.booked_by_company = None
+			stall.booked_by_email = None
+			stall.booked_by_mobile = None
+			stall.payment_mode = None
 			stall.save(ignore_permissions=True)
 			frappe.db.commit()
 			invalidate_stalls_cache()
@@ -361,6 +470,34 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
 
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
+
+
+def get_stall_detail(stall_number=None, **kwargs):
+	"""Public API: Get specific stall details with pricing, dimensions, and availability."""
+	data = extract_request_data(kwargs)
+	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
+	if not s_num or not frappe.db.exists("ConnectFest Stall", s_num):
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "error", "message": f"Stall '{s_num}' does not exist"}
+
+	stall = frappe.get_doc("ConnectFest Stall", s_num)
+	stall.check_and_release_expired_hold()
+	pricing = get_tier_pricing()
+	current_price = pricing.get(stall.tier, stall.price)
+
+	return {
+		"status": "success",
+		"stall": {
+			"stall_number": stall.stall_number,
+			"tier": stall.tier,
+			"dimensions": stall.dimensions,
+			"zone": stall.zone,
+			"price": current_price,
+			"status": "Blocked" if stall.is_blocked_by_admin else stall.status,
+			"is_blocked_by_admin": bool(stall.is_blocked_by_admin),
+			"hold_expires_at": str(stall.hold_expires_at) if stall.hold_expires_at else None,
+		}
+	}
 
 
 def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **kwargs):

@@ -176,7 +176,16 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {}
+scheduler_events = {
+	"cron": {
+		"* * * * *": [
+			"connectfest.services.stalls.release_expired_holds"
+		]
+	},
+	"all": [
+		"connectfest.services.stalls.release_expired_holds"
+	]
+}
 
 
 # Testing
