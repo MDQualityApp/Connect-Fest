@@ -655,7 +655,19 @@ def admin_pin_gallery_items(gallery_ids=None, is_pinned=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def admin_upload_gallery_image(**kwargs):
-	"""Admin API: Upload an image file or base64 data to get a public /files/... URL."""
+	"""Upload an image file or base64 data to get a public /files/... URL."""
+	return _admin_upload_gallery_image(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def upload_gallery_image(**kwargs):
+	"""Public API: Upload an image file or base64 data to get a public /files/... URL."""
+	return _admin_upload_gallery_image(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def upload_file(**kwargs):
+	"""Public API: Upload an image file or base64 data to get a public /files/... URL."""
 	return _admin_upload_gallery_image(**kwargs)
 
 

@@ -791,10 +791,6 @@ def admin_upload_gallery_image(file=None, filedata=None, filename=None, is_priva
 	3. Raw binary file content
 	Returns public /files/... URL that can be directly used in gallery images.
 	"""
-	err = check_admin_permission("gallery management")
-	if err:
-		return err
-
 	data = extract_request_data(kwargs)
 	fname = (filename or data.get("filename") or "").strip()
 
