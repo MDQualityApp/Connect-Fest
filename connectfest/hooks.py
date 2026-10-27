@@ -96,12 +96,12 @@ app_license = "MIT"
 # ------------
 
 # before_install = "connectfest.install.before_install"
-after_install = "connectfest.setup.after_install"
+# after_install = "connectfest.setup.after_install"
 
 # Migration
 # ------------
 
-after_migrate = "connectfest.setup.after_migrate"
+# after_migrate = "connectfest.setup.after_migrate"
 
 # Uninstallation
 # ------------
