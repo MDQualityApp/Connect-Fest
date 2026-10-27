@@ -75,6 +75,7 @@ def flush_registration_queue(batch_size=BATCH_CHUNK_SIZE):
 			"name",
 			"registration_id",
 			"full_name",
+			"visitor_image",
 			"email",
 			"mobile_no",
 			"which_day",

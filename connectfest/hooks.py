@@ -176,11 +176,8 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-scheduler_events = {
-	"all": [
-		"connectfest.api.flush_registration_queue"
-	]
-}
+# scheduler_events = {}
+
 
 # Testing
 # -------

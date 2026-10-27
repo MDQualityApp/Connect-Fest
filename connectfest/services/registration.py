@@ -308,28 +308,13 @@ def register_stall(**kwargs):
 		if doc.name != actual_reg_id:
 			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
 
-		# Provision Frappe User account (Sync if requested, otherwise async via queue)
-		if sync_mode:
+		# Provision Frappe User account immediately (Synchronous - zero background worker/cron dependency)
+		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 			if company_logo:
-				try:
-					frappe.db.set_value("User", email, "user_image", company_logo)
-				except Exception:
-					pass
-		else:
-			try:
-				frappe.enqueue(
-					"connectfest.services.auth.ensure_frappe_user",
-					email=email,
-					full_name=full_name,
-					mobile_no=mobile_no,
-					role="Website User",
-					queue="short",
-					now=False,
-					enqueue_after_commit=True,
-				)
-			except Exception:
-				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+				frappe.db.set_value("User", email, "user_image", company_logo)
+		except Exception:
+			pass
 
 		response_data = {
 			"status": "success",
@@ -707,6 +692,8 @@ def register_visitor(**kwargs):
 	full_name = (data.get("full_name") or data.get("name") or "").strip()
 	email = (data.get("email") or data.get("email_address") or "").strip().lower()
 	mobile_no = (data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip()
+	raw_image = (data.get("visitor_image") or data.get("image") or data.get("photo") or data.get("visitor_photo") or data.get("avatar") or "").strip()
+	visitor_image = save_image_from_base64_or_url(raw_image, file_name_prefix=f"vis_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_image else ""
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
 	area_of_interest = (data.get("area_of_interest") or data.get("areas_of_interest") or data.get("interest") or "").strip()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
@@ -749,7 +736,7 @@ def register_visitor(**kwargs):
 
 	# Check for Existing Registration (Strict Uniqueness on Email & Mobile)
 	existing = frappe.db.sql("""
-		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
+		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE email = %(email)s OR mobile_no = %(mobile)s
 		LIMIT 1
@@ -776,7 +763,21 @@ def register_visitor(**kwargs):
 				"message": f"Email address '{email}' is already registered with mobile number {rec_mobile}! Please use your registered mobile number."
 			}
 
+		if visitor_image and not rec.get("visitor_image"):
+			try:
+				frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "visitor_image", visitor_image)
+				rec["visitor_image"] = visitor_image
+				frappe.db.commit()
+			except Exception:
+				pass
+
 		ensure_frappe_user(rec_email, rec.full_name or full_name, rec_mobile, role="Website User")
+		if visitor_image:
+			try:
+				frappe.db.set_value("User", rec_email, "user_image", visitor_image)
+			except Exception:
+				pass
+
 		return {
 			"status": "already_registered",
 			"message": "You are already registered for ConnectFest 2027! Here is your entrance pass.",
@@ -785,6 +786,7 @@ def register_visitor(**kwargs):
 			"pass": {
 				"pass_code": rec.pass_code or f"CF27-{rec.name[-6:]}",
 				"full_name": rec.full_name,
+				"visitor_image": rec.get("visitor_image") or visitor_image or "",
 				"email": rec.email,
 				"mobile_no": rec.mobile_no,
 				"which_day": rec.which_day or "Both days",
@@ -849,6 +851,7 @@ def register_visitor(**kwargs):
 		"name": reg_id,
 		"registration_id": reg_id,
 		"full_name": full_name,
+		"visitor_image": visitor_image,
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
@@ -870,6 +873,7 @@ def register_visitor(**kwargs):
 	pass_info = {
 		"pass_code": pass_code,
 		"full_name": full_name,
+		"visitor_image": visitor_image,
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
@@ -891,24 +895,17 @@ def register_visitor(**kwargs):
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
-		# Provision Frappe User account (Sync if requested, otherwise async via queue)
-		sync_mode = parse_boolean(data.get("sync", 0))
-		if sync_mode:
+		# Provision Frappe User account immediately
+		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-		else:
+		except Exception:
+			pass
+
+		if visitor_image:
 			try:
-				frappe.enqueue(
-					"connectfest.services.auth.ensure_frappe_user",
-					email=email,
-					full_name=full_name,
-					mobile_no=mobile_no,
-					role="Website User",
-					queue="short",
-					now=False,
-					enqueue_after_commit=True,
-				)
+				frappe.db.set_value("User", email, "user_image", visitor_image)
 			except Exception:
-				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+				pass
 
 		return {
 			"status": "success",
@@ -955,7 +952,7 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 			stall_booking = stalls[0]
 
 		visitors = frappe.db.sql("""
-			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
+			SELECT registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
 			ORDER BY creation DESC LIMIT 1
@@ -972,4 +969,34 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 		"stalls_list": [s.get("stall_number") for s in stall_bookings if s.get("stall_number")],
 		"has_visitor_pass": bool(visitor_pass),
 		"visitor_pass": visitor_pass,
+	}
+
+
+@handle_api_errors("ConnectFest Upload Visitor Image Error")
+def upload_visitor_image(file=None, filedata=None, filename=None, **kwargs):
+	"""
+	Public API to upload a visitor photo/image directly.
+	Supports:
+	1. Multipart form-data file upload (fields: 'visitor_image', 'file', 'image', 'photo')
+	2. Base64 data URL string
+	Returns public '/files/vis_...' URL and absolute full_url to pass to register_visitor.
+	"""
+	data = extract_request_data(kwargs)
+	raw = file or filedata or data.get("visitor_image") or data.get("image") or data.get("file") or data.get("photo") or data.get("filedata")
+	saved_url = save_image_from_base64_or_url(raw, file_name_prefix="vis")
+	if not saved_url:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "No valid image provided. Send an image file in multipart/form-data or a base64 image data string."
+		}
+
+	from connectfest.services.common import get_base_url
+	base = get_base_url()
+	full_url = f"{base}{saved_url}" if saved_url.startswith("/") else saved_url
+	return {
+		"status": "success",
+		"message": "Image uploaded successfully",
+		"file_url": saved_url,
+		"full_url": full_url,
 	}

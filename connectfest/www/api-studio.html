@@ -1027,9 +1027,22 @@
           full_name: "Priya Dharshini",
           email: "priya@example.com",
           mobile_no: "9845123456",
+          visitor_image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150",
           area_of_interest: "Supply Chain & Retail",
           which_day: "Both days",
           source_of_info: "WhatsApp"
+        }, null, 2)
+      },
+      upload_visitor_image: {
+        id: "upload_visitor_image",
+        cat: "reg",
+        title: "1.3b Upload Visitor Photo / Image (Direct File or Base64)",
+        label: "Upload Visitor Image",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.upload_visitor_image`,
+        hasBody: true,
+        body: JSON.stringify({
+          image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         }, null, 2)
       },
       check_booking_status: {

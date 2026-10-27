@@ -302,10 +302,28 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Priya Shankar\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Both days\",\n  \"source_of_info\": \"Website\"\n}"
+              "raw": "{\n  \"full_name\": \"Priya Shankar\",\n  \"visitor_image\": \"https://connectfest.in/assets/visitor.jpg\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Both days\",\n  \"source_of_info\": \"Website\"\n}"
             },
             "url": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
             "description": "Free registration for attendees with unique Pass Code CF27-XXXXXX and QR payload."
+          }
+        },
+        {
+          "name": "3.1b Upload Visitor Image (Direct File or Base64)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
+            },
+            "url": "{{baseUrl}}/api/method/connectfest.api.upload_visitor_image",
+            "description": "Public helper endpoint to upload visitor photo and get public /files/... URL."
           }
         },
         {

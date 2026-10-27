@@ -115,7 +115,7 @@ def fetch_report_data(filters=None):
 
 		vis_where = " AND ".join(vis_conds)
 		vis_query = f"""
-			SELECT name, registration_id, full_name, email, mobile_no, which_day,
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day,
 			       pass_code, source_of_info, checked_in, checked_in_at, status, creation,
 			       area_of_interest
 			FROM `tabConnectFest Visitor Registration`
@@ -161,6 +161,7 @@ def fetch_report_data(filters=None):
 				"registration_id": v.get("registration_id") or v.get("name"),
 				"user_type": "Visitor",
 				"full_name": v.get("full_name") or "",
+				"visitor_image": v.get("visitor_image") or "",
 				"email": v.get("email") or "",
 				"mobile_no": v.get("mobile_no") or "",
 				"company_name": "-",

@@ -76,6 +76,7 @@ from connectfest.services.registration import (
 	select_stall as _select_stall,
 	register_visitor as _register_visitor,
 	check_user_booking_status as _check_user_booking_status,
+	upload_visitor_image as _upload_visitor_image,
 )
 from connectfest.services.payments import (
 	get_razorpay_config,
@@ -180,6 +181,18 @@ def register_visitor(**kwargs):
 def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 	"""Check if an email or mobile has existing stall or visitor booking."""
 	return _check_user_booking_status(email=email, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def upload_visitor_image(**kwargs):
+	"""Public API: Upload visitor profile photo / image file or base64 to get public /files/... URL."""
+	return _upload_visitor_image(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def upload_image(**kwargs):
+	"""Public API: Upload any image file or base64 to get public /files/... URL."""
+	return _upload_visitor_image(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

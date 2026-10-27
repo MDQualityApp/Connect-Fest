@@ -142,11 +142,44 @@ def check_rate_limit(action="lookup", limit=30, window_secs=60):
 		return True
 
 
-def save_image_from_base64_or_url(image_data, file_name_prefix="logo"):
+def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allowed_extensions=("jpg", "jpeg", "png", "webp", "gif", "svg")):
 	"""
-	Safely saves base64 data URLs as public files in Frappe and returns the file_url (/files/...).
-	If already a valid URL or path, validates against XSS (no javascript:) and returns sanitized URL.
+	Safely saves images from:
+	1. Direct werkzeug FileStorage object, or checks frappe.request.files (multipart/form-data).
+	2. Base64 data URLs as public files in Frappe and returns the file_url (/files/...).
+	3. Pre-existing valid public URL or path, validates against XSS (no javascript:) and returns sanitized URL.
 	"""
+	import base64
+	import uuid
+	from frappe.utils.file_manager import save_file
+
+	# 1. Check if image_data is a FileStorage object or check frappe.request.files
+	uploaded_file = None
+	if hasattr(image_data, "read") and hasattr(image_data, "filename"):
+		uploaded_file = image_data
+	elif getattr(frappe, "request", None) and getattr(frappe.request, "files", None):
+		for key in ("visitor_image", "file", "image", "photo", "company_logo", "logo", "filedata", "avatar"):
+			if key in frappe.request.files:
+				f = frappe.request.files.get(key)
+				if f and getattr(f, "filename", ""):
+					uploaded_file = f
+					break
+
+	if uploaded_file:
+		try:
+			raw_bytes = uploaded_file.read()
+			if raw_bytes and len(raw_bytes) <= 10 * 1024 * 1024:
+				orig_name = getattr(uploaded_file, "filename", "") or ""
+				ext = orig_name.split(".")[-1].lower() if "." in orig_name else "jpg"
+				if ext not in allowed_extensions:
+					ext = "jpg"
+				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
+				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
+				return saved.file_url
+		except Exception as e:
+			frappe.log_error("Uploaded Image Save Error", frappe.get_traceback())
+			return ""
+
 	if not image_data or not isinstance(image_data, str):
 		return ""
 	val = image_data.strip()
@@ -158,9 +191,6 @@ def save_image_from_base64_or_url(image_data, file_name_prefix="logo"):
 		return ""
 
 	if val.startswith("data:image/"):
-		import base64
-		import uuid
-		from frappe.utils.file_manager import save_file
 		try:
 			header, encoded = val.split(",", 1)
 			ext = "png"
@@ -173,7 +203,7 @@ def save_image_from_base64_or_url(image_data, file_name_prefix="logo"):
 			elif "gif" in header:
 				ext = "gif"
 			raw_bytes = base64.b64decode(encoded)
-			if len(raw_bytes) > 5 * 1024 * 1024:
+			if len(raw_bytes) > 10 * 1024 * 1024:
 				return ""
 			fname = f"{file_name_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
 			saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)

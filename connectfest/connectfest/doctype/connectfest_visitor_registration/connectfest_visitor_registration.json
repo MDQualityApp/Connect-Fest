@@ -8,6 +8,7 @@
  "field_order": [
   "registration_id",
   "full_name",
+  "visitor_image",
   "column_break_contact",
   "email",
   "mobile_no",
@@ -36,6 +37,12 @@
    "in_list_view": 1,
    "label": "Full Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "visitor_image",
+   "fieldtype": "Attach Image",
+   "in_list_view": 1,
+   "label": "Visitor Image"
   },
   {
    "fieldname": "column_break_contact",
@@ -121,6 +128,7 @@
    "read_only": 1
   }
  ],
+ "image": "visitor_image",
  "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-10-16 17:52:00",

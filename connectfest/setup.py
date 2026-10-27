@@ -22,6 +22,8 @@ def setup_site_config_defaults():
 			updates["throttle_user_limit"] = 100000
 		if not site_conf.get("max_queued_jobs"):
 			updates["max_queued_jobs"] = 100000
+		if site_conf.get("pause_scheduler") != 1:
+			updates["pause_scheduler"] = 1
 
 		if updates:
 			for key, val in updates.items():
@@ -30,6 +32,16 @@ def setup_site_config_defaults():
 	except Exception as e:
 		frappe.log_error(f"ConnectFest setup_site_config_defaults error: {str(e)}", frappe.get_traceback())
 		print(f"ConnectFest setup_site_config_defaults warning: {e}")
+
+	try:
+		frappe.db.set_single_value("System Settings", "enable_scheduler", 0)
+	except Exception:
+		pass
+
+	try:
+		frappe.db.delete("Scheduled Job Type", {"method": ["like", "%connectfest%"]})
+	except Exception:
+		pass
 
 
 def after_migrate():

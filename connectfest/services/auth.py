@@ -250,7 +250,7 @@ def get_current_user_profile(**kwargs):
 
 	# Fetch visitor pass details (Visitor)
 	visitors_raw = frappe.db.sql("""
-		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code,
+		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code,
 		       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
@@ -342,6 +342,7 @@ def get_current_user_profile(**kwargs):
 		visitor_passes.append({
 			"registration_id": v.registration_id,
 			"pass_code": v.pass_code,
+			"visitor_image": v.visitor_image or "",
 			"which_day": v.which_day,
 			"area_of_interest": v.get("area_of_interest") or "",
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
@@ -685,7 +686,7 @@ def admin_get_all_users(**kwargs):
 	visitor_records = frappe.get_all(
 		"ConnectFest Visitor Registration",
 		fields=[
-			"registration_id", "full_name", "email", "mobile_no", "which_day",
+			"registration_id", "full_name", "visitor_image", "email", "mobile_no", "which_day",
 			"source_of_info", "pass_code", "checked_in", "checked_in_at", "status", "creation", "modified",
 			"area_of_interest"
 		],
@@ -766,7 +767,7 @@ def admin_get_all_users(**kwargs):
 		enabled = cint(u_doc.enabled) if u_doc else 1
 		creation = str(u_doc.creation if u_doc else (ex_doc.creation if ex_doc else (vis_doc.creation if vis_doc else "")))
 		last_login = str(u_doc.last_login if u_doc and u_doc.last_login else "")
-		user_image = (u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or ""
+		user_image = (u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or (vis_doc.visitor_image if vis_doc else "") or ""
 
 		exhibitor_info = None
 		if ex_list:
@@ -825,6 +826,7 @@ def admin_get_all_users(**kwargs):
 			visitor_info = {
 				"registration_id": vis_doc.registration_id,
 				"pass_code": vis_doc.pass_code or "",
+				"visitor_image": vis_doc.visitor_image or "",
 				"which_day": vis_doc.which_day or "Both days",
 				"checked_in": cint(vis_doc.checked_in),
 				"checked_in_at": str(vis_doc.checked_in_at or ""),

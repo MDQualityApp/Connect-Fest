@@ -56,7 +56,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			code = parts[1]
 
 	visitor = frappe.db.sql("""
-		SELECT name, registration_id, full_name, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, area_of_interest
+		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
 		LIMIT 1
@@ -109,6 +109,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		"pass": {
 			"pass_code": rec.pass_code,
 			"full_name": rec.full_name,
+			"visitor_image": rec.visitor_image or "",
 			"which_day": rec.which_day,
 			"email": rec.email,
 			"mobile_no": rec.mobile_no,
@@ -269,7 +270,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		# 2. Fetch Visitor Pass
 		visitor_pass = None
 		visitors = frappe.db.sql(f"""
-			SELECT registration_id, full_name, email, mobile_no, which_day, pass_code,
+			SELECT registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code,
 			       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE ({where_str})
@@ -360,6 +361,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				"registration_id": v.registration_id,
 				"pass_code": v.pass_code,
 				"full_name": v.full_name,
+				"visitor_image": v.visitor_image or "",
 				"email": v.email if is_authorized else mask_email(v.email),
 				"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
 				"which_day": v.which_day,
