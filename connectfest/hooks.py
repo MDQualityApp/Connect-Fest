@@ -175,17 +175,9 @@ doc_events = {
 
 # Scheduled Tasks
 # ---------------
-
-scheduler_events = {
-	"cron": {
-		"* * * * *": [
-			"connectfest.services.stalls.release_expired_holds"
-		]
-	},
-	"all": [
-		"connectfest.services.stalls.release_expired_holds"
-	]
-}
+# ConnectFest uses real-time lazy expiration, Redis 600s TTL, and on-demand release.
+# Cron jobs or background schedulers are NOT required for 10-minute hold release.
+scheduler_events = {}
 
 
 # Testing

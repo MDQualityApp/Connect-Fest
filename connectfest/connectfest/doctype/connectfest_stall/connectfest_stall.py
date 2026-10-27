@@ -20,9 +20,20 @@ class ConnectFestStall(Document):
 		Automatically detects if a 10-minute hold has expired when loading or saving in Desk/API.
 		Immediately resets the stall to Available and clears holding attendee data.
 		"""
-		if self.status == "Hold" and self.hold_expires_at:
+		if self.status == "Hold":
 			try:
-				if get_datetime(self.hold_expires_at) <= now_datetime():
+				from connectfest.services.common import STALL_LOCK_PREFIX
+				cache = frappe.cache()
+				raw_key = cache.make_key(f"{STALL_LOCK_PREFIX}{self.stall_number or self.name}")
+				redis_val = cache.get(raw_key)
+
+				is_expired = False
+				if not redis_val: # Redis TTL expired (10 minutes up)!
+					is_expired = True
+				elif self.hold_expires_at and get_datetime(self.hold_expires_at) <= now_datetime():
+					is_expired = True
+
+				if is_expired:
 					self.status = "Available"
 					self.hold_token = None
 					self.hold_expires_at = None

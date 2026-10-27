@@ -94,11 +94,22 @@ def validate_stall_hold_for_user(stall_doc, reg_id=None, user_email=None, user_m
 				"message": f"Stall '{stall_num}' is not currently on hold for your registration. Please select this stall first via select_stall to place a 10-minute hold before proceeding to payment."
 			}
 
-	# 4. Stall on Hold
+	# 4. Stall on Hold (Redis TTL authoritative check)
 	if stall_doc.status == "Hold":
-		# Check expiration
+		# Check expiration via Redis TTL as source of truth
 		now_dt = now_datetime()
-		if stall_doc.hold_expires_at and stall_doc.hold_expires_at <= now_dt:
+		cache = frappe.cache()
+		from connectfest.services.common import STALL_LOCK_PREFIX
+		raw_key = cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}")
+		redis_lock = cache.get(raw_key)
+
+		is_expired = False
+		if not redis_lock: # Redis TTL key is gone (10 mins is up)!
+			is_expired = True
+		elif stall_doc.hold_expires_at and stall_doc.hold_expires_at <= now_dt:
+			is_expired = True
+
+		if is_expired:
 			# Release expired hold
 			stall_doc.status = "Available"
 			stall_doc.hold_token = None
@@ -110,8 +121,10 @@ def validate_stall_hold_for_user(stall_doc, reg_id=None, user_email=None, user_m
 			stall_doc.booked_by_company = None
 			stall_doc.save(ignore_permissions=True)
 			frappe.db.commit()
-			from connectfest.services.common import STALL_LOCK_PREFIX
-			frappe.cache().delete(frappe.cache().make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+			try:
+				cache.delete(raw_key)
+			except Exception:
+				pass
 			if not is_admin:
 				return False, {
 					"http_status_code": 410,

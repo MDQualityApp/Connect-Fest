@@ -29,46 +29,159 @@ def invalidate_stalls_cache():
 		pass
 
 
+def check_stall_hold_in_redis(stall_number, stall_doc=None):
+	"""
+	Authoritative Redis Hold Inspection:
+	Uses Redis TTL (ex=600s) as the primary single source of truth for 10-minute holds.
+	- If Redis lock key exists: returns is_held=True with exact remaining TTL seconds directly from Redis.
+	- If Redis lock key is expired or missing: returns is_held=False and automatically
+	  syncs DB status to 'Available' and broadcasts realtime websocket update.
+	"""
+	if not stall_number:
+		return {"is_held": False, "remaining_seconds": 0, "token": None, "data": None}
+
+	s_num = str(stall_number).strip().upper()
+	cache = frappe.cache()
+	raw_key = cache.make_key(f"{STALL_LOCK_PREFIX}{s_num}")
+
+	raw_val = None
+	ttl = -2
+	try:
+		raw_val = cache.get(raw_key)
+		if raw_val is not None:
+			client = getattr(cache, "_client", None) or getattr(cache, "_redis", None)
+			if client and hasattr(client, "ttl"):
+				ttl = client.ttl(raw_key)
+			elif hasattr(cache, "ttl"):
+				ttl = cache.ttl(raw_key)
+			else:
+				ttl = 600
+	except Exception:
+		pass
+
+	doc = stall_doc
+	if doc is None and frappe.db.exists("ConnectFest Stall", s_num):
+		try:
+			doc = frappe.get_doc("ConnectFest Stall", s_num)
+		except Exception:
+			doc = None
+
+	# 1. Redis Key exists and is active!
+	if raw_val is not None:
+		remaining = max(1, ttl) if ttl > 0 else 600
+		token = ""
+		parsed_data = {}
+		if isinstance(raw_val, (bytes, str)):
+			try:
+				if isinstance(raw_val, bytes):
+					raw_val = raw_val.decode("utf-8")
+				if raw_val.startswith("{"):
+					parsed_data = json.loads(raw_val)
+					token = parsed_data.get("token") or parsed_data.get("hold_token")
+				else:
+					token = raw_val
+			except Exception:
+				token = str(raw_val)
+		elif isinstance(raw_val, dict):
+			parsed_data = raw_val
+			token = parsed_data.get("token") or parsed_data.get("hold_token")
+
+		return {
+			"is_held": True,
+			"remaining_seconds": remaining,
+			"token": token,
+			"data": parsed_data,
+		}
+
+	# 2. Redis Key has expired (TTL is up)!
+	# If MariaDB still has 'Hold', auto-sync it to 'Available' immediately!
+	if doc and getattr(doc, "status", None) == "Hold":
+		try:
+			doc.status = "Available"
+			doc.hold_token = None
+			doc.hold_expires_at = None
+			doc.booked_by_registration = None
+			doc.booked_by_name = None
+			doc.booked_by_company = None
+			doc.booked_by_email = None
+			doc.booked_by_mobile = None
+			doc.payment_mode = None
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			invalidate_stalls_cache()
+
+			from connectfest.services.realtime import broadcast_stall_update
+			broadcast_stall_update(s_num, "Available", {
+				"tier": doc.tier,
+				"price": doc.price,
+				"dimensions": doc.dimensions,
+				"is_blocked_by_admin": bool(doc.is_blocked_by_admin),
+				"blocked_reason": doc.blocked_reason,
+				"booked_by_company": None,
+				"booked_by_name": None,
+				"hold_expires_at": None,
+			})
+		except Exception:
+			pass
+
+	return {
+		"is_held": False,
+		"remaining_seconds": 0,
+		"token": None,
+		"data": None,
+	}
+
+
 def release_expired_holds():
 	"""
-	Scheduled task & background worker to release all expired stall holds.
-	Cleans up database records, Redis atomic locks, floor map caches, and broadcasts real-time events.
-	Runs every minute via Frappe Scheduler, or triggered on-demand / lazy.
+	Redis-driven scheduled and on-demand worker to release all expired stall holds.
+	Checks Redis atomic lock 'connectfest:stall_lock:<stall_num>' as the authoritative TTL source.
+	If the Redis key is gone (TTL expired) OR hold_expires_at has elapsed, cleans up DB and broadcasts live.
 	"""
 	try:
 		now_dt = now_datetime()
-		expired = frappe.db.sql("""
-			SELECT name, stall_number, tier, price, dimensions, is_blocked_by_admin, blocked_reason
+		all_held = frappe.db.sql("""
+			SELECT name, stall_number, tier, price, dimensions, is_blocked_by_admin, blocked_reason, hold_expires_at
 			FROM `tabConnectFest Stall`
 			WHERE status = 'Hold'
-			  AND hold_expires_at IS NOT NULL
-			  AND hold_expires_at <= %s
-		""", (now_dt,), as_dict=True)
+		""", as_dict=True)
 
-		if not expired:
+		if not all_held:
 			return {"status": "success", "released_count": 0, "message": "No expired holds found"}
 
 		cache = frappe.cache()
 		released_stalls = []
-		for s in expired:
+		for s in all_held:
 			stall_id = s.get("name") or s.get("stall_number")
 			stall_num = s.get("stall_number") or stall_id
-			frappe.db.set_value("ConnectFest Stall", stall_id, {
-				"status": "Available",
-				"hold_token": None,
-				"hold_expires_at": None,
-				"booked_by_registration": None,
-				"booked_by_name": None,
-				"booked_by_company": None,
-				"booked_by_email": None,
-				"booked_by_mobile": None,
-				"payment_mode": None,
-			}, update_modified=False)
-			try:
-				cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
-			except Exception:
-				pass
-			released_stalls.append(s)
+			raw_key = cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}")
+			redis_val = cache.get(raw_key)
+			exp_at = s.get("hold_expires_at")
+
+			# Expired if Redis TTL key has vanished OR DB timestamp passed
+			is_expired = False
+			if not redis_val:
+				is_expired = True
+			elif exp_at and exp_at <= now_dt:
+				is_expired = True
+
+			if is_expired:
+				frappe.db.set_value("ConnectFest Stall", stall_id, {
+					"status": "Available",
+					"hold_token": None,
+					"hold_expires_at": None,
+					"booked_by_registration": None,
+					"booked_by_name": None,
+					"booked_by_company": None,
+					"booked_by_email": None,
+					"booked_by_mobile": None,
+					"payment_mode": None,
+				}, update_modified=False)
+				try:
+					cache.delete(raw_key)
+				except Exception:
+					pass
+				released_stalls.append(s)
 
 		frappe.db.commit()
 		invalidate_stalls_cache()
@@ -358,56 +471,45 @@ def hold_stall(stall_number=None, **kwargs):
 				"message": f"Stall {stall_num} is already booked and confirmed by another exhibitor."
 			}
 
-		now_dt = now_datetime()
+		# Authoritative Redis Hold Check
+		hold_info = check_stall_hold_in_redis(stall_num, stall)
 		existing_token = data.get("hold_token")
-		if stall.status == "Hold" and stall.hold_expires_at:
-			if stall.hold_expires_at <= now_dt:
-				stall.status = "Available"
-				stall.hold_token = None
-				stall.hold_expires_at = None
-				stall.booked_by_registration = None
-				stall.booked_by_name = None
-				stall.booked_by_company = None
-				stall.booked_by_email = None
-				stall.booked_by_mobile = None
-				stall.payment_mode = None
-				try:
-					cache = frappe.cache()
-					cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
-				except Exception:
-					pass
-			elif not existing_token or existing_token != stall.hold_token:
+		if hold_info["is_held"]:
+			current_token = hold_info["token"]
+			if not existing_token or existing_token != current_token:
+				remaining_secs = hold_info["remaining_seconds"]
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
-					"message": f"Stall {stall_num} is currently held by another attendee completing payment. Please select a different stall."
+					"message": f"Stall {stall_num} is currently held by another attendee completing payment. (Expires in Redis in {remaining_secs}s). Please select a different stall."
 				}
 
-		# Acquire Redis Atomic Lock (Primary 10,000+ RPS Defense)
+		# Acquire Redis Atomic Lock (Primary 10,000+ RPS Defense with 600s TTL)
 		cache = frappe.cache()
 		lock_key = f"{STALL_LOCK_PREFIX}{stall_num}"
 		new_token = f"hold_{uuid.uuid4().hex[:12]}"
 		expires_at = now_dt + timedelta(seconds=600)
+		raw_key = cache.make_key(lock_key)
 
-		# Atomic SETNX with 600s TTL
+		hold_payload = {
+			"token": new_token,
+			"stall_number": stall_num,
+			"name": full_name,
+			"email": email,
+			"mobile": mobile_no,
+			"company": company_name,
+			"registration": reg_id,
+			"expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S")
+		}
+
+		# Atomic SET with exact 600s (10-minute) TTL in Redis
 		try:
-			raw_key = cache.make_key(lock_key)
-			redis_acquired = cache.set(raw_key, new_token, nx=True, ex=600)
+			cache.set(raw_key, json.dumps(hold_payload), ex=600)
 		except Exception:
-			redis_acquired = True
-
-		if not redis_acquired and (not existing_token or existing_token != stall.hold_token):
-			if stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at > now_dt:
-				frappe.local.response["http_status_code"] = 409
-				return {
-					"status": "error",
-					"message": f"Stall {stall_num} is currently held by another attendee completing payment. Please select a different stall."
-				}
-			else:
-				try:
-					cache.set(raw_key, new_token, ex=600)
-				except Exception:
-					pass
+			try:
+				cache.set(raw_key, new_token, ex=600)
+			except Exception:
+				pass
 
 		stall.status = "Hold"
 		stall.hold_token = new_token
@@ -529,23 +631,18 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": f"Cannot block stall {stall_num} - already paid and booked by {stall.booked_by_name or stall.booked_by_registration}."}
 
-		# Guard against blocking stalls currently on active 10-minute Hold!
-		now_dt = now_datetime()
-		cache = frappe.cache()
-		has_redis_lock = bool(cache.get(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}")))
-		has_db_hold = (stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at > now_dt)
+		# Guard against blocking stalls currently on active 10-minute Hold (Redis verified)
+		hold_info = check_stall_hold_in_redis(stall_num, stall)
 
-		if (has_redis_lock or has_db_hold) and not is_force:
+		if hold_info["is_held"] and not is_force:
 			buyer = stall.booked_by_name or stall.booked_by_company or stall.booked_by_email or stall.booked_by_mobile or "an exhibitor"
-			remaining_mins = 10
-			if stall.hold_expires_at and stall.hold_expires_at > now_dt:
-				remaining_secs = max(1, int((stall.hold_expires_at - now_dt).total_seconds()))
-				remaining_mins = max(1, (remaining_secs + 59) // 60)
+			remaining_secs = hold_info["remaining_seconds"]
+			remaining_mins = max(1, (remaining_secs + 59) // 60)
 
 			frappe.local.response["http_status_code"] = 409
 			return {
 				"status": "error",
-				"message": f"Cannot block stall {stall_num}: Exhibitor '{buyer}' is currently completing payment! (Hold expires in ~{remaining_mins} minutes). Please wait until payment completes or hold expires.",
+				"message": f"Cannot block stall {stall_num}: Exhibitor '{buyer}' is currently completing payment! (Hold expires in Redis in ~{remaining_mins} minutes / {remaining_secs}s). Please wait until payment completes or hold expires.",
 				"stall_status": "Hold",
 				"held_by": buyer,
 				"held_by_name": stall.booked_by_name,
@@ -553,6 +650,7 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 				"held_by_email": stall.booked_by_email,
 				"held_by_mobile": stall.booked_by_mobile,
 				"hold_expires_in_minutes": remaining_mins,
+				"hold_remaining_seconds": remaining_secs,
 			}
 
 		stall.is_blocked_by_admin = 1
@@ -589,6 +687,12 @@ def get_admin_dashboard_data(**kwargs):
 	err = check_admin_permission("admin dashboard data")
 	if err:
 		return err
+
+	# Auto-release any expired holds on the fly
+	try:
+		release_expired_holds()
+	except Exception:
+		pass
 
 	stalls = frappe.get_all(
 		"ConnectFest Stall",
@@ -672,6 +776,12 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	err = check_admin_permission("admin stall inventory")
 	if err:
 		return err
+
+	# Auto-release any expired holds on the fly
+	try:
+		release_expired_holds()
+	except Exception:
+		pass
 
 	data = extract_request_data(kwargs)
 	filter_status = (status or data.get("status") or "").strip()

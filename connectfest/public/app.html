@@ -1362,7 +1362,12 @@
         <span class="free-entry-pill" id="m-tier-pill">SILVER</span>
         <h3 style="font-size: 22px; font-weight: 900;" id="m-stall-title">Book Stall SL-01</h3>
       </div>
-      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">10-Minute Hold Active. Complete payment with Razorpay to confirm.</p>
+      <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px;">
+        <span style="font-size: 13px; color: #fca5a5; display: flex; align-items: center; gap: 6px;">
+          ⏱️ <strong>Hold Active</strong> (Complete payment before timer expires):
+        </span>
+        <span id="m-hold-timer" style="font-size: 15px; font-weight: 800; font-family: monospace; color: #ef4444; background: rgba(239, 68, 68, 0.15); padding: 2px 8px; border-radius: 6px;">10:00</span>
+      </div>
 
       <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); padding: 16px; border-radius: 14px; margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px;">
@@ -1423,6 +1428,7 @@
     let currentSelectedDay = "Both days";
     let activeHoldStall = null;
     let activeHoldToken = null;
+    let holdCountdownInterval = null;
     let qrGenerator = null;
 
     // INITIALIZATION
@@ -1706,15 +1712,45 @@
       }
     }
 
+    function startHoldTimer(totalSeconds) {
+      if (holdCountdownInterval) clearInterval(holdCountdownInterval);
+      let remaining = totalSeconds || 600;
+      const timerEl = document.getElementById('m-hold-timer');
+
+      function updateDisplay() {
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        if (timerEl) {
+          timerEl.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        if (remaining <= 0) {
+          clearInterval(holdCountdownInterval);
+          holdCountdownInterval = null;
+          alert("⏱️ Your 10-minute hold has expired! The stall has been released back to Available.");
+          closeCheckoutModal();
+          return;
+        }
+        remaining--;
+      }
+
+      updateDisplay();
+      holdCountdownInterval = setInterval(updateDisplay, 1000);
+    }
+
     function openCheckoutModal(stallNum, tier, dims, price) {
       document.getElementById('m-stall-title').innerText = `Book Stall ${stallNum}`;
       document.getElementById('m-tier-pill').innerText = tier.toUpperCase();
       document.getElementById('m-dims').innerHTML = dims;
       document.getElementById('m-price').innerText = `₹${price.toLocaleString()}`;
+      startHoldTimer(600);
       document.getElementById('checkout-modal').style.display = 'flex';
     }
 
     function closeCheckoutModal() {
+      if (holdCountdownInterval) {
+        clearInterval(holdCountdownInterval);
+        holdCountdownInterval = null;
+      }
       if (activeHoldStall && activeHoldToken) {
         fetch(`${HOST}/api/method/connectfest.api.release_stall_hold`, {
           method: 'POST',
@@ -1818,6 +1854,10 @@
       const data = await res.json();
 
       if (data.message && (data.message.status === 'Confirmed' || data.message.payment_status === 'Paid')) {
+        if (holdCountdownInterval) {
+          clearInterval(holdCountdownInterval);
+          holdCountdownInterval = null;
+        }
         alert(`🎉 CONGRATULATIONS! Stall ${activeHoldStall} is successfully booked & confirmed for ConnectFest 2027!`);
         activeHoldStall = null;
         activeHoldToken = null;
