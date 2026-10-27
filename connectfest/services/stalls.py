@@ -199,7 +199,7 @@ def get_stalls(**kwargs):
 
 		if is_default:
 			try:
-				cache.setex(cache_key, 15, json.dumps(res, default=str))
+				cache.setex(cache_key, 300, json.dumps(res, default=str))
 			except Exception:
 				pass
 
