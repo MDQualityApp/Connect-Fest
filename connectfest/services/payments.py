@@ -645,7 +645,10 @@ def verify_razorpay_payment(**kwargs):
 		from connectfest.services.stalls import invalidate_stalls_cache
 		invalidate_stalls_cache()
 		from connectfest.services.common import STALL_LOCK_PREFIX
-		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+		try:
+			cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+		except Exception:
+			pass
 		try:
 			from connectfest.services.realtime import broadcast_stall_update
 			broadcast_stall_update(

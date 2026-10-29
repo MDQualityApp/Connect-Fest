@@ -25,13 +25,22 @@ class ConnectFestStall(Document):
 				from connectfest.services.common import STALL_LOCK_PREFIX
 				cache = frappe.cache()
 				raw_key = cache.make_key(f"{STALL_LOCK_PREFIX}{self.stall_number or self.name}")
-				redis_val = cache.get(raw_key)
+				redis_val = None
+				redis_error = False
+				try:
+					redis_val = cache.get(raw_key)
+				except Exception:
+					redis_error = True
 
 				is_expired = False
-				if not redis_val: # Redis TTL expired (10 minutes up)!
-					is_expired = True
-				elif self.hold_expires_at and get_datetime(self.hold_expires_at) <= now_datetime():
-					is_expired = True
+				if redis_error:
+					if self.hold_expires_at and get_datetime(self.hold_expires_at) <= now_datetime():
+						is_expired = True
+				else:
+					if not redis_val: # Redis TTL expired (10 minutes up)!
+						is_expired = True
+					elif self.hold_expires_at and get_datetime(self.hold_expires_at) <= now_datetime():
+						is_expired = True
 
 				if is_expired:
 					self.status = "Available"

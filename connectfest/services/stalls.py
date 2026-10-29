@@ -46,6 +46,7 @@ def check_stall_hold_in_redis(stall_number, stall_doc=None):
 
 	raw_val = None
 	ttl = -2
+	redis_error = False
 	try:
 		raw_val = cache.get(raw_key)
 		if raw_val is not None:
@@ -57,7 +58,7 @@ def check_stall_hold_in_redis(stall_number, stall_doc=None):
 			else:
 				ttl = 600
 	except Exception:
-		pass
+		redis_error = True
 
 	doc = stall_doc
 	if doc is None and frappe.db.exists("ConnectFest Stall", s_num):
@@ -93,9 +94,29 @@ def check_stall_hold_in_redis(stall_number, stall_doc=None):
 			"data": parsed_data,
 		}
 
-	# 2. Redis Key has expired (TTL is up)!
-	# If MariaDB still has 'Hold', auto-sync it to 'Available' immediately!
+	# 2. Redis Key has expired (TTL is up) or Redis connection error!
+	# Database Fail-safe: if Redis had an error but MariaDB hold is still active, honor the hold!
 	if doc and getattr(doc, "status", None) == "Hold":
+		from frappe.utils import get_datetime
+		now = now_datetime()
+		if redis_error and doc.hold_expires_at and get_datetime(doc.hold_expires_at) > now:
+			remaining = max(1, int((get_datetime(doc.hold_expires_at) - now).total_seconds()))
+			return {
+				"is_held": True,
+				"remaining_seconds": remaining,
+				"token": doc.hold_token or "",
+				"data": {
+					"token": doc.hold_token,
+					"stall_number": s_num,
+					"name": doc.booked_by_name,
+					"email": doc.booked_by_email,
+					"mobile": doc.booked_by_mobile,
+					"company": doc.booked_by_company,
+					"registration": doc.booked_by_registration,
+				},
+			}
+
+		# If Redis is reachable and key is gone, OR if hold has expired: auto-sync DB status to 'Available'
 		try:
 			doc.status = "Available"
 			doc.hold_token = None
@@ -569,8 +590,11 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 			frappe.db.commit()
 			invalidate_stalls_cache()
 
-	cache = frappe.cache()
-	cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+	except Exception:
+		pass
 
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
 
@@ -673,7 +697,7 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 		"status": "success",
 		"message": f"Stall {stall_num} successfully {act}ed",
 		"stall_number": stall_num,
-		"status": stall.status,
+		"stall_status": stall.status,
 		"is_blocked_by_admin": stall.is_blocked_by_admin,
 		"blocked_reason": stall.blocked_reason,
 	}

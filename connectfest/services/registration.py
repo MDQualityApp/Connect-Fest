@@ -612,7 +612,10 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	old_stall = record.get("stall_number")
 	if old_stall and old_stall != stall_num:
 		from connectfest.services.common import STALL_LOCK_PREFIX
-		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{old_stall}"))
+		try:
+			cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{old_stall}"))
+		except Exception:
+			pass
 		if frappe.db.exists("ConnectFest Stall", old_stall):
 			old_doc = frappe.get_doc("ConnectFest Stall", old_stall)
 			if old_doc.status == "Hold":
@@ -920,6 +923,7 @@ def register_visitor(**kwargs):
 			"type": "visitor",
 			"message": "Visitor registration successful! Your entrance pass is ready.",
 			"registration_id": reg_id,
+			"pass_code": pass_code,
 			"data": record,
 			"pass": pass_info,
 		}
@@ -929,10 +933,13 @@ def register_visitor(**kwargs):
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 	finally:
 		if has_lock:
-			if lock_email_key:
-				cache.delete(lock_email_key)
-			if lock_mob_key:
-				cache.delete(lock_mob_key)
+			try:
+				if lock_email_key:
+					cache.delete(lock_email_key)
+				if lock_mob_key:
+					cache.delete(lock_mob_key)
+			except Exception:
+				pass
 
 
 @handle_api_errors("ConnectFest Check Booking Status Error")
