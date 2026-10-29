@@ -51,8 +51,11 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 						pass
 				roles_list.append({"doctype": "Has Role", "role": role})
 
-			names = (full_name or clean_email.split("@")[0]).strip().split(" ", 1)
-			first_name = names[0] or clean_email.split("@")[0]
+			clean_fn = (full_name or "").strip()
+			if not clean_fn or "@" in clean_fn:
+				clean_fn = clean_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+			names = clean_fn.split(" ", 1)
+			first_name = names[0]
 			last_name = names[1] if len(names) > 1 else ""
 			user = frappe.get_doc({
 				"doctype": "User",
@@ -60,6 +63,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 				"username": clean_email,
 				"first_name": first_name,
 				"last_name": last_name,
+				"full_name": clean_fn,
 				"phone": phone_for_user,
 				"mobile_no": mob_for_user or "",
 				"enabled": 1,
@@ -107,14 +111,23 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 				frappe.flags.in_import = orig_in_import
 			return user.name
 		else:
-			# User already exists - check if already enabled and phone matches without loading full User Doc
-			user_vals = frappe.db.get_value("User", clean_email, ["enabled", "phone", "mobile_no"], as_dict=True)
+			# User already exists - check if already enabled, phone matches, and full_name is set properly
+			user_vals = frappe.db.get_value("User", clean_email, ["enabled", "phone", "mobile_no", "full_name"], as_dict=True)
 			if user_vals:
 				needs_enable = not user_vals.get("enabled")
 				needs_phone = bool(clean_mob and not user_vals.get("phone"))
 				needs_mob = bool(clean_mob and not user_vals.get("mobile_no"))
+				curr_fn = (user_vals.get("full_name") or "").strip()
+				clean_fn = (full_name or "").strip()
+				needs_name = False
+				if clean_fn and "@" not in clean_fn:
+					if not curr_fn or "@" in curr_fn or curr_fn != clean_fn:
+						needs_name = True
+				elif not curr_fn or "@" in curr_fn:
+					clean_fn = clean_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+					needs_name = True
 
-				if needs_enable or needs_phone or needs_mob:
+				if needs_enable or needs_phone or needs_mob or needs_name:
 					u_doc = frappe.get_doc("User", clean_email)
 					changed = False
 					if not u_doc.enabled:
@@ -127,6 +140,12 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 						if not u_doc.mobile_no and not frappe.db.exists("User", {"mobile_no": clean_mob}):
 							u_doc.mobile_no = clean_mob
 							changed = True
+					if needs_name and clean_fn:
+						names = clean_fn.split(" ", 1)
+						u_doc.first_name = names[0]
+						u_doc.last_name = names[1] if len(names) > 1 else ""
+						u_doc.full_name = clean_fn
+						changed = True
 					if changed:
 						u_doc.flags.ignore_permissions = True
 						u_doc.flags.ignore_password_policy = True
@@ -226,11 +245,11 @@ def get_current_user_profile(**kwargs):
 
 	user_vals = frappe.db.get_value("User", target_user, ["full_name", "mobile_no", "phone"], as_dict=True)
 	if user_vals:
-		user_full_name = user_vals.get("full_name") or target_user
+		user_full_name = (user_vals.get("full_name") or "").strip()
 		user_roles = [r for r in frappe.get_roles(target_user) if r not in ("All", "Guest")]
 		user_mobile = (user_vals.get("mobile_no") or user_vals.get("phone") or "").strip()
 	else:
-		user_full_name = target_user
+		user_full_name = ""
 		user_roles = ["Website User"]
 		user_mobile = ""
 
@@ -256,6 +275,38 @@ def get_current_user_profile(**kwargs):
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
+
+	# Authoritative Name: Always display the exact full_name collected during ConnectFest Registration!
+	reg_name = None
+	for s in stalls_raw:
+		if s.get("full_name") and s.get("full_name").strip() and "@" not in s.get("full_name"):
+			reg_name = s.get("full_name").strip()
+			break
+	if not reg_name:
+		for v in visitors_raw:
+			if v.get("full_name") and v.get("full_name").strip() and "@" not in v.get("full_name"):
+				reg_name = v.get("full_name").strip()
+				break
+
+	if reg_name:
+		user_full_name = reg_name
+	elif not user_full_name or "@" in user_full_name:
+		user_full_name = target_user.split("@")[0].replace(".", " ").replace("_", " ").title()
+
+	# Sync authoritative ConnectFest Registration full_name to tabUser
+	if user_full_name and target_user and frappe.db.exists("User", target_user):
+		try:
+			curr_u_fn = (frappe.db.get_value("User", target_user, "full_name") or "").strip()
+			if curr_u_fn != user_full_name:
+				names = user_full_name.split(" ", 1)
+				frappe.db.set_value("User", target_user, {
+					"first_name": names[0],
+					"last_name": names[1] if len(names) > 1 else "",
+					"full_name": user_full_name
+				}, update_modified=False)
+				frappe.db.commit()
+		except Exception:
+			pass
 
 	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls_raw else ("Visitor" if visitors_raw else "Attendee"))
 
@@ -304,7 +355,7 @@ def get_current_user_profile(**kwargs):
 
 		stalls.append({
 			"registration_id": sb.registration_id,
-			"full_name": sb.full_name or user_full_name,
+			"full_name": (sb.full_name if (sb.full_name and "@" not in sb.full_name) else user_full_name),
 			"company_name": sb.company_name or company_name,
 			"company_logo": sb.company_logo or company_logo,
 			"location": sb.location or location,
@@ -341,6 +392,7 @@ def get_current_user_profile(**kwargs):
 	for v in visitors_raw:
 		visitor_passes.append({
 			"registration_id": v.registration_id,
+			"full_name": (v.full_name if (v.get("full_name") and "@" not in v.get("full_name")) else user_full_name),
 			"pass_code": v.pass_code,
 			"visitor_image": v.visitor_image or "",
 			"which_day": v.which_day,
@@ -451,10 +503,13 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			return verify_otp(mobile_no=mob, otp=otp)
 
 		if pwd and usr:
+			if not frappe.db.exists("User", usr):
+				frappe.local.response["http_status_code"] = 401
+				return {"status": "error", "message": "Invalid email or password"}
 			try:
 				frappe.auth.LoginManager().authenticate(usr, pwd)
 				frappe.auth.LoginManager().post_login()
-			except frappe.AuthenticationError:
+			except (frappe.AuthenticationError, frappe.DoesNotExistError):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
 		elif usr:
@@ -472,7 +527,6 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Login Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 
@@ -494,9 +548,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			return {"status": "error", "message": "Admin Email and Password are required"}
 
 		# Step 1: Verify credentials
+		if not frappe.db.exists("User", usr):
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "error", "message": "Invalid admin email or password"}
+
 		try:
 			frappe.auth.LoginManager().authenticate(usr, pwd)
-		except frappe.AuthenticationError:
+		except (frappe.AuthenticationError, frappe.DoesNotExistError):
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "error", "message": "Invalid admin email or password"}
 
@@ -570,7 +628,6 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Admin Login Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong during admin authentication."}
 
 
@@ -630,7 +687,6 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Toggle User Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 
@@ -750,12 +806,18 @@ def admin_get_all_users(**kwargs):
 		else:
 			category = "Website User"
 
-		full_name = (
-			(u_doc.full_name if u_doc else "")
-			or (ex_doc.full_name if ex_doc else "")
-			or (vis_doc.full_name if vis_doc else "")
-			or email_key.split("@")[0]
-		).strip()
+		candidate_names = [
+			(ex_doc.full_name if ex_doc else ""),
+			(vis_doc.full_name if vis_doc else ""),
+			(u_doc.full_name if u_doc else ""),
+		]
+		full_name = ""
+		for cn in candidate_names:
+			if cn and "@" not in cn and cn.strip():
+				full_name = cn.strip()
+				break
+		if not full_name:
+			full_name = email_key.split("@")[0].replace(".", " ").replace("_", " ").title()
 
 		mobile = (
 			(u_doc.mobile_no or u_doc.phone if u_doc else "")
@@ -1110,7 +1172,6 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Contact Update Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 
@@ -1195,7 +1256,6 @@ def verify_and_update_contact(otp=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Contact Verify Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 
@@ -1284,6 +1344,7 @@ def update_profile(**kwargs):
 				last_name = parts[1] if len(parts) > 1 else ""
 				updates_user["first_name"] = first_name
 				updates_user["last_name"] = last_name
+				updates_user["full_name"] = clean_name
 				updates_exhibitor["full_name"] = clean_name
 				updated_fields["full_name"] = clean_name
 
@@ -1405,7 +1466,6 @@ def update_profile(**kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Profile Update Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong while updating profile. Please try again."}
 
 

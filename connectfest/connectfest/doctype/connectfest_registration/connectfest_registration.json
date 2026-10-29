@@ -282,5 +282,7 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "full_name",
+ "search_fields": "full_name,email,mobile_no,company_name",
  "track_changes": 1
 }

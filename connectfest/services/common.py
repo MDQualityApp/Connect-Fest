@@ -284,8 +284,6 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 				except Exception:
 					pass
 				frappe.log_error(title=title, message=frappe.get_traceback())
-				if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
-					frappe.local.response["http_status_code"] = 500
 				return {
 					"status": "error",
 					"message": "Something went wrong. Please try again or contact event support.",
@@ -306,8 +304,6 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 				except Exception:
 					pass
 				frappe.log_error(title=title, message=frappe.get_traceback())
-				if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
-					frappe.local.response["http_status_code"] = 500
 				return {
 					"status": "error",
 					"message": "Something went wrong. Please try again or contact event support.",

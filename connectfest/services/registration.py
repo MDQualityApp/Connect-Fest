@@ -321,6 +321,7 @@ def register_stall(**kwargs):
 			"type": "stall",
 			"message": "Exhibitor registration successful! Please proceed to select stall.",
 			"registration_id": actual_reg_id,
+			"full_name": full_name,
 			"data": record,
 		}
 
@@ -332,7 +333,6 @@ def register_stall(**kwargs):
 		return response_data
 	except Exception as e:
 		frappe.log_error(title="ConnectFest Stall Insert Error", message=frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 
@@ -517,13 +517,16 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				tier = stall_doc.tier
 				price = dynamic_prices.get(tier, stall_doc.price)
 
-				full_name = (
+				cand_name = (
 					data.get("full_name")
 					or prev.get("full_name")
 					or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else None)
-					or sess_user
-					or "Exhibitor"
+					or ""
 				).strip()
+				if cand_name and "@" not in cand_name:
+					full_name = cand_name
+				else:
+					full_name = (user_email or sess_user or "Exhibitor").split("@")[0].replace(".", " ").replace("_", " ").title()
 
 				raw_source = data.get("source_of_info") or prev.get("source_of_info") or "Website"
 				matched_source = raw_source if raw_source in VALID_SOURCES else "Other"
@@ -924,12 +927,12 @@ def register_visitor(**kwargs):
 			"message": "Visitor registration successful! Your entrance pass is ready.",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
+			"full_name": full_name,
 			"data": record,
 			"pass": pass_info,
 		}
 	except Exception as e:
 		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 	finally:
 		if has_lock:

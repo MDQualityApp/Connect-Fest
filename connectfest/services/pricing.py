@@ -321,7 +321,6 @@ def admin_create_tier_pricing(tier_name=None, price=None, gst_percent=18.0, desc
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Create Tier Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 
@@ -419,7 +418,6 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Update Tier Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 
@@ -467,7 +465,6 @@ def admin_delete_tier_pricing(tier_name=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Delete Tier Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": str(e)}
 
 

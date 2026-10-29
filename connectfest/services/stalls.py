@@ -428,7 +428,6 @@ def get_stalls(**kwargs):
 		return res
 	except Exception as e:
 		frappe.log_error("ConnectFest Get Stalls Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 
@@ -445,6 +444,37 @@ def hold_stall(stall_number=None, **kwargs):
 		full_name = (data.get("full_name") or data.get("name") or "").strip()
 		company_name = (data.get("company_name") or "").strip()
 		reg_id = (data.get("registration_id") or kwargs.get("registration_id") or "").strip()
+
+		# Auto-resolve missing or email-like attendee details from database
+		sess_u = getattr(frappe.session, "user", "")
+		if not email and sess_u and sess_u != "Guest" and "@" in sess_u:
+			email = sess_u.strip().lower()
+
+		if reg_id:
+			reg_data = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, ["full_name", "email", "mobile_no", "company_name"], as_dict=True) or frappe.db.get_value("ConnectFest Registration", reg_id, ["full_name", "email", "mobile_no", "company_name"], as_dict=True)
+			if reg_data:
+				if not full_name or "@" in full_name:
+					cand = (reg_data.get("full_name") or "").strip()
+					if cand and "@" not in cand:
+						full_name = cand
+				if not email:
+					email = (reg_data.get("email") or "").strip().lower()
+				if not mobile_no:
+					mobile_no = (reg_data.get("mobile_no") or "").strip()
+				if not company_name:
+					company_name = (reg_data.get("company_name") or "").strip()
+
+		if not full_name or "@" in full_name:
+			if email:
+				cand = (frappe.db.get_value("ConnectFest Registration", {"email": email}, "full_name") or frappe.db.get_value("ConnectFest Visitor Registration", {"email": email}, "full_name") or frappe.db.get_value("User", email, "full_name") or "").strip()
+				if cand and "@" not in cand:
+					full_name = cand
+			if (not full_name or "@" in full_name) and mobile_no:
+				cand = (frappe.db.get_value("ConnectFest Registration", {"mobile_no": mobile_no}, "full_name") or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": mobile_no}, "full_name") or "").strip()
+				if cand and "@" not in cand:
+					full_name = cand
+			if not full_name or "@" in full_name:
+				full_name = email.split("@")[0].replace(".", " ").replace("_", " ").title() if email else "Exhibitor"
 
 		if not stall_num:
 			frappe.local.response["http_status_code"] = 400
@@ -497,7 +527,22 @@ def hold_stall(stall_number=None, **kwargs):
 		existing_token = data.get("hold_token")
 		if hold_info["is_held"]:
 			current_token = hold_info["token"]
-			if not existing_token or existing_token != current_token:
+			held_data = hold_info.get("data") or {}
+			held_reg = held_data.get("registration") or (getattr(stall, "booked_by_registration", None) if stall else None)
+			held_email = held_data.get("email") or (getattr(stall, "booked_by_email", None) if stall else None)
+			held_mobile = held_data.get("mobile") or (getattr(stall, "booked_by_mobile", None) if stall else None)
+
+			is_same_holder = False
+			if existing_token and existing_token == current_token:
+				is_same_holder = True
+			elif reg_id and held_reg and reg_id == held_reg:
+				is_same_holder = True
+			elif email and held_email and email.strip().lower() == held_email.strip().lower():
+				is_same_holder = True
+			elif mobile_no and held_mobile and mobile_no.strip() == held_mobile.strip():
+				is_same_holder = True
+
+			if not is_same_holder:
 				remaining_secs = hold_info["remaining_seconds"]
 				frappe.local.response["http_status_code"] = 409
 				return {
@@ -561,7 +606,6 @@ def hold_stall(stall_number=None, **kwargs):
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Hold Stall Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 
 

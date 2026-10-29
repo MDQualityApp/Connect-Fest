@@ -200,6 +200,9 @@ def get_registration(registration_id):
 			frappe.local.response["http_status_code"] = 403
 			return {"status": "forbidden", "message": "Access Denied: You cannot view another attendee's registration."}
 
+	if result and "data" in result:
+		result["full_name"] = result["data"].get("full_name")
+
 	return result
 
 
@@ -319,9 +322,12 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				is_paid = (sb.payment_status == "Paid")
 				status_desc = "Confirmed" if is_paid else ("Awaiting Payment" if sb.stall_number else "Stall Not Selected")
 
+				raw_fn = (sb.full_name or "").strip()
+				clean_fn = raw_fn.split("@")[0].replace(".", " ").replace("_", " ").title() if "@" in raw_fn else raw_fn
+
 				all_stall_bookings.append({
 					"registration_id": sb.registration_id,
-					"full_name": sb.full_name,
+					"full_name": clean_fn,
 					"company_name": sb.company_name,
 					"company_logo": sb.company_logo or "",
 					"location": sb.location or "",
@@ -357,10 +363,12 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 
 		if visitors:
 			v = visitors[0]
+			raw_v_fn = (v.full_name or "").strip()
+			clean_v_fn = raw_v_fn.split("@")[0].replace(".", " ").replace("_", " ").title() if "@" in raw_v_fn else raw_v_fn
 			visitor_pass = {
 				"registration_id": v.registration_id,
 				"pass_code": v.pass_code,
-				"full_name": v.full_name,
+				"full_name": clean_v_fn,
 				"visitor_image": v.visitor_image or "",
 				"email": v.email if is_authorized else mask_email(v.email),
 				"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
@@ -375,8 +383,15 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				"dates": "20 & 21 Feb 2027",
 			}
 
+		resolved_dashboard_full_name = None
+		if stall_booking and stall_booking.get("full_name"):
+			resolved_dashboard_full_name = stall_booking.get("full_name")
+		elif visitor_pass and visitor_pass.get("full_name"):
+			resolved_dashboard_full_name = visitor_pass.get("full_name")
+
 		res = {
 			"status": "success",
+			"full_name": resolved_dashboard_full_name,
 			"is_authorized": is_authorized,
 			"has_stall_booking": bool(all_stall_bookings),
 			"stall_booking": stall_booking,
@@ -392,6 +407,5 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		return res
 	except Exception as e:
 		frappe.log_error("ConnectFest Dashboard Error", frappe.get_traceback())
-		frappe.local.response["http_status_code"] = 500
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
 

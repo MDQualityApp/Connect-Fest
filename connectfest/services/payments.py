@@ -616,10 +616,23 @@ def verify_razorpay_payment(**kwargs):
 				"razorpay_payment_id": payment_id,
 			}
 
-		fn = (cached_item.get("full_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "full_name")
-		cp = (cached_item.get("company_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "company_name")
-		em = (cached_item.get("email") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")
-		mb = (cached_item.get("mobile_no") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no")
+		fn = (cached_item.get("full_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "full_name") or frappe.db.get_value("ConnectFest Registration", reg_id, "full_name")
+		cp = (cached_item.get("company_name") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "company_name") or frappe.db.get_value("ConnectFest Registration", reg_id, "company_name")
+		em = (cached_item.get("email") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or frappe.db.get_value("ConnectFest Registration", reg_id, "email")
+		mb = (cached_item.get("mobile_no") if cached_item else "") or frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") or frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no")
+
+		if not fn or "@" in str(fn):
+			cand = frappe.db.get_value("ConnectFest Registration", {"email": em}, "full_name") if em else None
+			if cand and "@" not in str(cand):
+				fn = cand
+			elif em:
+				cand = frappe.db.get_value("User", em, "full_name")
+				if cand and "@" not in str(cand):
+					fn = cand
+				else:
+					fn = em.split("@")[0].replace(".", " ").replace("_", " ").title()
+			else:
+				fn = "Exhibitor"
 
 		stall_update_fields = {
 			"status": "Booked",
