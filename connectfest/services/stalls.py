@@ -488,6 +488,7 @@ def hold_stall(stall_number=None, **kwargs):
 		cache = frappe.cache()
 		lock_key = f"{STALL_LOCK_PREFIX}{stall_num}"
 		new_token = f"hold_{uuid.uuid4().hex[:12]}"
+		now_dt = now_datetime()
 		expires_at = now_dt + timedelta(seconds=600)
 		raw_key = cache.make_key(lock_key)
 
