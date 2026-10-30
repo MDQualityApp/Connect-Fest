@@ -227,6 +227,7 @@ def get_current_user_profile(**kwargs):
 		return {
 			"status": "unauthorized",
 			"is_logged_in": False,
+			"verified": False,
 			"user": "Guest",
 			"message": "Authentication required! Please log in with OTP or credentials to view your profile and bookings.",
 		}
@@ -239,6 +240,7 @@ def get_current_user_profile(**kwargs):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
+				"verified": False,
 				"message": "Access Denied: You are not authorized to view another attendee's personal data!",
 			}
 		target_user = requested_email
@@ -413,6 +415,7 @@ def get_current_user_profile(**kwargs):
 	res = {
 		"status": "success",
 		"is_logged_in": True,
+		"verified": True,
 		"user": target_user,
 		"email": target_user,
 		"full_name": user_full_name,
