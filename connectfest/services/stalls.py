@@ -118,18 +118,24 @@ def check_stall_hold_in_redis(stall_number, stall_doc=None):
 
 		# If Redis is reachable and key is gone, OR if hold has expired: auto-sync DB status to 'Available'
 		try:
-			doc.status = "Available"
-			doc.hold_token = None
-			doc.hold_expires_at = None
-			doc.booked_by_registration = None
-			doc.booked_by_name = None
-			doc.booked_by_company = None
-			doc.booked_by_email = None
-			doc.booked_by_mobile = None
-			doc.payment_mode = None
-			doc.save(ignore_permissions=True)
+			frappe.db.set_value("ConnectFest Stall", s_num, {
+				"status": "Available",
+				"hold_token": None,
+				"hold_expires_at": None,
+				"booked_by_registration": None,
+				"booked_by_name": None,
+				"booked_by_company": None,
+				"booked_by_email": None,
+				"booked_by_mobile": None,
+				"payment_mode": None,
+			}, update_modified=False)
 			frappe.db.commit()
 			invalidate_stalls_cache()
+			if doc and hasattr(doc, "reload"):
+				try:
+					doc.reload()
+				except Exception:
+					pass
 
 			from connectfest.services.realtime import broadcast_stall_update
 			broadcast_stall_update(s_num, "Available", {
@@ -578,21 +584,42 @@ def hold_stall(stall_number=None, **kwargs):
 			except Exception:
 				pass
 
-		stall.status = "Hold"
-		stall.hold_token = new_token
-		stall.hold_expires_at = expires_at
-		if reg_id:
-			stall.booked_by_registration = reg_id
-		stall.booked_by_name = full_name
-		stall.booked_by_email = email
-		stall.booked_by_mobile = mobile_no
-		stall.booked_by_company = company_name
-		stall.save(ignore_permissions=True)
+		frappe.db.set_value("ConnectFest Stall", stall_num, {
+			"status": "Hold",
+			"hold_token": new_token,
+			"hold_expires_at": expires_at,
+			"booked_by_registration": reg_id or None,
+			"booked_by_name": full_name,
+			"booked_by_email": email,
+			"booked_by_mobile": mobile_no,
+			"booked_by_company": company_name,
+			"payment_mode": "Online",
+		}, update_modified=True)
 		frappe.db.commit()
 		invalidate_stalls_cache()
 
 		dynamic_prices = get_tier_pricing()
 		current_price = dynamic_prices.get(stall.tier, stall.price)
+
+		# Broadcast Real-Time WebSocket event to all connected floor maps
+		try:
+			from connectfest.services.realtime import broadcast_stall_update
+			broadcast_stall_update(
+				stall_num,
+				"Hold",
+				{
+					"tier": stall.tier,
+					"price": current_price,
+					"dimensions": stall.dimensions,
+					"hold_token": new_token,
+					"hold_expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+					"booked_by_name": full_name,
+					"booked_by_company": company_name,
+					"payment_mode": "Online",
+				}
+			)
+		except Exception:
+			pass
 
 		return {
 			"status": "success",
@@ -621,22 +648,29 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	if frappe.db.exists("ConnectFest Stall", stall_num):
 		stall = frappe.get_doc("ConnectFest Stall", stall_num)
 		if stall.status == "Hold" and (not token or stall.hold_token == token):
-			stall.status = "Available"
-			stall.hold_token = None
-			stall.hold_expires_at = None
-			stall.booked_by_registration = None
-			stall.booked_by_name = None
-			stall.booked_by_company = None
-			stall.booked_by_email = None
-			stall.booked_by_mobile = None
-			stall.payment_mode = None
-			stall.save(ignore_permissions=True)
+			frappe.db.set_value("ConnectFest Stall", stall_num, {
+				"status": "Available",
+				"hold_token": None,
+				"hold_expires_at": None,
+				"booked_by_registration": None,
+				"booked_by_name": None,
+				"booked_by_company": None,
+				"booked_by_email": None,
+				"booked_by_mobile": None,
+				"payment_mode": None,
+			}, update_modified=False)
 			frappe.db.commit()
 			invalidate_stalls_cache()
 
 	try:
 		cache = frappe.cache()
 		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+	except Exception:
+		pass
+
+	try:
+		from connectfest.services.realtime import broadcast_stall_update
+		broadcast_stall_update(stall_num, "Available")
 	except Exception:
 		pass
 
@@ -722,28 +756,65 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 				"hold_remaining_seconds": remaining_secs,
 			}
 
-		stall.is_blocked_by_admin = 1
-		stall.status = "Blocked"
-		stall.blocked_reason = resn
-		stall.hold_token = None
-		stall.hold_expires_at = None
-		frappe.cache().delete(frappe.cache().make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+	if act == "block":
+		new_status = "Blocked"
+		is_blocked = 1
+		blocked_res = resn
+		try:
+			frappe.cache().delete(frappe.cache().make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+		except Exception:
+			pass
+		update_values = {
+			"is_blocked_by_admin": 1,
+			"status": "Blocked",
+			"blocked_reason": resn,
+			"hold_token": None,
+			"hold_expires_at": None,
+			"booked_by_registration": None,
+			"booked_by_name": None,
+			"booked_by_company": None,
+			"booked_by_email": None,
+			"booked_by_mobile": None,
+			"payment_mode": None,
+		}
 	else:
-		stall.is_blocked_by_admin = 0
-		stall.status = "Available"
-		stall.blocked_reason = ""
+		new_status = "Available"
+		is_blocked = 0
+		blocked_res = ""
+		update_values = {
+			"is_blocked_by_admin": 0,
+			"status": "Available",
+			"blocked_reason": "",
+		}
 
-	stall.save(ignore_permissions=True)
+	frappe.db.set_value("ConnectFest Stall", stall_num, update_values, update_modified=True)
 	frappe.db.commit()
 	invalidate_stalls_cache()
+
+	# Realtime WebSocket update
+	try:
+		from connectfest.services.realtime import broadcast_stall_update
+		broadcast_stall_update(
+			stall_num,
+			new_status,
+			{
+				"tier": getattr(stall, "tier", None),
+				"price": getattr(stall, "price", 0),
+				"dimensions": getattr(stall, "dimensions", None),
+				"is_blocked_by_admin": is_blocked,
+				"blocked_reason": blocked_res,
+			}
+		)
+	except Exception:
+		pass
 
 	return {
 		"status": "success",
 		"message": f"Stall {stall_num} successfully {act}ed",
 		"stall_number": stall_num,
-		"stall_status": stall.status,
-		"is_blocked_by_admin": stall.is_blocked_by_admin,
-		"blocked_reason": stall.blocked_reason,
+		"stall_status": new_status,
+		"is_blocked_by_admin": is_blocked,
+		"blocked_reason": blocked_res,
 	}
 
 

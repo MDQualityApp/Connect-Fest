@@ -10,12 +10,12 @@ from frappe.utils import get_datetime, now_datetime
 
 class ConnectFestStall(Document):
 	def onload(self):
-		self.check_and_release_expired_hold()
+		self.check_and_release_expired_hold(is_validating=False)
 
 	def validate(self):
-		self.check_and_release_expired_hold()
+		self.check_and_release_expired_hold(is_validating=True)
 
-	def check_and_release_expired_hold(self):
+	def check_and_release_expired_hold(self, is_validating=False):
 		"""
 		Automatically detects if a 10-minute hold has expired when loading or saving in Desk/API.
 		Immediately resets the stall to Available and clears holding attendee data.
@@ -53,18 +53,19 @@ class ConnectFestStall(Document):
 					self.booked_by_mobile = None
 					self.payment_mode = None
 
-					frappe.db.set_value("ConnectFest Stall", self.name, {
-						"status": "Available",
-						"hold_token": None,
-						"hold_expires_at": None,
-						"booked_by_registration": None,
-						"booked_by_name": None,
-						"booked_by_company": None,
-						"booked_by_email": None,
-						"booked_by_mobile": None,
-						"payment_mode": None,
-					}, update_modified=False)
-					frappe.db.commit()
+					if not is_validating:
+						frappe.db.set_value("ConnectFest Stall", self.name, {
+							"status": "Available",
+							"hold_token": None,
+							"hold_expires_at": None,
+							"booked_by_registration": None,
+							"booked_by_name": None,
+							"booked_by_company": None,
+							"booked_by_email": None,
+							"booked_by_mobile": None,
+							"payment_mode": None,
+						}, update_modified=False)
+						frappe.db.commit()
 
 					try:
 						from connectfest.services.common import STALL_LOCK_PREFIX

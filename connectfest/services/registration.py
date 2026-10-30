@@ -622,19 +622,25 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		if frappe.db.exists("ConnectFest Stall", old_stall):
 			old_doc = frappe.get_doc("ConnectFest Stall", old_stall)
 			if old_doc.status == "Hold":
-				old_doc.status = "Available"
-				old_doc.hold_token = None
-				old_doc.hold_expires_at = None
-				old_doc.booked_by_registration = None
-				old_doc.booked_by_name = None
-				old_doc.booked_by_company = None
-				old_doc.booked_by_email = None
-				old_doc.booked_by_mobile = None
-				old_doc.payment_mode = None
-				old_doc.save(ignore_permissions=True)
+				frappe.db.set_value("ConnectFest Stall", old_stall, {
+					"status": "Available",
+					"hold_token": None,
+					"hold_expires_at": None,
+					"booked_by_registration": None,
+					"booked_by_name": None,
+					"booked_by_company": None,
+					"booked_by_email": None,
+					"booked_by_mobile": None,
+					"payment_mode": None,
+				}, update_modified=False)
 				frappe.db.commit()
 				from connectfest.services.stalls import invalidate_stalls_cache
 				invalidate_stalls_cache()
+				try:
+					from connectfest.services.realtime import broadcast_stall_update
+					broadcast_stall_update(old_stall, "Available")
+				except Exception:
+					pass
 
 	dynamic_prices = get_tier_pricing()
 	tier = stall_doc.tier
