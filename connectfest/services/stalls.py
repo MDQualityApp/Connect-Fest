@@ -1814,6 +1814,16 @@ def admin_book_stall(**kwargs):
 	allow_new = parse_boolean(data.get("allow_new", 0)) or parse_boolean(data.get("allow_multiple", 0)) or parse_boolean(data.get("multi_stall", 0))
 	create_order = parse_boolean(data.get("create_order", 0)) or (data.get("action") == "create_order")
 
+	register_param = data.get("register_user")
+	if register_param is None:
+		register_param = data.get("is_new_user")
+	if register_param is None:
+		register_param = data.get("new_registration")
+	if register_param is None:
+		register_param = data.get("is_new_registration")
+
+	is_new_registration = parse_boolean(register_param) if register_param is not None else False
+
 	# Verify and validate each stall
 	from connectfest.services.pricing import get_tier_details
 	dynamic_prices = get_tier_pricing()
@@ -1930,13 +1940,13 @@ def admin_book_stall(**kwargs):
 					}
 				}
 
-			if not allow_existing and not allow_new:
+			if is_new_registration and not allow_existing and not allow_new:
 				ex = user_regs[0]
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! Pass 'allow_existing': 1 to confirm payment for this registration (or 'allow_new': 1 for an additional stall).",
+					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! To book stall for this existing user, do not pass 'register_user'.",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,

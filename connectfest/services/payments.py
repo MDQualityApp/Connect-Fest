@@ -1038,6 +1038,22 @@ def admin_confirm_payment(**kwargs):
 	allow_existing = parse_boolean(data.get("allow_existing", 0)) or parse_boolean(data.get("confirm_existing", 0))
 	allow_new = parse_boolean(data.get("allow_new", 0)) or parse_boolean(data.get("allow_multiple", 0)) or parse_boolean(data.get("multi_stall", 0))
 
+	# Check whether caller explicitly requested new exhibitor registration or existing user payment
+	register_param = data.get("register_user")
+	if register_param is None:
+		register_param = data.get("is_new_user")
+	if register_param is None:
+		register_param = data.get("new_registration")
+	if register_param is None:
+		register_param = data.get("is_new_registration")
+
+	if register_param is not None:
+		is_new_registration = parse_boolean(register_param)
+	else:
+		# Auto-detection: If caller provided full name AND (company_name or email) without register_user param,
+		# treat as new user walk-in registration at the counter desk!
+		is_new_registration = bool(full_name and (company_name or email))
+
 	# Early Check 1: If stall is already booked, error out BEFORE touching users or registrations!
 	if stall_doc.status == "Booked" and not force:
 		booked_reg = stall_doc.booked_by_registration
@@ -1186,14 +1202,14 @@ def admin_confirm_payment(**kwargs):
 					}
 				}
 
-			# Check if user is already registered (pending or paid for another stall)
-			if not allow_existing and not allow_new:
+			# If caller explicitly or implicitly intends to register a NEW exhibitor, error if already registered!
+			if is_new_registration and not allow_existing:
 				ex = candidates[0]
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! Pass 'registration_id': '{ex.registration_id}' or 'allow_existing': 1 to confirm payment for this registration (or 'allow_new': 1 for an additional stall).",
+					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! To record payment for this existing user, do not pass 'register_user' (or set 'register_user': 0).",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,
@@ -1207,24 +1223,41 @@ def admin_confirm_payment(**kwargs):
 					}
 				}
 
-			if allow_existing:
-				# Use existing pending registration or latest registration
-				unbooked = [r for r in candidates if not r.stall_number or r.payment_status != "Paid"]
-				target = unbooked[0] if unbooked else candidates[0]
+			# Existing user payment flow (Online or Cash):
+			# Pick pending/unbooked registration, or create an additional registration record for multi-stall
+			unbooked = [r for r in candidates if not r.stall_number or r.stall_number == chosen_stall or r.payment_status != "Paid"]
+			if unbooked:
+				target = unbooked[0]
 				reg_doc = frappe.get_doc("ConnectFest Registration", target.name)
-			elif allow_new:
-				# Inherit existing profile fields for multi-stall purchase
+				if not reg_doc.stall_number or reg_doc.stall_number != chosen_stall:
+					reg_doc.stall_number = chosen_stall
+			else:
+				# All existing registrations for this exhibitor are already Paid for other stalls!
+				# Multi-stall purchase: create an additional registration record for this new stall inheriting their exhibitor profile
 				prev = candidates[0]
-				full_name = full_name or prev.full_name
-				company_name = company_name or prev.company_name
-				email = email or prev.email
-				mobile_no = mobile_no or prev.mobile_no
-				location = location or prev.location
-				industry = industry or prev.industry
-				segment = segment or prev.segment
-				is_bni_member = is_bni_member or bool(prev.is_bni_member)
-				region_name = region_name or prev.region_name
-				chapter_name = chapter_name or prev.chapter_name
+				from connectfest.services.common import generate_stall_id
+				new_reg_id = generate_stall_id(frappe.cache())
+				reg_doc = frappe.get_doc({
+					"doctype": "ConnectFest Registration",
+					"registration_id": new_reg_id,
+					"full_name": prev.full_name,
+					"company_name": prev.company_name,
+					"company_logo": getattr(prev, "company_logo", "") or "",
+					"mobile_no": prev.mobile_no,
+					"email": prev.email,
+					"location": prev.location or "Chennai",
+					"industry": prev.industry or "-",
+					"segment": prev.segment or "-",
+					"is_bni_member": 1 if prev.is_bni_member else 0,
+					"region_name": prev.region_name or "",
+					"chapter_name": prev.chapter_name or "",
+					"source_of_info": getattr(prev, "source_of_info", "Other") or "Other",
+					"stall_number": chosen_stall,
+					"status": "Registered",
+					"payment_status": "Pending",
+				})
+				reg_doc.insert(ignore_permissions=True)
+				frappe.db.commit()
 
 	# 3. If STILL not found, check tabUser or create brand new User & Registration!
 	if not reg_doc:
@@ -1250,6 +1283,27 @@ def admin_confirm_payment(**kwargs):
 		if found_user:
 			clean_email = clean_email or found_user.get("email")
 			clean_name = clean_name or found_user.get("full_name")
+			if is_new_registration and not allow_existing:
+				frappe.local.response["http_status_code"] = 409
+				return {
+					"status": "error",
+					"error_type": "already_registered",
+					"message": f"User account with mobile '{clean_mob}' or email '{clean_email}' already exists in the system! To book a stall for this user, do not pass 'register_user' (or set 'register_user': 0).",
+					"details": {
+						"full_name": found_user.get("full_name"),
+						"email": found_user.get("email"),
+						"mobile_no": clean_mob,
+					}
+				}
+
+		# If caller is doing existing user payment, but user is not registered at all:
+		if not is_new_registration and not found_user and not clean_name:
+			frappe.local.response["http_status_code"] = 404
+			return {
+				"status": "error",
+				"error_type": "user_not_found",
+				"message": f"Exhibitor with mobile number '{clean_mob or clean_email}' was not found in records! To register a new exhibitor, pass 'register_user': 1 with full_name and company_name."
+			}
 
 		clean_name = clean_name or (f"Exhibitor {clean_mob[-4:]}" if len(clean_mob) >= 4 else "Exhibitor")
 		clean_comp = clean_comp or clean_name
