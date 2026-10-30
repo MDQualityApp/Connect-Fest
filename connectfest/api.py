@@ -471,7 +471,13 @@ def verify_and_update_contact(otp=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def update_profile(**kwargs):
-	"""Updates attendee profile details (name, company, logo, location, industry, segment, etc.) for the logged-in user."""
+	"""Updates attendee profile details (name, company, logo, location, bill, gst, industry, segment, etc.) for the logged-in user."""
+	return _update_profile(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def edit_profile(**kwargs):
+	"""Optimized Edit Profile API: Updates attendee profile details for the logged-in user (alias for update_profile)."""
 	return _update_profile(**kwargs)
 
 

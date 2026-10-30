@@ -278,6 +278,15 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 		def wrapper(*args, **kwargs):
 			try:
 				return fn(*args, **kwargs)
+			except frappe.ValidationError as ve:
+				try:
+					frappe.db.rollback()
+				except Exception:
+					pass
+				return {
+					"status": "error",
+					"message": str(ve).replace("<br>", " ").strip() or "Validation error occurred.",
+				}
 			except Exception:
 				try:
 					frappe.db.rollback()
@@ -298,6 +307,15 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 		def wrapper(*args, **kwargs):
 			try:
 				return fn(*args, **kwargs)
+			except frappe.ValidationError as ve:
+				try:
+					frappe.db.rollback()
+				except Exception:
+					pass
+				return {
+					"status": "error",
+					"message": str(ve).replace("<br>", " ").strip() or "Validation error occurred.",
+				}
 			except Exception:
 				try:
 					frappe.db.rollback()

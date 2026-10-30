@@ -67,7 +67,8 @@ class ConnectFestRegistration(Document):
 				frappe.throw(frappe._("Stall '{0}' is blocked by administration ({1})").format(self.stall_number, stall.blocked_reason or "Reserved"))
 
 			if stall.status == "Booked" and stall.booked_by_registration and stall.booked_by_registration != (self.registration_id or self.name):
-				frappe.throw(frappe._("Stall '{0}' is already booked and confirmed by another exhibitor").format(self.stall_number))
+				booked_by = stall.booked_by_name or stall.booked_by_company or stall.booked_by_registration or "another exhibitor"
+				frappe.throw(frappe._("Stall '{0}' is already booked and confirmed by {1}").format(self.stall_number, booked_by))
 
 		self.set_pricing()
 
