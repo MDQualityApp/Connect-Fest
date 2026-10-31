@@ -10,6 +10,7 @@ from connectfest.services.common import (
 	VALID_SOURCES,
 	extract_request_data,
 	parse_boolean,
+	safe_str,
 	get_cached_record,
 	set_cached_record,
 	generate_stall_id,
@@ -35,25 +36,25 @@ def register_stall(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
-	full_name = (data.get("full_name") or data.get("name") or "").strip()
-	company_name = (data.get("company_name") or "").strip()
-	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
-	email = (data.get("email") or "").strip()
-	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
+	full_name = safe_str(data.get("full_name") or data.get("name"))
+	company_name = safe_str(data.get("company_name") or data.get("company"))
+	mobile_no = safe_str(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+	email = safe_str(data.get("email")).lower()
+	raw_logo = safe_str(data.get("company_logo") or data.get("logo"))
 	company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
-	location = (data.get("location") or "").strip()
-	bill = (data.get("bill") or data.get("billing_name") or data.get("bill_to") or "").strip()
-	gst = (data.get("gst") or data.get("gst_number") or data.get("gstin") or "").strip()
+	location = safe_str(data.get("location"))
+	bill = safe_str(data.get("bill") or data.get("billing_name") or data.get("bill_to"))
+	gst = safe_str(data.get("gst") or data.get("gst_number") or data.get("gstin"))
 	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
 
-	region_name = (data.get("region_name") or "").strip()
-	chapter_name = (data.get("chapter_name") or "").strip()
-	industry = (data.get("industry") or "").strip()
-	segment = (data.get("segment") or "").strip()
+	region_name = safe_str(data.get("region_name"))
+	chapter_name = safe_str(data.get("chapter_name"))
+	industry = safe_str(data.get("industry"))
+	segment = safe_str(data.get("segment"))
 
-	raw_category = (data.get("stall_category") or data.get("category") or data.get("tier") or "").strip().capitalize()
-	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
-	stall_number = (data.get("stall_number") or data.get("stall_no") or "").strip()
+	raw_category = safe_str(data.get("stall_category") or data.get("category") or data.get("tier")).capitalize()
+	source_of_info = safe_str(data.get("source_of_info") or data.get("source"))
+	stall_number = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 	sync_mode = parse_boolean(data.get("sync", 0))
 	create_order = parse_boolean(data.get("create_order", 0))
 
@@ -345,8 +346,8 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	from connectfest.services.stalls import hold_stall
 	cache = frappe.cache()
 	data = extract_request_data(kwargs)
-	reg_id = (registration_id or data.get("registration_id") or "").strip()
-	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
+	reg_id = safe_str(registration_id or data.get("registration_id"))
+	stall_num = safe_str(stall_number or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 
 	sess_user = getattr(frappe.session, "user", None)
 	if not reg_id and (not sess_user or sess_user == "Guest"):

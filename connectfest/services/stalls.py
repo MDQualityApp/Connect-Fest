@@ -6,6 +6,8 @@ from frappe.utils import now_datetime, flt, cint
 from connectfest.services.common import (
 	extract_request_data,
 	parse_boolean,
+	safe_str,
+	parse_stall_numbers,
 	handle_api_errors,
 	generate_stall_id,
 	set_cached_record,
@@ -444,12 +446,12 @@ def hold_stall(stall_number=None, **kwargs):
 	"""
 	try:
 		data = extract_request_data(kwargs)
-		stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
-		email = (data.get("email") or "").strip().lower()
-		mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
-		full_name = (data.get("full_name") or data.get("name") or "").strip()
-		company_name = (data.get("company_name") or "").strip()
-		reg_id = (data.get("registration_id") or kwargs.get("registration_id") or "").strip()
+		stall_num = safe_str(stall_number or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
+		email = safe_str(data.get("email")).lower()
+		mobile_no = safe_str(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+		full_name = safe_str(data.get("full_name") or data.get("name"))
+		company_name = safe_str(data.get("company_name") or data.get("company"))
+		reg_id = safe_str(data.get("registration_id") or kwargs.get("registration_id"))
 
 		# Auto-resolve missing or email-like attendee details from database
 		sess_u = getattr(frappe.session, "user", "")
@@ -639,8 +641,8 @@ def hold_stall(stall_number=None, **kwargs):
 def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	"""Releases temporary stall hold if user changes selection or abandons."""
 	data = extract_request_data(kwargs)
-	stall_num = (stall_number or data.get("stall_number") or "").strip()
-	token = (hold_token or data.get("hold_token") or "").strip()
+	stall_num = safe_str(stall_number or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
+	token = safe_str(hold_token or data.get("hold_token"))
 
 	if not stall_num:
 		return {"status": "error", "message": "stall_number is required"}
@@ -717,10 +719,10 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 		return err
 
 	data = extract_request_data(kwargs)
-	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
+	stall_num = safe_str(stall_number or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no")).upper()
 	raw_act = action if action is not None else data.get("action", "block")
-	act = str(raw_act or "block").strip().lower()
-	resn = (reason or data.get("reason") or ("Reserved by Administration" if act == "block" else "")).strip()
+	act = safe_str(raw_act or "block").lower()
+	resn = safe_str(reason or data.get("reason") or ("Reserved by Administration" if act == "block" else ""))
 	is_force = parse_boolean(force if force is not None else data.get("force", 0))
 
 	if not stall_num or not frappe.db.exists("ConnectFest Stall", stall_num):
@@ -1742,6 +1744,32 @@ def admin_book_stall(**kwargs):
 	reference_id = (data.get("reference_id") or data.get("transaction_id") or data.get("receipt_no") or data.get("razorpay_payment_id") or "").strip()
 	remarks = (data.get("remarks") or data.get("notes") or "").strip()
 
+	# Auto-fill missing user details from registration_id if provided
+	reg_id = (data.get("registration_id") or data.get("reg_id") or kwargs.get("registration_id") or "").strip()
+	if reg_id and (not email or not mobile_no or not full_name):
+		existing_reg = frappe.db.get_value(
+			"ConnectFest Registration",
+			{"registration_id": reg_id},
+			["full_name", "company_name", "company_logo", "location", "mobile_no", "email",
+			 "is_bni_member", "region_name", "chapter_name", "industry", "segment", "bill", "gst"],
+			as_dict=True
+		)
+		if existing_reg:
+			if not full_name: full_name = existing_reg.get("full_name") or ""
+			if not company_name: company_name = existing_reg.get("company_name") or ""
+			if not location: location = existing_reg.get("location") or ""
+			if not mobile_no: mobile_no = existing_reg.get("mobile_no") or ""
+			if not email: email = (existing_reg.get("email") or "").strip().lower()
+			if not raw_logo: raw_logo = existing_reg.get("company_logo") or ""
+			if not bill: bill = (existing_reg.get("bill") or "").strip()
+			if not gst: gst = (existing_reg.get("gst") or "").strip()
+			if data.get("is_bni_member") is None:
+				is_bni_member = bool(existing_reg.get("is_bni_member"))
+			if not region_name: region_name = existing_reg.get("region_name") or ""
+			if not chapter_name: chapter_name = existing_reg.get("chapter_name") or ""
+			if not industry: industry = existing_reg.get("industry") or ""
+			if not segment: segment = existing_reg.get("segment") or ""
+
 	# Auto-fill missing user details from existing records if email/mobile provided
 	if email or mobile_no:
 		existing = frappe.db.sql("""
@@ -1795,12 +1823,8 @@ def admin_book_stall(**kwargs):
 		errors.append("Company Name (company_name) is required")
 
 	# Parse stalls: supports single stall, comma-separated, or list
-	raw_stalls = data.get("stall_numbers") or data.get("stall_number") or data.get("stall_no") or data.get("stalls")
-	stall_list = []
-	if isinstance(raw_stalls, list):
-		stall_list = [str(s).strip() for s in raw_stalls if str(s).strip()]
-	elif isinstance(raw_stalls, str):
-		stall_list = [s.strip() for s in raw_stalls.split(",") if s.strip()]
+	raw_stalls = data.get("stall_numbers") or data.get("stall_number") or data.get("stall_no") or data.get("stalls") or kwargs.get("stall_numbers") or kwargs.get("stall_number")
+	stall_list = parse_stall_numbers(raw_stalls)
 
 	if not stall_list:
 		errors.append("Stall Number(s) (stall_number or stall_numbers) is required! E.g. 'PR-05' or 'PR-05, PR-06'")

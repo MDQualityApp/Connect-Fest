@@ -15,6 +15,8 @@ from connectfest.services.common import (
 	STALL_LOCK_PREFIX,
 	extract_request_data,
 	parse_boolean,
+	safe_str,
+	parse_stall_numbers,
 	get_cached_record,
 	set_cached_record,
 	handle_api_errors,
@@ -167,8 +169,8 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	Stall Number (stall_number) is STRICTLY MANDATORY at payment time!
 	"""
 	data = extract_request_data(kwargs)
-	reg_id = (registration_id or data.get("registration_id") or "").strip()
-	stall_num = (kwargs.get("stall_number") or data.get("stall_number") or data.get("stall_no") or "").strip()
+	reg_id = safe_str(registration_id or data.get("registration_id"))
+	stall_num = safe_str(kwargs.get("stall_number") or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
 
 	sess_user = getattr(frappe.session, "user", None)
@@ -252,7 +254,7 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 				"message": "Access Denied: You cannot make payments for another attendee's registration."
 			}
 
-	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or record.get("stall_number") or "").strip()
+	stall_num = safe_str(stall_number or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or record.get("stall_number"))
 	if not stall_num:
 		frappe.local.response["http_status_code"] = 400
 		return {
@@ -381,11 +383,11 @@ def verify_razorpay_payment(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
-	reg_id = (data.get("registration_id") or "").strip()
-	order_id = (data.get("razorpay_order_id") or "").strip()
-	payment_id = (data.get("razorpay_payment_id") or "").strip()
-	signature = (data.get("razorpay_signature") or "").strip()
-	stall_num = (data.get("stall_number") or data.get("stall_no") or kwargs.get("stall_number") or "").strip()
+	reg_id = safe_str(data.get("registration_id"))
+	order_id = safe_str(data.get("razorpay_order_id"))
+	payment_id = safe_str(data.get("razorpay_payment_id"))
+	signature = safe_str(data.get("razorpay_signature"))
+	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number") or kwargs.get("stall_numbers"))
 
 	sess_user = getattr(frappe.session, "user", None)
 
@@ -523,7 +525,7 @@ def verify_razorpay_payment(**kwargs):
 			pass
 
 	# Atomically update ConnectFest Stall status to Booked
-	stall_num = (cached_item.get("stall_number") if cached_item else None) or (data.get("stall_number") or data.get("stall_no") or "").strip()
+	stall_num = safe_str((cached_item.get("stall_number") if cached_item else None) or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 	if not stall_num and frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
 		stall_num = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "stall_number")
 
@@ -718,9 +720,9 @@ def preview_payment(**kwargs):
 	Stall Number is STRICTLY MANDATORY!
 	"""
 	data = extract_request_data(kwargs)
-	docname = (data.get("reference_docname") or data.get("registration_id") or data.get("docname") or "").strip()
-	doctype = (data.get("reference_doctype") or data.get("doctype") or "ConnectFest Registration").strip()
-	stall_num = (data.get("stall_number") or data.get("stall_no") or kwargs.get("stall_number") or "").strip()
+	docname = safe_str(data.get("reference_docname") or data.get("registration_id") or data.get("docname"))
+	doctype = safe_str(data.get("reference_doctype") or data.get("doctype"), "ConnectFest Registration")
+	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number"))
 
 	sess_user = getattr(frappe.session, "user", None)
 	if not docname and (not sess_user or sess_user == "Guest"):
@@ -799,7 +801,7 @@ def preview_payment(**kwargs):
 				"message": "Access Denied: You cannot preview payments for another attendee's registration."
 			}
 
-	stall_num = (data.get("stall_number") or data.get("stall_no") or record.get("stall_number") or "").strip()
+	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or record.get("stall_number"))
 	if not stall_num:
 		frappe.local.response["http_status_code"] = 400
 		return {
@@ -892,9 +894,9 @@ def checkout(**kwargs):
 	Creates Razorpay order with test/live keys and returns payload for Razorpay Checkout popup.
 	"""
 	data = extract_request_data(kwargs)
-	docname = (data.get("reference_docname") or data.get("registration_id") or data.get("docname") or "").strip()
-	doctype = (data.get("reference_doctype") or data.get("doctype") or "ConnectFest Registration").strip()
-	gateway = (data.get("payment_gateway") or "Razorpay").strip()
+	docname = safe_str(data.get("reference_docname") or data.get("registration_id") or data.get("docname"))
+	doctype = safe_str(data.get("reference_doctype") or data.get("doctype"), "ConnectFest Registration")
+	gateway = safe_str(data.get("payment_gateway"), "Razorpay")
 
 	if not docname:
 		frappe.local.response["http_status_code"] = 400
@@ -934,7 +936,7 @@ def finalize_payment(**kwargs):
 	Verifies Razorpay HMAC signature and marks order as Paid & Confirmed.
 	"""
 	data = extract_request_data(kwargs)
-	docname = (data.get("reference_docname") or data.get("registration_id") or data.get("docname") or "").strip()
+	docname = safe_str(data.get("reference_docname") or data.get("registration_id") or data.get("docname"))
 	kwargs["registration_id"] = docname
 
 	verify_res = verify_razorpay_payment(**kwargs)
@@ -969,39 +971,44 @@ def admin_confirm_payment(**kwargs):
 		return err
 
 	data = extract_request_data(kwargs)
-	reg_id = (data.get("registration_id") or data.get("reg_id") or "").strip()
-	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
-	email = (data.get("email") or data.get("user_email") or "").strip().lower()
-	full_name = (data.get("full_name") or data.get("name") or "").strip()
-	company_name = (data.get("company_name") or data.get("company") or "").strip()
-	raw_logo = (data.get("company_logo") or data.get("logo") or "").strip()
+	reg_id = safe_str(data.get("registration_id") or data.get("reg_id"))
+	mobile_no = safe_str(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+	email = safe_str(data.get("email") or data.get("user_email")).lower()
+	full_name = safe_str(data.get("full_name") or data.get("name"))
+	company_name = safe_str(data.get("company_name") or data.get("company"))
+	raw_logo = safe_str(data.get("company_logo") or data.get("logo"))
 	company_logo = ""
 	if raw_logo:
 		from connectfest.services.common import save_image_from_base64_or_url
 		company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
 
-	location = (data.get("location") or "").strip()
-	industry = (data.get("industry") or "").strip()
-	segment = (data.get("segment") or "").strip()
+	location = safe_str(data.get("location"))
+	industry = safe_str(data.get("industry"))
+	segment = safe_str(data.get("segment"))
 	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
-	region_name = (data.get("region_name") or "").strip()
-	chapter_name = (data.get("chapter_name") or "").strip()
+	region_name = safe_str(data.get("region_name"))
+	chapter_name = safe_str(data.get("chapter_name"))
 	if is_bni_member:
 		region_name = region_name or "Chennai"
 		chapter_name = chapter_name or "Connect Chapter"
 	else:
 		region_name = ""
 		chapter_name = ""
-	raw_source = (data.get("source_of_info") or data.get("source") or "Other").strip()
+	raw_source = safe_str(data.get("source_of_info") or data.get("source"), "Other")
 	valid_sources = ["Social Media", "BNI Chapter", "Friends / Family", "WhatsApp", "Email Campaign", "Website", "Word of Mouth", "Other"]
 	source_of_info = raw_source if raw_source in valid_sources else "Other"
-	stall_num = (data.get("stall_number") or data.get("stall_no") or "").strip()
-	raw_pay_mode = (data.get("payment_mode") or "Cash").strip()
-	receipt_no = (data.get("receipt_no") or data.get("reference_id") or data.get("transaction_id") or "").strip()
-	rzp_payment_id = (data.get("razorpay_payment_id") or data.get("payment_id") or "").strip()
-	action = (data.get("action") or "").strip().lower()
+	raw_stall = data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or data.get("stalls") or kwargs.get("stall_number") or kwargs.get("stall_numbers")
+	stall_list = parse_stall_numbers(raw_stall)
+	if len(stall_list) > 1:
+		from connectfest.services.stalls import admin_book_stall
+		return admin_book_stall(**kwargs)
+	stall_num = stall_list[0] if stall_list else ""
+	raw_pay_mode = safe_str(data.get("payment_mode"), "Cash")
+	receipt_no = safe_str(data.get("receipt_no") or data.get("reference_id") or data.get("transaction_id"))
+	rzp_payment_id = safe_str(data.get("razorpay_payment_id") or data.get("payment_id"))
+	action = safe_str(data.get("action")).lower()
 	create_order = parse_boolean(data.get("create_order", 0)) or action == "create_order"
-	remarks = (data.get("remarks") or data.get("notes") or "").strip()
+	remarks = safe_str(data.get("remarks") or data.get("notes"))
 
 	if raw_pay_mode.lower() in ("cash", "offline"):
 		payment_mode = "Cash"

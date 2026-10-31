@@ -35,6 +35,48 @@ def parse_boolean(val):
 	return 0
 
 
+def safe_str(val, default=""):
+	"""Safely convert any value (str, int, float, list, tuple) to a stripped string."""
+	if val is None:
+		return default
+	if isinstance(val, (list, tuple)):
+		for item in val:
+			if item is not None and str(item).strip():
+				return str(item).strip()
+		return default
+	return str(val).strip()
+
+
+def parse_stall_numbers(raw_stalls):
+	"""
+	Parses stall numbers from various formats:
+	- list/tuple: ['A-01', 'A-02'] or ['A-01, A-02']
+	- comma-separated str: 'A-01, A-02'
+	- single str/int: 'A-01'
+	Returns list of stripped stall strings.
+	"""
+	if not raw_stalls:
+		return []
+	stall_list = []
+	if isinstance(raw_stalls, (list, tuple)):
+		for item in raw_stalls:
+			if item is not None:
+				for s in str(item).split(","):
+					s_clean = s.strip()
+					if s_clean and s_clean not in stall_list:
+						stall_list.append(s_clean)
+	elif isinstance(raw_stalls, str):
+		for s in raw_stalls.split(","):
+			s_clean = s.strip()
+			if s_clean and s_clean not in stall_list:
+				stall_list.append(s_clean)
+	else:
+		s = str(raw_stalls).strip()
+		if s:
+			stall_list.append(s)
+	return stall_list
+
+
 def extract_request_data(kwargs):
 	data = {}
 	if frappe.request and getattr(frappe.request, "data", None):
