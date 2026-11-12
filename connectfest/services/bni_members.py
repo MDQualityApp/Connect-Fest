@@ -39,7 +39,6 @@ def get_bni_verification_settings():
 	- crn_bni_only: Master toggle for CRN stall restriction (default True)
 	- check_mobile: Validate BNI membership by Mobile Number (default True)
 	- check_email: Validate BNI membership by Email Address (default True)
-	Note: If both check_mobile and check_email are OFF (0), CRN restriction is automatically OFF!
 	"""
 	try:
 		doc = frappe.get_cached_doc("ConnectFest Settings")
@@ -50,9 +49,6 @@ def get_bni_verification_settings():
 		crn_only = True if (raw_crn is None or str(raw_crn).strip() == "") else bool(cint(raw_crn))
 		check_mob = True if (raw_mob is None or str(raw_mob).strip() == "") else bool(cint(raw_mob))
 		check_email = True if (raw_email is None or str(raw_email).strip() == "") else bool(cint(raw_email))
-
-		if not check_mob and not check_email:
-			crn_only = False
 
 		return {
 			"crn_bni_only": crn_only,
@@ -772,7 +768,6 @@ def admin_bulk_delete_bni_members(**kwargs):
 def is_crn_bni_restriction_enabled():
 	"""
 	Returns whether Admin has enabled strict BNI restriction for CRN 1 (Corner) stalls.
-	Automatically returns False if BOTH bni_check_mobile and bni_check_email are disabled!
 	Defaults to True.
 	"""
 	return get_bni_verification_settings()["crn_bni_only"]
@@ -869,7 +864,6 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	- enable / crn_bni_only: 1 (ON) / 0 (OFF)
 	- bni_check_mobile (or check_mobile): 1 (ON) / 0 (OFF)
 	- bni_check_email (or check_email): 1 (ON) / 0 (OFF)
-	  * Note: If BOTH bni_check_mobile and bni_check_email are OFF (0), crn_bni_only turns OFF automatically!
 	- non_bni_extra_percentage (or extra_percentage, percent): e.g. 10.0
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
@@ -915,12 +909,6 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 		new_val = 1 if (parse_boolean(raw_val) or str(raw_val).strip().lower() in ("1", "true", "yes", "on")) else 0
 	else:
 		new_val = 1 if curr else 0
-
-	# If both mobile and email checks are OFF -> automatically turn CRN restriction OFF
-	if new_check_mob == 0 and new_check_email == 0:
-		new_val = 0
-	elif has_val and new_val == 1 and new_check_mob == 0 and new_check_email == 0:
-		new_val = 0
 
 	frappe.db.set_single_value("ConnectFest Settings", "crn_bni_only", new_val)
 	frappe.db.set_single_value("ConnectFest Settings", "bni_check_mobile", new_check_mob)
