@@ -42,14 +42,8 @@ def register_bni_event(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
-	# 1. Mandatory Email OTP Verification (No mobile OTP required)
-	email_val_err = validate_registration_email_otp(email, data)
-	if email_val_err:
-		frappe.local.response["http_status_code"] = 400
-		return email_val_err
-
-	# 2. Mandatory BNI Member Verification:
-	# Must exist in ConnectFest BNI Member DocType
+	# 1. Mandatory BNI Member Verification:
+	# Must exist in ConnectFest BNI Member DocType (Checked before OTP validation)
 	is_bni, bni_doc = is_valid_bni_member(mobile_no)
 	if not is_bni:
 		frappe.local.response["http_status_code"] = 400
@@ -58,6 +52,12 @@ def register_bni_event(**kwargs):
 			"message": "You are not a BNI member! Registration is strictly restricted to verified BNI members.",
 			"mobile_no": mobile_no,
 		}
+
+	# 2. Mandatory Email OTP Verification (Checked after BNI membership is confirmed)
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
 
 	# Auto-populate chapter / region from BNI Member record if missing
 	if bni_doc:
@@ -419,3 +419,4 @@ def admin_get_bni_event_registrations(**kwargs):
 		"limit": limit,
 		"registrations": items
 	}
+

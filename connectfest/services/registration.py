@@ -275,16 +275,9 @@ def register_stall(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
-	# 1. Strictly Validate Email OTP:
-	# Checks if the attendee verified their email with OTP (or verifies email_otp in request)
-	email_val_err = validate_registration_email_otp(email, data)
-	if email_val_err:
-		frappe.local.response["http_status_code"] = 400
-		return email_val_err
-
-	# 2. Strict BNI verification when CRN restriction is enabled (CRN = 1):
+	# 1. Strict BNI verification when CRN restriction is enabled (CRN = 1):
 	# - When CRN = 1 (is_crn_bni_restriction_enabled): mobile_no MUST exist in ConnectFest BNI Member DocType.
-	#   If not found -> Return HTTP 400: "You are not a BNI member".
+	#   If not found -> Return HTTP 400: "You are not a BNI member" immediately BEFORE OTP validation!
 	# - When CRN = 0 (is_crn_bni_restriction_enabled is False): NO BNI check! Non-BNI members are allowed.
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 
@@ -316,6 +309,14 @@ def register_stall(**kwargs):
 		elif not is_bni_member:
 			region_name = ""
 			chapter_name = ""
+
+	# 2. Strictly Validate Email OTP:
+	# Checks if the attendee verified their email with OTP (or verifies email_otp in request).
+	# This runs strictly AFTER BNI member verification passes!
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
 
 	matched_source = None
 	for src in VALID_SOURCES:

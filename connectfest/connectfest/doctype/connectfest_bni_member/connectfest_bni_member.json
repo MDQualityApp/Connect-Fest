@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 0,
+ "allow_rename": 1,
  "autoname": "field:mobile_no",
  "creation": "2026-11-11 15:00:00",
  "doctype": "DocType",

@@ -161,12 +161,16 @@ from connectfest.services.terms import (
 from connectfest.services.bni_members import (
 	admin_create_bni_member as _admin_create_bni_member,
 	create_bni_member as _create_bni_member,
+	admin_bulk_create_bni_members as _admin_bulk_create_bni_members,
+	bulk_create_bni_members as _bulk_create_bni_members,
 	admin_get_bni_members as _admin_get_bni_members,
 	get_bni_members as _get_bni_members,
 	admin_get_bni_member as _admin_get_bni_member,
 	get_bni_member as _get_bni_member,
 	admin_update_bni_member as _admin_update_bni_member,
 	update_bni_member as _update_bni_member,
+	admin_edit_bni_member as _admin_edit_bni_member,
+	edit_bni_member as _edit_bni_member,
 	admin_delete_bni_member as _admin_delete_bni_member,
 	delete_bni_member as _delete_bni_member,
 	admin_bulk_delete_bni_members as _admin_bulk_delete_bni_members,
@@ -958,7 +962,7 @@ seed_default_terms = setup_default_terms
 # ==============================================================================
 @frappe.whitelist(allow_guest=True)
 def admin_create_bni_member(**kwargs):
-	"""Admin API: Add single or bulk BNI Member phone numbers."""
+	"""Admin API: Add single or bulk BNI Member phone numbers with names."""
 	return _admin_create_bni_member(**kwargs)
 
 
@@ -966,6 +970,18 @@ def admin_create_bni_member(**kwargs):
 def create_bni_member(**kwargs):
 	"""Alias for admin_create_bni_member."""
 	return _admin_create_bni_member(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_bulk_create_bni_members(**kwargs):
+	"""Admin API: Dedicated endpoint to bulk create BNI members with mobile numbers and names."""
+	return _admin_bulk_create_bni_members(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def bulk_create_bni_members(**kwargs):
+	"""Alias for admin_bulk_create_bni_members."""
+	return _admin_bulk_create_bni_members(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1000,6 +1016,18 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def update_bni_member(mobile_no=None, **kwargs):
+	"""Alias for admin_update_bni_member."""
+	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_edit_bni_member(mobile_no=None, **kwargs):
+	"""Alias for admin_update_bni_member."""
+	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def edit_bni_member(mobile_no=None, **kwargs):
 	"""Alias for admin_update_bni_member."""
 	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
 

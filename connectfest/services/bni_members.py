@@ -58,10 +58,24 @@ def is_valid_bni_member(mobile_no):
 
 def admin_create_bni_member(**kwargs):
 	"""
-	Admin API: Add single or bulk BNI Members (Name and Mobile Number only).
+	Admin API: Add single or bulk BNI Members (Name and Mobile Number).
 	Accepts:
-	- mobile_no: 10-digit phone number (or list / comma-separated string)
-	- member_name: Full name of BNI member
+	1. Direct array of objects under 'members' or 'items':
+	   {
+	       "members": [
+	           {"mobile_no": "9876543210", "member_name": "Karthik"},
+	           {"mobile_no": "9876543211", "member_name": "Priya"}
+	       ]
+	   }
+	2. Direct JSON list at root:
+	   [
+	       {"mobile_no": "9876543210", "member_name": "Karthik"},
+	       {"mobile_no": "9876543211", "member_name": "Priya"}
+	   ]
+	3. Single member:
+	   {"mobile_no": "9876543210", "member_name": "Karthik"}
+	4. List of numbers with shared member_name:
+	   {"mobile_numbers": ["9876543210", "9876543211"], "member_name": "Batch Name"}
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
@@ -70,59 +84,96 @@ def admin_create_bni_member(**kwargs):
 			return err
 
 	data = extract_request_data(kwargs)
-	raw_mob = data.get("mobile_no") or data.get("mobile") or data.get("phone") or kwargs.get("mobile_no")
-	raw_mobs = data.get("mobile_numbers") or data.get("numbers") or kwargs.get("mobile_numbers")
 
-	# Collect all target numbers
-	numbers_to_add = []
-	if raw_mobs and isinstance(raw_mobs, (list, tuple)):
-		for m in raw_mobs:
-			c = normalize_phone_number(m)
-			if c and c not in numbers_to_add:
-				numbers_to_add.append(c)
-	elif raw_mob:
-		for part in str(raw_mob).split(","):
-			c = normalize_phone_number(part)
-			if c and c not in numbers_to_add:
-				numbers_to_add.append(c)
+	# Handle case where request payload is directly a list: e.g. [{"mobile_no": ...}, ...]
+	if isinstance(data, list):
+		raw_items = data
+		default_name = ""
+	else:
+		raw_items = (
+			data.get("members")
+			or data.get("items")
+			or data.get("data")
+			or kwargs.get("members")
+			or kwargs.get("items")
+		)
+		default_name = safe_str(data.get("member_name") or data.get("name") or kwargs.get("member_name") or "")
 
-	if not numbers_to_add:
+	items_to_process = []  # list of tuples: (clean_mobile, name)
+	seen_mobs = set()
+
+	if raw_items and isinstance(raw_items, (list, tuple)):
+		for it in raw_items:
+			if isinstance(it, dict):
+				m_raw = it.get("mobile_no") or it.get("mobile") or it.get("phone") or it.get("number") or it.get("name")
+				n_val = safe_str(it.get("member_name") or it.get("name") or default_name)
+			else:
+				m_raw = it
+				n_val = default_name
+			c_mob = normalize_phone_number(m_raw)
+			if c_mob and c_mob not in seen_mobs:
+				seen_mobs.add(c_mob)
+				items_to_process.append((c_mob, n_val))
+	else:
+		raw_mob = data.get("mobile_no") or data.get("mobile") or data.get("phone") or kwargs.get("mobile_no")
+		raw_mobs = data.get("mobile_numbers") or data.get("numbers") or kwargs.get("mobile_numbers")
+
+		if raw_mobs and isinstance(raw_mobs, (list, tuple)):
+			for m in raw_mobs:
+				if isinstance(m, dict):
+					m_raw = m.get("mobile_no") or m.get("mobile") or m.get("phone") or m.get("number")
+					n_val = safe_str(m.get("member_name") or m.get("name") or default_name)
+				else:
+					m_raw = m
+					n_val = default_name
+				c_mob = normalize_phone_number(m_raw)
+				if c_mob and c_mob not in seen_mobs:
+					seen_mobs.add(c_mob)
+					items_to_process.append((c_mob, n_val))
+		elif raw_mob:
+			for part in str(raw_mob).split(","):
+				c_mob = normalize_phone_number(part)
+				if c_mob and c_mob not in seen_mobs:
+					seen_mobs.add(c_mob)
+					items_to_process.append((c_mob, default_name))
+
+	if not items_to_process:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "Valid 10-digit Mobile Number (mobile_no) is required!",
+			"message": "Valid 10-digit Mobile Number (mobile_no) or members list is required!",
 		}
-
-	member_name = safe_str(data.get("member_name") or data.get("name") or kwargs.get("member_name") or "")
 
 	created = []
 	updated = []
 
-	for mob in numbers_to_add:
+	for mob, m_name in items_to_process:
 		existing = frappe.db.get_value("ConnectFest BNI Member", {"mobile_no": mob}, "name")
 		if existing:
 			doc = frappe.get_doc("ConnectFest BNI Member", existing)
-			if member_name:
-				doc.member_name = member_name
+			if m_name:
+				doc.member_name = m_name
 			doc.save(ignore_permissions=True)
-			updated.append(mob)
+			updated.append({"mobile_no": mob, "member_name": doc.member_name})
 		else:
 			doc = frappe.get_doc({
 				"doctype": "ConnectFest BNI Member",
 				"mobile_no": mob,
-				"member_name": member_name,
+				"member_name": m_name,
 			})
 			doc.insert(ignore_permissions=True)
-			created.append(mob)
+			created.append({"mobile_no": mob, "member_name": doc.member_name})
 
 	frappe.db.commit()
 
 	return {
 		"status": "success",
-		"message": f"Successfully processed {len(numbers_to_add)} BNI Member number(s) (Created: {len(created)}, Updated: {len(updated)})",
+		"message": f"Successfully processed {len(items_to_process)} BNI Member(s) (Created: {len(created)}, Updated: {len(updated)})",
 		"created": created,
 		"updated": updated,
-		"total_processed": len(numbers_to_add),
+		"created_count": len(created),
+		"updated_count": len(updated),
+		"total_processed": len(items_to_process),
 	}
 
 
@@ -247,7 +298,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 			return err
 
 	data = extract_request_data(kwargs)
-	raw_mob = mobile_no or data.get("mobile_no") or data.get("mobile") or data.get("phone")
+	raw_mob = mobile_no or data.get("mobile_no") or data.get("mobile") or data.get("phone") or data.get("id")
 	clean_mob = normalize_phone_number(raw_mob)
 
 	doc_name = None
@@ -264,17 +315,21 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 		}
 
 	doc = frappe.get_doc("ConnectFest BNI Member", doc_name)
-	if "member_name" in data:
-		doc.member_name = safe_str(data["member_name"])
+	new_name = data.get("member_name") if "member_name" in data else data.get("name") if "name" in data else None
+	if new_name is not None:
+		doc.member_name = safe_str(new_name)
 
-	# Support updating to a new mobile number
-	if "new_mobile_no" in data:
-		new_mob = normalize_phone_number(data["new_mobile_no"])
+	# Support updating / renaming to a new mobile number
+	new_mob_raw = data.get("new_mobile_no") or data.get("new_mobile") or data.get("new_phone")
+	if new_mob_raw:
+		new_mob = normalize_phone_number(new_mob_raw)
 		if new_mob and len(new_mob) == 10 and new_mob != doc.mobile_no:
 			if frappe.db.exists("ConnectFest BNI Member", new_mob):
 				frappe.local.response["http_status_code"] = 409
 				return {"status": "error", "message": f"Mobile number '{new_mob}' is already assigned to another BNI Member"}
-			doc.mobile_no = new_mob
+			doc.save(ignore_permissions=True)
+			frappe.rename_doc("ConnectFest BNI Member", doc.name, new_mob, force=True)
+			doc = frappe.get_doc("ConnectFest BNI Member", new_mob)
 
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -434,9 +489,13 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 
 # Aliases
 create_bni_member = admin_create_bni_member
+admin_bulk_create_bni_members = admin_create_bni_member
+bulk_create_bni_members = admin_create_bni_member
 get_bni_members = admin_get_bni_members
 get_bni_member = admin_get_bni_member
 update_bni_member = admin_update_bni_member
+admin_edit_bni_member = admin_update_bni_member
+edit_bni_member = admin_update_bni_member
 delete_bni_member = admin_delete_bni_member
 bulk_delete_bni_members = admin_bulk_delete_bni_members
 toggle_crn_bni_restriction = admin_toggle_crn_bni_restriction

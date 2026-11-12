@@ -41,3 +41,4 @@ class ConnectFestBNIEventRegistration(Document):
 		self.mobile_no = normalize_bni_phone(self.mobile_no)
 		if not self.mobile_no or len(self.mobile_no) != 10:
 			frappe.throw("A valid 10-digit Mobile Number is required.")
+

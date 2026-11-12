@@ -297,6 +297,69 @@ def get_current_user_profile(**kwargs):
 	data = extract_request_data(kwargs)
 	sess_user = getattr(frappe.session, "user", None)
 
+	# Session resolution fallback for API clients / cross-origin requests (e.g. Hoppscotch / Mobile App)
+	if not sess_user or sess_user == "Guest":
+		req_sid = (
+			data.get("sid")
+			or data.get("token")
+			or (frappe.local.form_dict.get("sid") if hasattr(frappe.local, "form_dict") else None)
+		)
+		if not req_sid and hasattr(frappe, "request") and frappe.request:
+			req_sid = (
+				frappe.get_request_header("sid")
+				or frappe.get_request_header("X-Frappe-Session-Id")
+				or frappe.request.cookies.get("sid")
+			)
+			if not req_sid:
+				auth_hdr = frappe.get_request_header("Authorization", "")
+				if auth_hdr.startswith("Bearer "):
+					req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+
+		if req_sid and req_sid != "Guest":
+			user_from_sid = None
+			try:
+				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s AND status = 'Active' LIMIT 1", (req_sid,))
+				if res and res[0][0]:
+					user_from_sid = res[0][0]
+			except Exception:
+				pass
+
+			if not user_from_sid:
+				try:
+					session_cache = frappe.cache().hget("session", req_sid)
+					if session_cache and isinstance(session_cache, dict):
+						user_from_sid = session_cache.get("user")
+				except Exception:
+					pass
+
+			if user_from_sid and user_from_sid != "Guest":
+				sess_user = user_from_sid
+				frappe.set_user(user_from_sid)
+
+		# If still Guest, check if mobile_no or email has an active session from recent OTP login
+		if not sess_user or sess_user == "Guest":
+			candidate_email = (data.get("email") or data.get("user_email") or "").strip().lower()
+			candidate_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
+			if not candidate_email and candidate_mob:
+				candidate_email = (
+					frappe.db.get_value("ConnectFest Registration", {"mobile_no": candidate_mob}, "email")
+					or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": candidate_mob}, "email")
+					or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
+					or frappe.db.get_value("User", {"phone": candidate_mob}, "name")
+				)
+			if candidate_email:
+				candidate_email = candidate_email.strip().lower()
+				try:
+					res = frappe.db.sql(
+						"SELECT user FROM `tabSessions` WHERE user = %s AND status = 'Active' ORDER BY lastupdate DESC LIMIT 1",
+						(candidate_email,)
+					)
+					if res and res[0][0]:
+						sess_user = res[0][0]
+						frappe.set_user(sess_user)
+				except Exception:
+					pass
+
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
 		return {

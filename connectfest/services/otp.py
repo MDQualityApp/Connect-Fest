@@ -280,6 +280,7 @@ def verify_otp(mobile_no=None, otp=None, **kwargs):
 	clean_email = user_email.strip().lower() if user_email else None
 	if clean_email:
 		ensure_frappe_user(clean_email, user_name or f"Attendee {mob[-4:]}", mob, role="Website User")
+		session_sid = None
 		if frappe.db.exists("User", clean_email):
 			try:
 				if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
@@ -288,12 +289,24 @@ def verify_otp(mobile_no=None, otp=None, **kwargs):
 					from frappe.auth import LoginManager
 					frappe.local.login_manager = LoginManager()
 					frappe.local.login_manager.login_as(clean_email)
+				
+				session_sid = (
+					getattr(getattr(frappe.local, "session_obj", None), "sid", None)
+					or getattr(getattr(frappe.local, "session", None), "sid", None)
+					or getattr(frappe.session, "sid", None)
+				)
 			except Exception:
 				pass
-			frappe.set_user(clean_email)
 		dashboard = get_my_dashboard(email=clean_email, mobile_no=mob)
 
 	frappe.local.response["http_status_code"] = 200
+
+	if not session_sid:
+		session_sid = (
+			getattr(getattr(frappe.local, "session_obj", None), "sid", None)
+			or getattr(getattr(frappe.local, "session", None), "sid", None)
+			or getattr(frappe.session, "sid", None)
+		)
 
 	return {
 		"status": "success",
@@ -304,6 +317,8 @@ def verify_otp(mobile_no=None, otp=None, **kwargs):
 		"email": clean_email,
 		"registered_user": user_name,
 		"session_user": getattr(frappe.session, "user", "Guest"),
+		"sid": session_sid,
+		"token": session_sid,
 		"is_registered": bool(clean_email),
 		"dashboard": dashboard,
 	}
