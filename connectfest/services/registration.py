@@ -279,6 +279,10 @@ def register_stall(**kwargs):
 	#   If not found -> Return HTTP 400: "You are not a BNI member" immediately BEFORE OTP validation!
 	# - When CRN = 0 (is_crn_bni_restriction_enabled is False): NO BNI check! Non-BNI members are allowed.
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+	from connectfest.services.auth import is_admin_user
+
+	sess_user = getattr(frappe.session, "user", None)
+	is_admin = is_admin_user(sess_user) if sess_user and sess_user != "Guest" else False
 
 	stall_crn = 0
 	if stall_number and frappe.db.exists("ConnectFest Stall", stall_number):
@@ -488,6 +492,13 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_admin:
 		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 		if is_crn_bni_restriction_enabled():
+			# Check if registration is already verified/marked as BNI member in Desk
+			reg_bni = 0
+			if reg_id:
+				reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member")) or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
+			if not reg_bni and sess_user and sess_user != "Guest":
+				reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "is_bni_member"))
+
 			u_mob = (
 				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
 				or (frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
@@ -504,6 +515,9 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				or data.get("email")
 			)
 			is_bni_valid, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			if reg_bni == 1:
+				is_bni_valid = True
+
 			if not is_bni_valid:
 				frappe.local.response["http_status_code"] = 400
 				return {

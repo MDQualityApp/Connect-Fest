@@ -284,11 +284,14 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 				or (sess_user if sess_user and sess_user != "Guest" else None)
 				or data.get("email")
 			)
+			reg_bni = cint(record.get("is_bni_member", 0))
 			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			if reg_bni == 1:
+				is_bni = True
 			target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")
 			if is_bni and target_reg and cint(record.get("is_bni_member")) != 1:
 				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 1, update_modified=False)
-			elif not is_bni and target_reg and cint(record.get("is_bni_member")) == 1:
+			elif not is_bni and target_reg and not reg_bni:
 				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 0, update_modified=False)
 
 			if not is_bni:
@@ -884,11 +887,14 @@ def preview_payment(**kwargs):
 				or (sess_user if sess_user and sess_user != "Guest" else None)
 				or data.get("email")
 			)
+			reg_bni = cint(record.get("is_bni_member", 0))
 			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			if reg_bni == 1:
+				is_bni = True
 			target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")
 			if is_bni and target_reg and cint(record.get("is_bni_member")) != 1:
 				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 1, update_modified=False)
-			elif not is_bni and target_reg and cint(record.get("is_bni_member")) == 1:
+			elif not is_bni and target_reg and not reg_bni:
 				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 0, update_modified=False)
 
 			if not is_bni:

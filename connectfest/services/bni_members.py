@@ -119,7 +119,7 @@ def is_valid_bni_member(mobile_no=None, email=None):
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 				FROM `tabConnectFest BNI Member`
 				WHERE (name IN %(candidates)s OR mobile_no IN %(candidates)s)
-				  AND email = %(email)s
+				   OR email = %(email)s
 				LIMIT 1
 			""", {"candidates": mob_candidates, "email": use_email}, as_dict=True)
 		elif use_mob:
@@ -826,8 +826,10 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 		surcharge_amt = 0.0
 		final_base_price = original_price
 	else:
-		# Strictly verify against ConnectFest BNI Member DocType!
-		if clean_mob or user_email:
+		# Strictly verify against ConnectFest BNI Member DocType or existing registration flag!
+		if is_bni_member is not None and cint(is_bni_member) == 1:
+			is_bni = True
+		elif clean_mob or user_email:
 			is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
 		else:
 			is_bni = False

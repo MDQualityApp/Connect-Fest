@@ -598,6 +598,12 @@ def hold_stall(stall_number=None, **kwargs):
 		if cint(getattr(stall, "crn", 0)) == 1 and not is_admin:
 			from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 			if is_crn_bni_restriction_enabled():
+				reg_bni = 0
+				if reg_id:
+					reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member")) or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
+				if not reg_bni and sess_u and sess_u != "Guest":
+					reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "is_bni_member"))
+
 				u_mob = (
 					mobile_no
 					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
@@ -611,9 +617,12 @@ def hold_stall(stall_number=None, **kwargs):
 					or (sess_u if sess_u and sess_u != "Guest" else None)
 				)
 				is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+				if reg_bni == 1:
+					is_bni = True
+
 				if is_bni and reg_id:
 					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 1, update_modified=False)
-				elif not is_bni and reg_id:
+				elif not is_bni and reg_id and not reg_bni:
 					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 0, update_modified=False)
 
 				if not is_bni:
