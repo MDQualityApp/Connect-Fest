@@ -3,7 +3,7 @@ import frappe
 from frappe.utils import now_datetime, cint
 from connectfest.services.common import extract_request_data, handle_api_errors, safe_str, parse_boolean
 from connectfest.services.bni_members import normalize_phone_number, is_valid_bni_member
-from connectfest.services.registration import validate_registration_email_otp
+
 
 
 @handle_api_errors("ConnectFest BNI Event Number Check Error")
@@ -63,7 +63,7 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 		"status": "success",
 		"is_bni_member": True,
 		"already_registered": False,
-		"message": "Verified BNI Member! You may proceed with Email OTP verification.",
+		"message": "Verified BNI Member! You may proceed with registration.",
 		"mobile_no": mob,
 		"member_name": (bni_doc.get("member_name") if bni_doc else "") or "",
 		"chapter_name": (bni_doc.get("chapter_name") if bni_doc else "") or "",
@@ -180,14 +180,6 @@ def register_bni_event(**kwargs):
 			"is_attended": bool(chk_in),
 			"attendee": existing_email_reg,
 		}
-
-	# =========================================================================
-	# STEP 2: VERIFY EMAIL OTP (Strictly executed AFTER number check passes)
-	# =========================================================================
-	email_val_err = validate_registration_email_otp(email, data)
-	if email_val_err:
-		frappe.local.response["http_status_code"] = 400
-		return email_val_err
 
 	# 4. Generate Pass Code & QR Code Payload
 	pass_random = frappe.generate_hash(length=8).upper()
