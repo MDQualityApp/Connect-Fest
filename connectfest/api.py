@@ -1085,27 +1085,49 @@ def edit_bni_member(mobile_no=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
-	"""Admin API: Delete single or multiple BNI member phone numbers."""
-	return _admin_delete_bni_member(mobile_no=mobile_no, mobile_numbers=mobile_numbers, **kwargs)
+def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
+	"""Admin API: Delete single, multiple, or all BNI member records."""
+	return _admin_delete_bni_member(
+		mobile_no=mobile_no,
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
 
 
 @frappe.whitelist(allow_guest=True)
-def delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
+def delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
 	"""Alias for admin_delete_bni_member."""
-	return _admin_delete_bni_member(mobile_no=mobile_no, mobile_numbers=mobile_numbers, **kwargs)
+	return _admin_delete_bni_member(
+		mobile_no=mobile_no,
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
 
 
 @frappe.whitelist(allow_guest=True)
-def admin_bulk_delete_bni_members(mobile_numbers=None, **kwargs):
-	"""Admin API: Bulk delete BNI members by list of mobile numbers."""
-	return _admin_bulk_delete_bni_members(mobile_numbers=mobile_numbers, **kwargs)
+def admin_bulk_delete_bni_members(mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
+	"""Admin API: Bulk delete BNI members by list of mobile numbers or delete all."""
+	return _admin_bulk_delete_bni_members(
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
 
 
 @frappe.whitelist(allow_guest=True)
-def bulk_delete_bni_members(mobile_numbers=None, **kwargs):
+def bulk_delete_bni_members(mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
 	"""Alias for admin_bulk_delete_bni_members."""
-	return _admin_bulk_delete_bni_members(mobile_numbers=mobile_numbers, **kwargs)
+	return _admin_bulk_delete_bni_members(
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
 
 
 @frappe.whitelist(allow_guest=True)

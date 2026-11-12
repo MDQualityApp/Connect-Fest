@@ -282,18 +282,20 @@ def admin_create_bni_member(**kwargs):
 		if not parsed or not parsed.get("mobile_no") or len(parsed["mobile_no"]) != 10:
 			errors.append({"row": idx, "item": it, "reason": "Valid 10-digit Mobile Number (mobile_no) is mandatory."})
 			continue
-		em = parsed.get("email") or ""
-		if not em or "@" not in em or "." not in em.split("@")[-1]:
-			errors.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": "Valid Email Address (email) is mandatory."})
-			continue
+		em = str(parsed.get("email") or "").strip().lower()
+		parsed["email"] = em
+		if em:
+			if "@" not in em or "." not in em.split("@")[-1]:
+				errors.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": "Valid Email Address format is required."})
+				continue
+			if em in seen_emails:
+				duplicates.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": f"Duplicate email '{em}' in request batch."})
+				continue
+			seen_emails.add(em)
 		if parsed["mobile_no"] in seen_mobs:
 			duplicates.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": f"Duplicate mobile_no '{parsed['mobile_no']}' in request batch."})
 			continue
-		if em in seen_emails:
-			duplicates.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": f"Duplicate email '{em}' in request batch."})
-			continue
 		seen_mobs.add(parsed["mobile_no"])
-		seen_emails.add(em)
 		items_to_process.append(parsed)
 
 	created = []
@@ -311,18 +313,19 @@ def admin_create_bni_member(**kwargs):
 			})
 			continue
 
-		existing_email = frappe.db.sql(
-			"SELECT name, mobile_no FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s LIMIT 1",
-			{"em": em},
-			as_dict=True,
-		)
-		if existing_email:
-			duplicates.append({
-				"mobile_no": mob,
-				"email": em,
-				"reason": f"Email '{em}' is already registered as a BNI Member (Mobile: {existing_email[0].get('mobile_no')}).",
-			})
-			continue
+		if em:
+			existing_email = frappe.db.sql(
+				"SELECT name, mobile_no FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s LIMIT 1",
+				{"em": em},
+				as_dict=True,
+			)
+			if existing_email:
+				duplicates.append({
+					"mobile_no": mob,
+					"email": em,
+					"reason": f"Email '{em}' is already registered as a BNI Member (Mobile: {existing_email[0].get('mobile_no')}).",
+				})
+				continue
 
 		doc = frappe.get_doc({
 			"doctype": "ConnectFest BNI Member",
@@ -530,18 +533,21 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 
 	if "email" in data:
 		new_email = str(data.get("email") or "").strip().lower()
-		if not new_email or "@" not in new_email or "." not in new_email.split("@")[-1]:
-			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "Valid Email Address (email) is mandatory."}
-		dup_email = frappe.db.sql(
-			"SELECT name FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s AND name != %(cur)s LIMIT 1",
-			{"em": new_email, "cur": doc.name},
-			as_dict=True,
-		)
-		if dup_email:
-			frappe.local.response["http_status_code"] = 409
-			return {"status": "error", "message": f"Email '{new_email}' is already assigned to another BNI Member"}
-		doc.email = new_email
+		if new_email:
+			if "@" not in new_email or "." not in new_email.split("@")[-1]:
+				frappe.local.response["http_status_code"] = 400
+				return {"status": "error", "message": "Valid Email Address (email) is required."}
+			dup_email = frappe.db.sql(
+				"SELECT name FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s AND name != %(cur)s LIMIT 1",
+				{"em": new_email, "cur": doc.name},
+				as_dict=True,
+			)
+			if dup_email:
+				frappe.local.response["http_status_code"] = 409
+				return {"status": "error", "message": f"Email '{new_email}' is already assigned to another BNI Member"}
+			doc.email = new_email
+		else:
+			doc.email = ""
 	if "company_name" in data or "company" in data:
 		doc.company_name = safe_str(data.get("company_name") if "company_name" in data else data.get("company"))
 	if "industry" in data:
@@ -571,13 +577,14 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 	}
 
 
-def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
+def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
 	"""
-	Admin API: Delete single or bulk BNI members.
+	Admin API: Delete single, bulk, or all BNI members.
 	Accepts:
-	- mobile_no: Single string, comma-separated string, or list
-	- mobile_numbers: List of mobile numbers (e.g. ["9876543210", "9876543211"])
-	- numbers / items / ids: Aliases for bulk list
+	- select_all / delete_all / all: 1 or True -> Instantly empties the entire BNI directory (optimized SQL)
+	- mobile_no: Single string, comma-separated string, or "all" / "*"
+	- mobile_numbers: List of mobile numbers (e.g. ["9876543210", "9876543211"]) or "all"
+	- numbers / items / ids / members: Aliases for bulk list
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
@@ -586,6 +593,70 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
 			return err
 
 	data = extract_request_data(kwargs)
+	if select_all is not None and "select_all" not in data:
+		data["select_all"] = select_all
+	if delete_all is not None and "delete_all" not in data:
+		data["delete_all"] = delete_all
+
+	# --- Optimized "Select All / Delete All / Empty" Fast-Path ---
+	is_delete_all = False
+	for k in ("select_all", "delete_all", "all", "empty", "truncate", "clear", "wipe"):
+		val = data.get(k)
+		if val is not None:
+			if isinstance(val, bool) and val:
+				is_delete_all = True
+				break
+			if parse_boolean(val):
+				is_delete_all = True
+				break
+			if str(val).strip().lower() in ("1", "true", "yes", "y", "all", "select_all", "delete_all"):
+				is_delete_all = True
+				break
+
+	if not is_delete_all:
+		action_str = str(data.get("action") or "").strip().lower()
+		if action_str in ("all", "delete_all", "select_all", "empty", "truncate", "clear", "wipe"):
+			is_delete_all = True
+
+	if not is_delete_all:
+		raw_mob_check = str(mobile_no or data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip().lower()
+		if raw_mob_check in ("all", "*", "select_all", "delete_all", "empty", "truncate"):
+			is_delete_all = True
+
+	if not is_delete_all:
+		raw_mobs_check = mobile_numbers or data.get("mobile_numbers") or kwargs.get("mobile_numbers")
+		if isinstance(raw_mobs_check, str) and raw_mobs_check.strip().lower() in ("all", "*", "select_all", "delete_all", "empty"):
+			is_delete_all = True
+		elif isinstance(raw_mobs_check, (list, tuple)) and len(raw_mobs_check) == 1:
+			first_val = str(raw_mobs_check[0]).strip().lower()
+			if first_val in ("all", "*", "select_all", "delete_all", "empty"):
+				is_delete_all = True
+
+	if is_delete_all:
+		total_count = frappe.db.count("ConnectFest BNI Member")
+		if total_count == 0:
+			return {
+				"status": "success",
+				"message": "BNI Member directory is already empty.",
+				"deleted_count": 0,
+				"all_deleted": True,
+				"is_empty": True,
+			}
+
+		# Ultra-fast, optimized complete deletion
+		frappe.db.sql("DELETE FROM `tabConnectFest BNI Member`")
+		frappe.clear_cache(doctype="ConnectFest BNI Member")
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"message": f"Successfully deleted all {total_count} BNI Member(s). The directory is now completely empty.",
+			"deleted_count": total_count,
+			"all_deleted": True,
+			"is_empty": True,
+		}
+
+	# --- Specific Mobile Numbers Deletion ---
 	raw_mob = mobile_no or data.get("mobile_no") or data.get("mobile") or data.get("phone")
 	raw_mobs = (
 		mobile_numbers
@@ -627,7 +698,7 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "Target mobile_no or mobile_numbers list is required for deletion.",
+			"message": "Target mobile_no, mobile_numbers list, or select_all=1 is required for deletion.",
 		}
 
 	deleted = []
