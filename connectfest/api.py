@@ -1040,3 +1040,55 @@ def toggle_crn_bni_restriction(enable=None, **kwargs):
 	return _admin_toggle_crn_bni_restriction(enable=enable, **kwargs)
 
 
+# ============================================================================
+# ConnectFest BNI Events API (Registration, Email OTP, Pass Check & Verify)
+# ============================================================================
+
+from connectfest.services.bni_events import (
+	register_bni_event as _register_bni_event,
+	verify_bni_event_pass as _verify_bni_event_pass,
+	get_bni_event_pass as _get_bni_event_pass,
+	admin_get_bni_event_registrations as _admin_get_bni_event_registrations,
+)
+
+
+@frappe.whitelist(allow_guest=True)
+def register_bni_event(**kwargs):
+	"""
+	BNI Events Registration API.
+	Mandatory:
+	- Mobile number must exist in ConnectFest BNI Member DocType.
+	- Email OTP verification is required (No mobile OTP).
+	- Generates unique BNI Event Pass Code & QR Payload.
+	"""
+	return _register_bni_event(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_bni_event_pass(pass_code=None, **kwargs):
+	"""
+	Gate Verification / Scanner API for BNI Event Passes (same as visitor pass check).
+	Accepts pass_code, qr_code, registration_id, or mobile_no.
+	"""
+	return _verify_bni_event_pass(pass_code=pass_code, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def check_bni_event_pass(pass_code=None, **kwargs):
+	"""Alias for verify_bni_event_pass."""
+	return _verify_bni_event_pass(pass_code=pass_code, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Retrieves attendee's digital pass details and QR payload for BNI Events."""
+	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_bni_event_registrations(**kwargs):
+	"""Admin API: List, search, filter BNI Event registrations and check-in stats."""
+	return _admin_get_bni_event_registrations(**kwargs)
+
+
+

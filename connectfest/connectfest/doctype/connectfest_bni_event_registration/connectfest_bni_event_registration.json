@@ -1,0 +1,191 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:BNI-EVT-{#####}",
+ "creation": "2026-11-12 10:30:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "registration_id",
+  "full_name",
+  "company_name",
+  "mobile_no",
+  "email",
+  "column_break_1",
+  "event_name",
+  "chapter_name",
+  "region_name",
+  "location",
+  "industry",
+  "segment",
+  "section_pass",
+  "pass_code",
+  "qr_payload",
+  "column_break_status",
+  "status",
+  "checked_in",
+  "checked_in_at",
+  "checked_in_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Full Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company Name"
+  },
+  {
+   "fieldname": "mobile_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Mobile Number",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email Address",
+   "options": "Email",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "ConnectFest BNI Events 2027",
+   "fieldname": "event_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Name"
+  },
+  {
+   "fieldname": "chapter_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "BNI Chapter"
+  },
+  {
+   "fieldname": "region_name",
+   "fieldtype": "Data",
+   "label": "BNI Region"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location / City"
+  },
+  {
+   "fieldname": "industry",
+   "fieldtype": "Data",
+   "label": "Industry"
+  },
+  {
+   "fieldname": "segment",
+   "fieldtype": "Data",
+   "label": "Segment"
+  },
+  {
+   "fieldname": "section_pass",
+   "fieldtype": "Section Break",
+   "label": "Pass & Verification"
+  },
+  {
+   "fieldname": "pass_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pass Code",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "qr_payload",
+   "fieldtype": "Code",
+   "label": "QR Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Registered",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Registered\nChecked In\nCancelled"
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_in",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Checked In",
+   "search_index": 1
+  },
+  {
+   "fieldname": "checked_in_at",
+   "fieldtype": "Datetime",
+   "label": "Checked In At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "checked_in_by",
+   "fieldtype": "Data",
+   "label": "Checked In By",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-12 10:30:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest BNI Event Registration",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "full_name",
+ "search_fields": "full_name,email,mobile_no,pass_code,chapter_name",
+ "track_changes": 1
+}
