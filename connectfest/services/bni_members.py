@@ -916,15 +916,10 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	else:
 		new_val = 1 if curr else 0
 
-	# If user requested to turn ON CRN restriction (new_val == 1) but both checks were OFF in settings,
-	# and user did NOT explicitly pass them as OFF in this request, automatically enable both checks!
-	if new_val == 1 and new_check_mob == 0 and new_check_email == 0:
-		if raw_mob_chk is None and raw_email_chk is None:
-			new_check_mob = 1
-			new_check_email = 1
-		else:
-			new_val = 0
-	elif new_check_mob == 0 and new_check_email == 0:
+	# If both mobile and email checks are OFF -> automatically turn CRN restriction OFF
+	if new_check_mob == 0 and new_check_email == 0:
+		new_val = 0
+	elif has_val and new_val == 1 and new_check_mob == 0 and new_check_email == 0:
 		new_val = 0
 
 	frappe.db.set_single_value("ConnectFest Settings", "crn_bni_only", new_val)
