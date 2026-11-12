@@ -89,6 +89,7 @@ from connectfest.services.registration import (
 	register_visitor as _register_visitor,
 	check_user_booking_status as _check_user_booking_status,
 	upload_visitor_image as _upload_visitor_image,
+	admin_get_visitor_registrations as _admin_get_visitor_registrations,
 )
 from connectfest.services.payments import (
 	get_razorpay_config,
@@ -1223,6 +1224,18 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 
 
 @frappe.whitelist(allow_guest=True)
+def get_event_pass(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for get_bni_event_pass."""
+	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_pass(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Universal Alias for get_bni_event_pass."""
+	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def admin_get_bni_event_registrations(**kwargs):
 	"""Admin API: List, search, filter BNI Event registrations and check-in stats."""
 	return _admin_get_bni_event_registrations(**kwargs)
@@ -1256,6 +1269,42 @@ def get_bni_event_registration(registration_id=None, pass_code=None, mobile_no=N
 def get_event_registration(registration_id=None, pass_code=None, mobile_no=None, email=None, **kwargs):
 	"""GET API: Alias for get_bni_event_registration."""
 	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_visitor_registrations(**kwargs):
+	"""Admin & Scanner API: List, search, filter Visitor registrations and check-in stats."""
+	return _admin_get_visitor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_visitor_registrations(**kwargs):
+	"""GET API: List all Visitor registered attendees with full payload & check-in counts."""
+	return _admin_get_visitor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_visitor_registers(**kwargs):
+	"""GET API: Alias for get_visitor_registrations (matches Get Event Registers style)."""
+	return _admin_get_visitor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_visitors(**kwargs):
+	"""GET API: Alias for get_visitor_registrations."""
+	return _admin_get_visitor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_visitors(**kwargs):
+	"""Admin GET API: Alias for admin_get_visitor_registrations."""
+	return _admin_get_visitor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_visitor_registers(**kwargs):
+	"""Admin GET API: Alias for admin_get_visitor_registrations."""
+	return _admin_get_visitor_registrations(**kwargs)
 
 
 # ============================================================================

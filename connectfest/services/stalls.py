@@ -568,6 +568,7 @@ def hold_stall(stall_number=None, **kwargs):
 				u_mob = (
 					mobile_no
 					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
+					or (frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "mobile_no") if sess_u and sess_u != "Guest" else None)
 					or (frappe.db.get_value("User", sess_u, "mobile_no") if sess_u and sess_u != "Guest" else None)
 					or (frappe.db.get_value("User", sess_u, "phone") if sess_u and sess_u != "Guest" else None)
 				)
@@ -577,6 +578,11 @@ def hold_stall(stall_number=None, **kwargs):
 					or (sess_u if sess_u and sess_u != "Guest" else None)
 				)
 				is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+				if is_bni and reg_id:
+					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 1, update_modified=False)
+				elif not is_bni and reg_id:
+					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 0, update_modified=False)
+
 				if not is_bni:
 					frappe.local.response["http_status_code"] = 400
 					return {

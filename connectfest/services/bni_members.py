@@ -67,15 +67,24 @@ def get_bni_verification_settings():
 		}
 
 
+def clear_bni_member_cache():
+	"""
+	Clears the in-memory Redis cache for BNI member validation.
+	Called whenever BNI members are added, updated, or deleted.
+	"""
+	try:
+		frappe.cache().delete_keys("bni_v2:*")
+	except Exception:
+		pass
+
+
 def is_valid_bni_member(mobile_no=None, email=None):
 	"""
-	Dynamically checks whether a given mobile number and/or email belongs to a registered BNI Member
-	based on Admin settings in ConnectFest Settings (bni_check_mobile & bni_check_email):
-	- Mobile Only ON: checks only mobile_no.
-	- Email Only ON: checks only email.
-	- Both ON: if both mobile_no and email are supplied, checks that BOTH match the same BNI member record;
-	           if only one is supplied, checks that field.
-	- Both OFF: returns (False, None) / restriction disabled.
+	High-Performance Optimized BNI membership verification:
+	1. In-memory Redis Cache: Returns instant sub-millisecond answer if previously checked.
+	2. Indexed DB Seek (O(1)):
+	   - Uses exact Primary Key / indexed `mobile_no` / `email` lookups without wrapping
+	     columns in SQL functions (avoiding full table scans even with 10k - 100k+ rows).
 	Returns: (is_valid: bool, member_doc: dict or None)
 	"""
 	cfg = get_bni_verification_settings()
@@ -92,28 +101,43 @@ def is_valid_bni_member(mobile_no=None, email=None):
 	use_mob = clean_mob if (check_mob and clean_mob and len(clean_mob) >= 8) else ""
 	use_email = clean_email if (check_email and clean_email) else ""
 
+	# Check Redis Cache first (Microsecond response)
+	cache_key = f"bni_v2:{use_mob}:{use_email}"
+	try:
+		cached = frappe.cache().get_value(cache_key)
+		if cached is not None and isinstance(cached, dict):
+			return cached.get("valid", False), cached.get("doc")
+	except Exception:
+		pass
+
+	# Candidate phone numbers for index matching (exact matches utilize DB indexes directly)
+	mob_candidates = [use_mob]
+	if use_mob:
+		mob_candidates.extend([f"+91{use_mob}", f"91{use_mob}", f"0{use_mob}"])
+	mob_candidates = tuple(set(mob_candidates))
+
+	members = []
 	if check_mob and check_email:
 		if use_mob and use_email:
-			# Strict match: Both mobile number AND email must match the same BNI Member record
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 				FROM `tabConnectFest BNI Member`
-				WHERE (mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s)
-				  AND LOWER(TRIM(email)) = %(email)s
+				WHERE (name IN %(candidates)s OR mobile_no IN %(candidates)s)
+				  AND email = %(email)s
 				LIMIT 1
-			""", {"mob": use_mob, "email": use_email}, as_dict=True)
+			""", {"candidates": mob_candidates, "email": use_email}, as_dict=True)
 		elif use_mob:
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 				FROM `tabConnectFest BNI Member`
-				WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+				WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
 				LIMIT 1
-			""", {"mob": use_mob}, as_dict=True)
+			""", {"candidates": mob_candidates}, as_dict=True)
 		elif use_email:
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 				FROM `tabConnectFest BNI Member`
-				WHERE LOWER(TRIM(email)) = %(email)s
+				WHERE email = %(email)s
 				LIMIT 1
 			""", {"email": use_email}, as_dict=True)
 		else:
@@ -124,9 +148,9 @@ def is_valid_bni_member(mobile_no=None, email=None):
 		members = frappe.db.sql("""
 			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 			FROM `tabConnectFest BNI Member`
-			WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+			WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
 			LIMIT 1
-		""", {"mob": use_mob}, as_dict=True)
+		""", {"candidates": mob_candidates}, as_dict=True)
 	else:
 		# Email Only Check
 		if not use_email:
@@ -134,13 +158,20 @@ def is_valid_bni_member(mobile_no=None, email=None):
 		members = frappe.db.sql("""
 			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
 			FROM `tabConnectFest BNI Member`
-			WHERE LOWER(TRIM(email)) = %(email)s
+			WHERE email = %(email)s
 			LIMIT 1
 		""", {"email": use_email}, as_dict=True)
 
-	if members:
-		return True, members[0]
-	return False, None
+	res_valid = bool(members)
+	res_doc = members[0] if members else None
+
+	# Save in Redis cache with 30 minutes TTL
+	try:
+		frappe.cache().set_value(cache_key, {"valid": res_valid, "doc": res_doc}, expires_in_sec=1800)
+	except Exception:
+		pass
+
+	return res_valid, res_doc
 
 
 def admin_create_bni_member(**kwargs):
@@ -645,6 +676,8 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None
 
 		# Ultra-fast, optimized complete deletion
 		frappe.db.sql("DELETE FROM `tabConnectFest BNI Member`")
+		frappe.db.sql("UPDATE `tabConnectFest Registration` SET is_bni_member = 0")
+		clear_bni_member_cache()
 		frappe.clear_cache(doctype="ConnectFest BNI Member")
 		frappe.db.commit()
 
@@ -798,10 +831,11 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 		surcharge_amt = 0.0
 		final_base_price = original_price
 	else:
+		# Strictly verify against ConnectFest BNI Member DocType!
 		if clean_mob or user_email:
 			is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
-		elif is_bni_member is not None:
-			is_bni = bool(cint(is_bni_member))
+		else:
+			is_bni = False
 
 		if is_bni:
 			surcharge_pct = 0.0
@@ -882,10 +916,15 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	else:
 		new_val = 1 if curr else 0
 
-	# If both mobile and email checks are OFF -> automatically turn CRN restriction OFF
-	if new_check_mob == 0 and new_check_email == 0:
-		new_val = 0
-	elif has_val and new_val == 1 and new_check_mob == 0 and new_check_email == 0:
+	# If user requested to turn ON CRN restriction (new_val == 1) but both checks were OFF in settings,
+	# and user did NOT explicitly pass them as OFF in this request, automatically enable both checks!
+	if new_val == 1 and new_check_mob == 0 and new_check_email == 0:
+		if raw_mob_chk is None and raw_email_chk is None:
+			new_check_mob = 1
+			new_check_email = 1
+		else:
+			new_val = 0
+	elif new_check_mob == 0 and new_check_email == 0:
 		new_val = 0
 
 	frappe.db.set_single_value("ConnectFest Settings", "crn_bni_only", new_val)

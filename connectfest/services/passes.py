@@ -5,6 +5,7 @@ from connectfest.services.common import (
 	VISITOR_CACHE_PREFIX,
 	extract_request_data,
 	get_cached_record,
+	safe_str,
 )
 
 
@@ -21,15 +22,20 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 	# Check sid in headers/body if sess_user is Guest
 	if not sess_user or sess_user == "Guest":
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe, "request") and frappe.request else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+		req_sid = None
+		if hasattr(frappe, "request") and frappe.request:
+			try:
+				req_sid = (
+					frappe.get_request_header("sid")
+					or frappe.get_request_header("X-Frappe-Session-Id")
+					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
+				)
+				if not req_sid:
+					auth_hdr = frappe.get_request_header("Authorization", "")
+					if auth_hdr.startswith("Bearer "):
+						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+			except Exception:
+				pass
 		if req_sid and req_sid != "Guest":
 			try:
 				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
@@ -58,6 +64,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	code = (pass_code or data.get("pass_code") or data.get("qr_code") or data.get("code") or data.get("registration_id") or "").strip()
 	scan_day = (day or data.get("day") or data.get("scan_day") or data.get("which_day") or data.get("current_day") or "").strip()
 	mob_scan = (data.get("mobile_no") or data.get("phone") or data.get("mobile") or "").strip()
+	email_scan = safe_str(kwargs.get("email") or data.get("email") or data.get("user_email") or data.get("mail")).strip().lower()
 
 	if not scan_day:
 		now_dt = now_datetime()
@@ -67,9 +74,9 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		elif date_str == "2027-02-20":
 			scan_day = "Day 1"
 
-	if not code and not mob_scan:
+	if not code and not mob_scan and not email_scan:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "pass_code or mobile_no is required"}
+		return {"status": "error", "message": "pass_code, mobile_no, or email is required"}
 
 	if code and ":" in code:
 		parts = code.split(":")
@@ -105,6 +112,14 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			WHERE mobile_no = %(mob)s
 			ORDER BY creation DESC LIMIT 1
 		""", {"mob": mob_scan}, as_dict=True)
+
+	if not visitor and email_scan:
+		visitor = frappe.db.sql("""
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			FROM `tabConnectFest Visitor Registration`
+			WHERE email = %(email)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email_scan}, as_dict=True)
 
 	if visitor:
 		rec = visitor[0]
@@ -183,6 +198,16 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			ORDER BY creation DESC LIMIT 1
 		""", {"mob": mob_scan}, as_dict=True)
 
+	if not bni_event and email_scan:
+		bni_event = frappe.db.sql("""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       chapter_name, region_name, location, industry, segment, event_name,
+			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE email = %(email)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email_scan}, as_dict=True)
+
 	if bni_event:
 		rec = bni_event[0]
 
@@ -235,6 +260,24 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			WHERE registration_id = %(code)s OR name = %(code)s
 			LIMIT 1
 		""", {"code": code}, as_dict=True)
+
+	if not exhibitor and mob_scan:
+		exhibitor = frappe.db.sql("""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       stall_number, stall_category, payment_status, status
+			FROM `tabConnectFest Registration`
+			WHERE mobile_no = %(mob)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"mob": mob_scan}, as_dict=True)
+
+	if not exhibitor and email_scan:
+		exhibitor = frappe.db.sql("""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       stall_number, stall_category, payment_status, status
+			FROM `tabConnectFest Registration`
+			WHERE email = %(email)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email_scan}, as_dict=True)
 
 	if exhibitor:
 		rec = exhibitor[0]
@@ -300,15 +343,20 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 
 	# Resolve user from sid if Guest
 	if not sess_user or sess_user == "Guest":
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe, "request") and frappe.request else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+		req_sid = None
+		if hasattr(frappe, "request") and frappe.request:
+			try:
+				req_sid = (
+					frappe.get_request_header("sid")
+					or frappe.get_request_header("X-Frappe-Session-Id")
+					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
+				)
+				if not req_sid:
+					auth_hdr = frappe.get_request_header("Authorization", "")
+					if auth_hdr.startswith("Bearer "):
+						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+			except Exception:
+				pass
 		if req_sid and req_sid != "Guest":
 			try:
 				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))

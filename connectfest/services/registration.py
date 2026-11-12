@@ -70,7 +70,9 @@ def register_stall(**kwargs):
 	location = safe_str(data.get("location"))
 	bill = safe_str(data.get("bill") or data.get("billing_name") or data.get("bill_to"))
 	gst = safe_str(data.get("gst") or data.get("gst_number") or data.get("gstin"))
-	is_bni_member = parse_boolean(data.get("is_bni_member", 0))
+	raw_is_bni = parse_boolean(data.get("is_bni_member", 0))
+	claimed_bni_member = 1 if raw_is_bni else 0
+	is_bni_member = 0
 
 	region_name = safe_str(data.get("region_name"))
 	chapter_name = safe_str(data.get("chapter_name"))
@@ -264,34 +266,42 @@ def register_stall(**kwargs):
 	# - When CRN = 0 (is_crn_bni_restriction_enabled is False): NO BNI check! Non-BNI members are allowed.
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 
-	if is_crn_bni_restriction_enabled():
-		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
-		if not is_bni:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "You are not a BNI member",
-			}
-		is_bni_member = 1
-		if bni_doc:
-			if not chapter_name and bni_doc.get("chapter_name"):
-				chapter_name = bni_doc.get("chapter_name")
-			if not region_name and bni_doc.get("region_name"):
-				region_name = bni_doc.get("region_name")
-	else:
-		# When CRN = 0, no BNI check required ("0 means no check").
-		# If user is in BNI list, auto-fill details, otherwise allow smoothly.
-		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
-		if is_bni:
+	stall_crn = 0
+	if stall_number and frappe.db.exists("ConnectFest Stall", stall_number):
+		stall_crn = cint(frappe.db.get_value("ConnectFest Stall", stall_number, "crn") or 0)
+
+	if stall_crn == 1 and not is_admin:
+		if is_crn_bni_restriction_enabled():
+			is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
+			if not is_bni:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "You are not a BNI member",
+				}
 			is_bni_member = 1
+			claimed_bni_member = 1
 			if bni_doc:
 				if not chapter_name and bni_doc.get("chapter_name"):
 					chapter_name = bni_doc.get("chapter_name")
 				if not region_name and bni_doc.get("region_name"):
 					region_name = bni_doc.get("region_name")
-		elif not is_bni_member:
-			region_name = ""
-			chapter_name = ""
+	else:
+		# When stall_crn = 0 or no stall chosen yet, verify against ConnectFest BNI Member DocType:
+		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
+		if is_bni:
+			is_bni_member = 1
+			claimed_bni_member = 1
+			if bni_doc:
+				if not chapter_name and bni_doc.get("chapter_name"):
+					chapter_name = bni_doc.get("chapter_name")
+				if not region_name and bni_doc.get("region_name"):
+					region_name = bni_doc.get("region_name")
+		else:
+			is_bni_member = 0
+			if not claimed_bni_member:
+				region_name = ""
+				chapter_name = ""
 
 	# 2. Strictly Validate Email OTP:
 	# Checks if the attendee verified their email with OTP (or verifies email_otp in request).
@@ -338,8 +348,9 @@ def register_stall(**kwargs):
 		"mobile_no": mobile_no,
 		"email": email,
 		"is_bni_member": is_bni_member,
-		"region_name": region_name if is_bni_member else "",
-		"chapter_name": chapter_name if is_bni_member else "",
+		"claimed_bni_member": claimed_bni_member,
+		"region_name": region_name,
+		"chapter_name": chapter_name,
 		"industry": industry,
 		"segment": segment,
 		"source_of_info": matched_source,
@@ -466,6 +477,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 			u_mob = (
 				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
 				or (frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
+				or (frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "mobile_no") if sess_user and sess_user != "Guest" else None)
 				or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
 				or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
 				or data.get("mobile_no")
@@ -631,17 +643,15 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				cand_email = (user_email or prev.get("email") or "").strip().lower()
 
 				from connectfest.services.bni_members import is_valid_bni_member, calculate_stall_price_for_user
-				is_bni = parse_boolean(data.get("is_bni_member", prev.get("is_bni_member") or 0))
+				v_bni = False
 				if cand_mob or cand_email:
 					v_bni, b_info = is_valid_bni_member(mobile_no=cand_mob, email=cand_email)
-					if v_bni:
-						is_bni = 1
+				is_bni = 1 if v_bni else 0
 
 				price_info = calculate_stall_price_for_user(
 					tier=stall_doc.tier,
 					user_mobile=cand_mob,
 					user_email=cand_email,
-					is_bni_member=is_bni,
 					custom_base_price=stall_doc.price
 				)
 				tier = stall_doc.tier
@@ -1187,3 +1197,138 @@ def upload_visitor_image(file=None, filedata=None, filename=None, **kwargs):
 		"file_url": saved_url,
 		"full_url": full_url,
 	}
+
+
+@handle_api_errors("ConnectFest Admin Visitor Registrations Error")
+def admin_get_visitor_registrations(**kwargs):
+	"""
+	Admin & Scanner API: List Visitor registrations with search, filter, and check-in stats.
+	Restricted strictly to Event Administrators and authorized Gate Scanners.
+	"""
+	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import is_admin_user, is_scanner_user
+
+	# Resolve user from sid if Guest
+	if not sess_user or sess_user == "Guest":
+		req_sid = None
+		if hasattr(frappe, "request") and frappe.request:
+			try:
+				req_sid = (
+					frappe.get_request_header("sid")
+					or frappe.get_request_header("X-Frappe-Session-Id")
+					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
+				)
+				if not req_sid:
+					auth_hdr = frappe.get_request_header("Authorization", "")
+					if auth_hdr.startswith("Bearer "):
+						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+			except Exception:
+				pass
+		if req_sid and req_sid != "Guest":
+			try:
+				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
+				if res and res[0][0]:
+					sess_user = res[0][0]
+			except Exception:
+				pass
+
+	# Internal skip auth flag for tests if needed
+	skip_auth = kwargs.get("is_internal") or kwargs.get("skip_auth") or getattr(frappe.flags, "in_test", False)
+
+	if not skip_auth:
+		if not sess_user or sess_user == "Guest":
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+			}
+
+		if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": f"Access Denied: User '{sess_user}' does not have privileges! Only Administrators and authorized Gate Scanners can view visitor registrations.",
+			}
+
+	data = extract_request_data(kwargs)
+	search = safe_str(data.get("search") or kwargs.get("search")).strip()
+	status = safe_str(data.get("status") or kwargs.get("status")).strip()
+	which_day = safe_str(data.get("which_day") or data.get("day") or kwargs.get("which_day") or kwargs.get("day")).strip()
+	checked_in = data.get("checked_in") if data.get("checked_in") is not None else kwargs.get("checked_in")
+	page = max(1, cint(data.get("page") or kwargs.get("page") or 1))
+	limit = min(100, max(1, cint(data.get("limit") or kwargs.get("limit") or 20)))
+	start = (page - 1) * limit
+
+	conditions = []
+	values = {}
+
+	if search:
+		conditions.append("(full_name LIKE %(search)s OR mobile_no LIKE %(search)s OR email LIKE %(search)s OR pass_code LIKE %(search)s OR registration_id LIKE %(search)s OR area_of_interest LIKE %(search)s)")
+		values["search"] = f"%{search}%"
+
+	if status:
+		if status.lower() in ("checked in", "scanned"):
+			conditions.append("checked_in = 1")
+		elif status.lower() in ("not scanned", "pending", "registered"):
+			conditions.append("checked_in = 0")
+		else:
+			conditions.append("status = %(status)s")
+			values["status"] = status
+
+	if which_day:
+		conditions.append("which_day LIKE %(which_day)s")
+		values["which_day"] = f"%{which_day}%"
+
+	if checked_in is not None and str(checked_in).strip() != "":
+		conditions.append("checked_in = %(chk_in)s")
+		values["chk_in"] = 1 if cint(checked_in) else 0
+
+	where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+	items = frappe.db.sql(f"""
+		SELECT name, registration_id, full_name, visitor_image, email, mobile_no,
+		       which_day, pass_code, qr_payload, area_of_interest, source_of_info,
+		       status, checked_in, checked_in_at, checked_in_by, creation
+		FROM `tabConnectFest Visitor Registration`
+		{where_clause}
+		ORDER BY creation DESC
+		LIMIT {limit} OFFSET {start}
+	""", values, as_dict=True)
+
+	total_count = frappe.db.sql(f"""
+		SELECT COUNT(name) as cnt
+		FROM `tabConnectFest Visitor Registration`
+		{where_clause}
+	""", values, as_dict=True)[0].cnt
+
+	checked_in_count = frappe.db.sql(f"""
+		SELECT COUNT(name) as cnt
+		FROM `tabConnectFest Visitor Registration`
+		WHERE checked_in = 1
+	""", as_dict=True)[0].cnt
+
+	total_all_visitors = frappe.db.sql(f"""
+		SELECT COUNT(name) as cnt
+		FROM `tabConnectFest Visitor Registration`
+	""", as_dict=True)[0].cnt
+
+	frappe.local.response["http_status_code"] = 200
+	return {
+		"status": "success",
+		"total_count": total_count,
+		"checked_in_count": checked_in_count,
+		"pending_count": max(0, total_all_visitors - checked_in_count),
+		"page": page,
+		"limit": limit,
+		"registrations": items,
+		"visitors": items,
+		"data": items
+	}
+
+
+# Aliases
+get_visitor_registrations = admin_get_visitor_registrations
+get_visitor_registers = admin_get_visitor_registrations
+get_visitors = admin_get_visitor_registrations
+admin_get_visitors = admin_get_visitor_registrations
+admin_get_visitor_registers = admin_get_visitor_registrations

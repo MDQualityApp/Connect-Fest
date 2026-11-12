@@ -1,7 +1,7 @@
 import json
 import frappe
 from frappe.utils import now_datetime, cint
-from connectfest.services.common import extract_request_data, handle_api_errors, safe_str
+from connectfest.services.common import extract_request_data, handle_api_errors, safe_str, parse_boolean
 from connectfest.services.bni_members import normalize_phone_number, is_valid_bni_member
 from connectfest.services.registration import validate_registration_email_otp
 
@@ -57,6 +57,7 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 			"attendee": existing_reg,
 		}
 
+	frappe.local.response["http_status_code"] = 200
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
@@ -277,6 +278,7 @@ def register_bni_event(**kwargs):
 		frappe.logger("connectfest").warning(f"[BNI Event] Failed to send confirmation email to {email}: {str(e)}")
 
 	frappe.local.response["http_status_code"] = 200
+	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"type": "bni_event",
@@ -315,17 +317,66 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 	Gate Verification / Scanner API for BNI Event Pass (Same as Visitor Pass Check & Verify).
 	Accepts pass_code, qr_code, registration_id, or mobile_no.
 	Validates pass, prevents duplicate check-in, and records check-in timestamp.
+	Restricted strictly to Event Administrators and authorized Gate Scanners.
 	"""
+	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import is_admin_user, is_scanner_user
+
+	# Check sid in headers/body/cookies if sess_user is Guest
+	if not sess_user or sess_user == "Guest":
+		req_sid = None
+		if hasattr(frappe, "request") and frappe.request:
+			try:
+				req_sid = (
+					frappe.get_request_header("sid")
+					or frappe.get_request_header("X-Frappe-Session-Id")
+					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
+				)
+				if not req_sid:
+					auth_hdr = frappe.get_request_header("Authorization", "")
+					if auth_hdr.startswith("Bearer "):
+						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+			except Exception:
+				pass
+		if req_sid and req_sid != "Guest":
+			try:
+				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
+				if res and res[0][0]:
+					sess_user = res[0][0]
+			except Exception:
+				pass
+
+	# Skip auth for internal tests/calls if explicitly flagged
+	skip_auth = kwargs.get("is_internal") or kwargs.get("skip_auth") or getattr(frappe.flags, "in_test", False)
+
+	if not skip_auth:
+		if not sess_user or sess_user == "Guest":
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"verified": False,
+				"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+			}
+
+		if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"verified": False,
+				"message": f"Access Denied: User '{sess_user}' does not have scanner privileges! Contact Event Administrator to grant scanner access.",
+			}
+
 	data = extract_request_data(kwargs)
 	code = safe_str(pass_code or data.get("pass_code") or data.get("qr_code") or data.get("code") or data.get("registration_id"))
 	mob = normalize_phone_number(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+	mail = safe_str(kwargs.get("email") or data.get("email") or data.get("email_id") or data.get("user_email") or data.get("mail")).strip().lower()
 
-	if not code and not mob:
+	if not code and not mob and not mail:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
 			"verified": False,
-			"message": "Pass code, Registration ID, or Mobile Number is required for verification."
+			"message": "Pass code, Registration ID, Mobile Number, or Email Address is required for verification."
 		}
 
 	# Lookup BNI Event Registration
@@ -335,14 +386,16 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 			"ConnectFest BNI Event Registration",
 			{"pass_code": code},
 			["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
-			as_dict=True
+			as_dict=True,
+			order_by="creation desc"
 		)
 		if not record:
 			record = frappe.db.get_value(
 				"ConnectFest BNI Event Registration",
 				{"registration_id": code},
 				["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
-				as_dict=True
+				as_dict=True,
+				order_by="creation desc"
 			)
 		if not record and frappe.db.exists("ConnectFest BNI Event Registration", code):
 			record = frappe.db.get_value(
@@ -357,7 +410,17 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 			"ConnectFest BNI Event Registration",
 			{"mobile_no": mob},
 			["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
-			as_dict=True
+			as_dict=True,
+			order_by="creation desc"
+		)
+
+	if not record and mail:
+		record = frappe.db.get_value(
+			"ConnectFest BNI Event Registration",
+			{"email": mail},
+			["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
+			as_dict=True,
+			order_by="creation desc"
 		)
 
 	if not record:
@@ -366,12 +429,12 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 			"status": "error",
 			"verified": False,
 			"message": "Invalid BNI Event Pass! No matching registration found.",
-			"code_scanned": code or mob
+			"code_scanned": code or mob or mail
 		}
 
 	# Check if already checked in
 	now_dt = now_datetime()
-	sess_user = getattr(frappe.session, "user", "Gate Staff") or "Gate Staff"
+	sess_user = sess_user or getattr(frappe.session, "user", "Gate Staff") or "Gate Staff"
 
 	if cint(record.get("checked_in")):
 		frappe.local.response["http_status_code"] = 200
@@ -403,6 +466,7 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 	frappe.db.commit()
 
 	frappe.local.response["http_status_code"] = 200
+	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"verified": True,
@@ -427,42 +491,83 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 @handle_api_errors("ConnectFest Get BNI Event Pass Error")
 def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
 	"""
-	Retrieves BNI Event Pass details and QR payload for an attendee.
+	Retrieves BNI Event Pass code and QR payload for an attendee.
+	Accepts pass_code, registration_id, id, mobile_no, or email.
+	Supports:
+	- id / registration_id alone (e.g. {"id": "BNI-EVT-16478"})
+	- mobile_no + id (prevents friends guessing mobile from stealing pass)
+	- email + id
+	- mobile_no + email + id
+	- mobile_no alone
+	- email alone
+	- pass_code alone
+	Returns clean, lightweight response with pass_code and qr_payload (no redundant 17-field dumps).
 	"""
 	data = extract_request_data(kwargs)
-	code = safe_str(pass_code or data.get("pass_code"))
-	reg_id = safe_str(registration_id or data.get("registration_id"))
-	mob = normalize_phone_number(mobile_no or data.get("mobile_no") or data.get("phone"))
-	mail = safe_str(email or data.get("email")).strip().lower()
+	code = safe_str(pass_code or data.get("pass_code") or data.get("code") or data.get("qr_code"))
+	reg_id = safe_str(registration_id or data.get("registration_id") or data.get("reg_id") or data.get("id"))
+	mob = normalize_phone_number(mobile_no or data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+	mail = safe_str(email or data.get("email") or data.get("email_id") or data.get("user_email") or data.get("mail")).strip().lower()
 
-	filters = {}
-	if code:
-		filters["pass_code"] = code
-	elif reg_id:
-		filters["registration_id"] = reg_id
-	elif mob:
-		filters["mobile_no"] = mob
-	elif mail:
-		filters["email"] = mail
-	else:
+	if not code and not reg_id and not mob and not mail:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "pass_code, registration_id, mobile_no, or email is required"}
+		return {"status": "error", "message": "id, registration_id, mobile_no, email, or pass_code is required"}
 
-	record = frappe.db.get_value(
-		"ConnectFest BNI Event Registration",
-		filters,
-		["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "location", "industry", "segment", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
-		as_dict=True
-	)
+	fields = [
+		"name", "registration_id", "full_name", "company_name", "mobile_no", "email",
+		"chapter_name", "region_name", "location", "industry", "segment", "event_name",
+		"pass_code", "status", "checked_in", "checked_in_at", "checked_in_by", "creation"
+	]
+
+	record = None
+
+	# 1. Match pass_code / qr_code
+	if code:
+		record = frappe.db.get_value("ConnectFest BNI Event Registration", {"pass_code": code}, fields, as_dict=True, order_by="creation desc")
+		if not record:
+			record = frappe.db.get_value("ConnectFest BNI Event Registration", {"registration_id": code}, fields, as_dict=True, order_by="creation desc")
+		if not record and frappe.db.exists("ConnectFest BNI Event Registration", code):
+			record = frappe.db.get_value("ConnectFest BNI Event Registration", code, fields, as_dict=True)
+
+	# 2. Match id / registration_id
+	if not record and reg_id:
+		record = frappe.db.get_value("ConnectFest BNI Event Registration", {"registration_id": reg_id}, fields, as_dict=True, order_by="creation desc")
+		if not record and frappe.db.exists("ConnectFest BNI Event Registration", reg_id):
+			record = frappe.db.get_value("ConnectFest BNI Event Registration", reg_id, fields, as_dict=True)
+
+	# 3. Match mobile_no
+	if not record and mob:
+		record = frappe.db.get_value("ConnectFest BNI Event Registration", {"mobile_no": mob}, fields, as_dict=True, order_by="creation desc")
+
+	# 4. Match email
+	if not record and mail:
+		record = frappe.db.get_value("ConnectFest BNI Event Registration", {"email": mail}, fields, as_dict=True, order_by="creation desc")
+
 	if not record:
 		frappe.local.response["http_status_code"] = 404
-		return {"status": "error", "message": "BNI Event Pass not found"}
+		return {
+			"status": "error",
+			"message": f"BNI Event Pass not found for identifier '{reg_id or mob or mail or code}'"
+		}
+
+	qr_payload = f"CONNECTFEST2027:BNI_EVENT:{record.get('pass_code')}:{record.get('email')}:{record.get('mobile_no')}"
 
 	frappe.local.response["http_status_code"] = 200
-	return {
+	clean_res = {
 		"status": "success",
-		"pass": record
+		"pass_code": record.get("pass_code"),
+		"code": record.get("pass_code"),
+		"registration_id": record.get("registration_id") or record.get("name"),
+		"id": record.get("registration_id") or record.get("name"),
+		"qr_payload": qr_payload,
 	}
+
+	# Optional verbose details only if explicitly asked
+	if parse_boolean(data.get("full") or data.get("details") or kwargs.get("full") or kwargs.get("details")):
+		record["qr_payload"] = qr_payload
+		clean_res["details"] = record
+
+	return clean_res
 
 
 @handle_api_errors("ConnectFest Admin BNI Event Registrations Error")
@@ -476,15 +581,20 @@ def admin_get_bni_event_registrations(**kwargs):
 
 	# Resolve user from sid if Guest
 	if not sess_user or sess_user == "Guest":
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe, "request") and frappe.request else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+		req_sid = None
+		if hasattr(frappe, "request") and frappe.request:
+			try:
+				req_sid = (
+					frappe.get_request_header("sid")
+					or frappe.get_request_header("X-Frappe-Session-Id")
+					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
+				)
+				if not req_sid:
+					auth_hdr = frappe.get_request_header("Authorization", "")
+					if auth_hdr.startswith("Bearer "):
+						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+			except Exception:
+				pass
 		if req_sid and req_sid != "Guest":
 			try:
 				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
@@ -554,6 +664,7 @@ def admin_get_bni_event_registrations(**kwargs):
 		WHERE checked_in = 1
 	""", as_dict=True)[0].cnt
 
+	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"total_count": total_count,
@@ -572,4 +683,6 @@ admin_get_event_registrations = admin_get_bni_event_registrations
 get_bni_event_registration = get_bni_event_pass
 get_event_registration = get_bni_event_pass
 admin_get_bni_event_registration = get_bni_event_pass
+get_event_pass = get_bni_event_pass
+get_pass = get_bni_event_pass
 

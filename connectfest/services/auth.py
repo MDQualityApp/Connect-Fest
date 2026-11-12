@@ -400,7 +400,7 @@ def get_current_user_profile(**kwargs):
 	# Fetch all stall booking details (Exhibitor)
 	stalls_raw = frappe.db.sql("""
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
-		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
+		       is_bni_member, claimed_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
 		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation,
 		       bill, gst
@@ -475,12 +475,11 @@ def get_current_user_profile(**kwargs):
 	segment = (primary_reg.segment if primary_reg else "") or ""
 
 	# Dynamic BNI Membership Check: 1 if current user is verified BNI member, else 0
+	# STRICTLY checked ONLY against 'ConnectFest BNI Member' DocType!
 	from connectfest.services.bni_members import is_valid_bni_member, get_non_bni_extra_percentage
 	user_is_bni = False
 	if user_mobile or target_user:
 		user_is_bni, _ = is_valid_bni_member(mobile_no=user_mobile, email=target_user)
-	if not user_is_bni and primary_reg and cint(primary_reg.get("is_bni_member")):
-		user_is_bni = True
 	is_bni_member = 1 if user_is_bni else 0
 
 	# non_bni_extra_percentage: 0.0 if user is BNI member (no extra surcharge), else admin configured % (e.g. 20.0)
@@ -532,6 +531,7 @@ def get_current_user_profile(**kwargs):
 			"industry": sb.industry or industry,
 			"segment": sb.segment or segment,
 			"is_bni_member": is_bni_member,
+			"claimed_bni_member": cint(sb.get("claimed_bni_member", 0)),
 			"region_name": sb.region_name or "",
 			"chapter_name": sb.chapter_name or "",
 			"source_of_info": sb.source_of_info or "",
@@ -598,6 +598,7 @@ def get_current_user_profile(**kwargs):
 		"industry": industry,
 		"segment": segment,
 		"is_bni_member": is_bni_member,
+		"claimed_bni_member": cint(primary_reg.get("claimed_bni_member", 0)) if primary_reg else 0,
 		"non_bni_extra_percentage": non_bni_extra_percentage,
 		"region_name": region_name,
 		"chapter_name": chapter_name,
@@ -1807,9 +1808,16 @@ def update_profile(**kwargs):
 			updates_exhibitor["segment"] = clean_seg
 			updated_fields["segment"] = clean_seg
 
-		# BNI Details
+		# BNI Details - Strictly verified ONLY against 'ConnectFest BNI Member' DocType!
 		if "is_bni_member" in data:
-			bni_val = 1 if parse_boolean(data.get("is_bni_member")) else 0
+			raw_val = 1 if parse_boolean(data.get("is_bni_member")) else 0
+			updates_exhibitor["claimed_bni_member"] = raw_val
+			updated_fields["claimed_bni_member"] = bool(raw_val)
+
+			from connectfest.services.bni_members import is_valid_bni_member
+			chk_mob = current_mob or frappe.db.get_value("ConnectFest Registration", {"email": target_user}, "mobile_no")
+			is_bni, _ = is_valid_bni_member(mobile_no=chk_mob, email=target_user)
+			bni_val = 1 if is_bni else 0
 			updates_exhibitor["is_bni_member"] = bni_val
 			updated_fields["is_bni_member"] = bool(bni_val)
 

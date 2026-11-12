@@ -19,6 +19,22 @@ class ConnectFestRegistration(Document):
 		self.set_pricing()
 
 	def validate(self):
+		# Authoritative dynamic verification against ConnectFest BNI Member
+		if self.mobile_no or self.email:
+			try:
+				from connectfest.services.bni_members import is_valid_bni_member
+				is_bni, bni_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email)
+				self.is_bni_member = 1 if is_bni else 0
+				if is_bni:
+					self.claimed_bni_member = 1
+					if bni_doc:
+						if not self.chapter_name and bni_doc.get("chapter_name"):
+							self.chapter_name = bni_doc.get("chapter_name")
+						if not self.region_name and bni_doc.get("region_name"):
+							self.region_name = bni_doc.get("region_name")
+			except Exception:
+				pass
+
 		# Prevent cross-account conflict, but allow multiple stall bookings for the same user
 		if self.email or self.mobile_no:
 			existing = frappe.db.sql("""

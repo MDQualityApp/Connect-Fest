@@ -285,6 +285,12 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 				or data.get("email")
 			)
 			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")
+			if is_bni and target_reg and cint(record.get("is_bni_member")) != 1:
+				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 1, update_modified=False)
+			elif not is_bni and target_reg and cint(record.get("is_bni_member")) == 1:
+				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 0, update_modified=False)
+
 			if not is_bni:
 				frappe.local.response["http_status_code"] = 400
 				return {
@@ -879,6 +885,12 @@ def preview_payment(**kwargs):
 				or data.get("email")
 			)
 			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")
+			if is_bni and target_reg and cint(record.get("is_bni_member")) != 1:
+				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 1, update_modified=False)
+			elif not is_bni and target_reg and cint(record.get("is_bni_member")) == 1:
+				frappe.db.set_value("ConnectFest Registration", target_reg, "is_bni_member", 0, update_modified=False)
+
 			if not is_bni:
 				frappe.local.response["http_status_code"] = 400
 				return {

@@ -29,3 +29,31 @@ class ConnectFestBNIMember(Document):
 		if not cleaned or len(cleaned) != 10:
 			frappe.throw("A valid 10-digit Mobile Number is required for BNI Member.")
 		self.mobile_no = cleaned
+
+	def after_insert(self):
+		self.sync_registrations(is_bni=1)
+
+	def on_update(self):
+		self.sync_registrations(is_bni=1)
+
+	def on_trash(self):
+		self.sync_registrations(is_bni=0)
+
+	def sync_registrations(self, is_bni=1):
+		try:
+			from connectfest.services.bni_members import clear_bni_member_cache
+			clear_bni_member_cache()
+			if self.mobile_no:
+				frappe.db.sql("""
+					UPDATE `tabConnectFest Registration`
+					SET is_bni_member = %(is_bni)s
+					WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+				""", {"mob": self.mobile_no, "is_bni": is_bni})
+			if self.email:
+				frappe.db.sql("""
+					UPDATE `tabConnectFest Registration`
+					SET is_bni_member = %(is_bni)s
+					WHERE email = %(email)s
+				""", {"email": self.email, "is_bni": is_bni})
+		except Exception:
+			pass
