@@ -140,6 +140,11 @@ from connectfest.services.notifications import (
 	send_payment_failure_email as _send_payment_failure_email,
 	resend_booking_email as _resend_booking_email,
 )
+from connectfest.services.wati import (
+	resend_booking_whatsapp as _resend_booking_whatsapp,
+	send_booking_confirmation_whatsapp as _send_booking_confirmation_whatsapp,
+	test_wati_connection as _test_wati_connection,
+)
 from connectfest.services.reports import (
 	admin_export_bookings_csv as _admin_export_bookings_csv,
 	admin_export_bookings_pdf as _admin_export_bookings_pdf,
@@ -832,6 +837,24 @@ def resend_booking_email(registration_id=None, email=None, **kwargs):
 def admin_resend_booking_email(registration_id=None, email=None, **kwargs):
 	"""Admin alias to resend booking confirmation email."""
 	return _resend_booking_email(registration_id=registration_id, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
+	"""Public / Attendee API: Resend booking confirmation WhatsApp message via WATI."""
+	return _resend_booking_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def send_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
+	"""Alias for resend_booking_whatsapp."""
+	return _resend_booking_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def test_wati_connection():
+	"""Testing utility to verify WATI API connection and approved templates."""
+	return _test_wati_connection()
 
 
 # ==============================================================================
