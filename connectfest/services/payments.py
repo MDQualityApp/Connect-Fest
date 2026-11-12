@@ -765,6 +765,7 @@ def preview_payment(**kwargs):
 	Stall Number is STRICTLY MANDATORY!
 	"""
 	data = extract_request_data(kwargs)
+	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
 	docname = safe_str(data.get("reference_docname") or data.get("registration_id") or data.get("docname"))
 	doctype = safe_str(data.get("reference_doctype") or data.get("doctype"), "ConnectFest Registration")
 	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number"))
@@ -834,7 +835,8 @@ def preview_payment(**kwargs):
 
 	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin)
 	from connectfest.services.auth import is_admin_user
-	if sess_user and sess_user != "Guest" and not is_admin_user(sess_user):
+	is_admin = is_admin_user(sess_user) if (sess_user and sess_user != "Guest") else False
+	if not is_internal and sess_user and sess_user != "Guest" and not is_admin:
 		rec_email = (record.get("email") or "").strip().lower()
 		rec_mob = (record.get("mobile_no") or "").strip()
 		sess_lower = sess_user.strip().lower()
@@ -861,7 +863,7 @@ def preview_payment(**kwargs):
 	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
 
 	# Strict BNI check for CRN 1 stall when admin restriction is enabled
-	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_internal:
+	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_internal and not is_admin:
 		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 		if is_crn_bni_restriction_enabled():
 			u_mob = (

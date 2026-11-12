@@ -452,6 +452,20 @@ def get_current_user_profile(**kwargs):
 
 	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls_raw else ("Visitor" if visitors_raw else "Attendee"))
 
+	# Resolve user_mobile if not already set on User doctype
+	if not user_mobile:
+		if stalls_raw and stalls_raw[0].get("mobile_no"):
+			user_mobile = stalls_raw[0].get("mobile_no").strip()
+		elif visitors_raw and visitors_raw[0].get("mobile_no"):
+			user_mobile = visitors_raw[0].get("mobile_no").strip()
+		else:
+			reg_m = (
+				frappe.db.get_value("ConnectFest Registration", {"email": target_user}, "mobile_no")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_user}, "mobile_no")
+			)
+			if reg_m:
+				user_mobile = reg_m.strip()
+
 	# Business details from primary registration
 	primary_reg = stalls_raw[0] if stalls_raw else None
 	company_name = (primary_reg.company_name if primary_reg else "") or ""
@@ -459,7 +473,19 @@ def get_current_user_profile(**kwargs):
 	location = (primary_reg.location if primary_reg else "") or ""
 	industry = (primary_reg.industry if primary_reg else "") or ""
 	segment = (primary_reg.segment if primary_reg else "") or ""
-	is_bni_member = bool(primary_reg.is_bni_member) if primary_reg else False
+
+	# Dynamic BNI Membership Check: 1 if current user is verified BNI member, else 0
+	from connectfest.services.bni_members import is_valid_bni_member, get_non_bni_extra_percentage
+	user_is_bni = False
+	if user_mobile or target_user:
+		user_is_bni, _ = is_valid_bni_member(mobile_no=user_mobile, email=target_user)
+	if not user_is_bni and primary_reg and cint(primary_reg.get("is_bni_member")):
+		user_is_bni = True
+	is_bni_member = 1 if user_is_bni else 0
+
+	# non_bni_extra_percentage: 0.0 if user is BNI member (no extra surcharge), else admin configured % (e.g. 20.0)
+	admin_extra_pct = get_non_bni_extra_percentage()
+	non_bni_extra_percentage = 0.0 if user_is_bni else admin_extra_pct
 	region_name = (primary_reg.region_name if primary_reg else "") or ""
 	chapter_name = (primary_reg.chapter_name if primary_reg else "") or ""
 	source_of_info = (primary_reg.source_of_info if primary_reg else "") or ""
@@ -505,7 +531,7 @@ def get_current_user_profile(**kwargs):
 			"gst": sb.get("gst") or "",
 			"industry": sb.industry or industry,
 			"segment": sb.segment or segment,
-			"is_bni_member": bool(sb.is_bni_member),
+			"is_bni_member": is_bni_member,
 			"region_name": sb.region_name or "",
 			"chapter_name": sb.chapter_name or "",
 			"source_of_info": sb.source_of_info or "",
@@ -572,6 +598,7 @@ def get_current_user_profile(**kwargs):
 		"industry": industry,
 		"segment": segment,
 		"is_bni_member": is_bni_member,
+		"non_bni_extra_percentage": non_bni_extra_percentage,
 		"region_name": region_name,
 		"chapter_name": chapter_name,
 		"source_of_info": source_of_info,

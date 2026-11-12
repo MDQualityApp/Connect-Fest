@@ -786,20 +786,31 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 		clean_mob = normalize_phone_number(clean_mob)
 
 	# Check BNI status
-	is_bni = False
-	if clean_mob or user_email:
-		is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
-	elif is_bni_member is not None:
-		is_bni = bool(cint(is_bni_member))
+	cfg = get_bni_verification_settings()
+	bni_check_active = cfg.get("check_mobile") or cfg.get("check_email")
 
-	if is_bni:
+	is_bni = False
+	if not bni_check_active:
+		# If Admin disabled both Mobile and Email BNI checks, verification is completely OFF:
+		# Everyone gets standard stall pricing with 0% extra surcharge!
+		is_bni = True
 		surcharge_pct = 0.0
 		surcharge_amt = 0.0
 		final_base_price = original_price
 	else:
-		surcharge_pct = get_non_bni_extra_percentage()
-		surcharge_amt = round(original_price * (surcharge_pct / 100.0), 2)
-		final_base_price = round(original_price + surcharge_amt, 2)
+		if clean_mob or user_email:
+			is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
+		elif is_bni_member is not None:
+			is_bni = bool(cint(is_bni_member))
+
+		if is_bni:
+			surcharge_pct = 0.0
+			surcharge_amt = 0.0
+			final_base_price = original_price
+		else:
+			surcharge_pct = get_non_bni_extra_percentage()
+			surcharge_amt = round(original_price * (surcharge_pct / 100.0), 2)
+			final_base_price = round(original_price + surcharge_amt, 2)
 
 	tax_amount = round(final_base_price * (gst_pct / 100.0), 2)
 	total_amount = round(final_base_price + tax_amount, 2)
