@@ -21,7 +21,8 @@
   "event_section",
   "event_name",
   "event_dates",
-  "event_venue"
+  "event_venue",
+  "crn_bni_only"
  ],
  "fields": [
   {
@@ -116,6 +117,12 @@
    "fieldname": "event_venue",
    "fieldtype": "Data",
    "label": "Venue"
+  },
+  {
+   "default": "1",
+   "fieldname": "crn_bni_only",
+   "fieldtype": "Check",
+   "label": "Strictly Restrict CRN Stalls to BNI Members"
   }
  ],
  "index_web_pages_for_search": 0,

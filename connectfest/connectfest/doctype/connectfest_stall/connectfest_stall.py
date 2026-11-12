@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 
-from frappe.utils import get_datetime, now_datetime
+from frappe.utils import get_datetime, now_datetime, cint
 
 
 class ConnectFestStall(Document):
@@ -86,6 +86,7 @@ class ConnectFestStall(Document):
 								"booked_by_company": None,
 								"booked_by_name": None,
 								"hold_expires_at": None,
+								"crn": cint(getattr(self, "crn", 0) or 0),
 							}
 						)
 					except Exception:
@@ -108,6 +109,7 @@ class ConnectFestStall(Document):
 					"booked_by_company": self.booked_by_company,
 					"booked_by_name": self.booked_by_name,
 					"hold_expires_at": str(self.hold_expires_at) if self.hold_expires_at else None,
+					"crn": cint(getattr(self, "crn", 0) or 0),
 				}
 			)
 		except Exception:

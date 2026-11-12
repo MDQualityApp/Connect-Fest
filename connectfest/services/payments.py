@@ -267,6 +267,26 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 		return {"status": "error", "message": f"Stall '{stall_num}' does not exist in ConnectFest inventory"}
 
 	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
+
+	# Strict BNI check for CRN 1 stall when admin restriction is enabled
+	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_internal:
+		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+		if is_crn_bni_restriction_enabled():
+			u_mob = (
+				record.get("mobile_no")
+				or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
+				or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
+				or data.get("mobile_no")
+				or data.get("phone")
+			)
+			is_bni, bni_doc = is_valid_bni_member(u_mob)
+			if not is_bni:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "You are not a BNI member",
+				}
+
 	is_valid_hold, hold_err = validate_stall_hold_for_user(
 		stall_doc,
 		reg_id=reg_id,
@@ -814,6 +834,26 @@ def preview_payment(**kwargs):
 		return {"status": "error", "message": f"Stall '{stall_num}' does not exist in ConnectFest inventory"}
 
 	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
+
+	# Strict BNI check for CRN 1 stall when admin restriction is enabled
+	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_internal:
+		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+		if is_crn_bni_restriction_enabled():
+			u_mob = (
+				record.get("mobile_no")
+				or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
+				or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
+				or data.get("mobile_no")
+				or data.get("phone")
+			)
+			is_bni, bni_doc = is_valid_bni_member(u_mob)
+			if not is_bni:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "You are not a BNI member",
+				}
+
 	is_valid_hold, hold_err = validate_stall_hold_for_user(
 		stall_doc,
 		reg_id=docname,

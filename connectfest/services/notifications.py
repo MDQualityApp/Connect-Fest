@@ -246,6 +246,17 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		for k, v in kwargs.items():
 			if v: reg_data[k] = v
 
+		# Trigger WhatsApp Confirmation via WATI (Non-blocking & Zero-disturbance)
+		try:
+			from connectfest.services.wati import send_booking_confirmation_whatsapp
+			send_booking_confirmation_whatsapp(
+				registration_id=reg_data.get("registration_id") or reg_data.get("name"),
+				mobile_no=reg_data.get("mobile_no"),
+				reg_data=reg_data,
+			)
+		except Exception:
+			pass
+
 		target_email = email or reg_data.get("email")
 		if not target_email or "@" not in target_email:
 			return {"status": "skipped", "message": "No valid email address found for attendee"}
@@ -418,3 +429,14 @@ def resend_booking_email(registration_id=None, email=None, **kwargs):
 		return {"status": "error", "message": "registration_id or email is required"}
 
 	return send_booking_confirmation_email(registration_id=reg_id, email=em)
+
+
+@frappe.whitelist(allow_guest=True)
+@handle_api_errors("ConnectFest Resend Booking WhatsApp Error")
+def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
+	"""
+	API to explicitly resend booking confirmation WhatsApp message via WATI.
+	"""
+	from connectfest.services.wati import resend_booking_whatsapp as _resend_whatsapp
+	return _resend_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
+

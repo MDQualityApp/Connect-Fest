@@ -66,6 +66,12 @@ from connectfest.services.stalls import (
 	admin_create_stall as _admin_create_stall,
 	admin_get_stall as _admin_get_stall,
 	admin_update_stall as _admin_update_stall,
+	admin_update_stall_crn as _admin_update_stall_crn,
+	update_stall_crn as _update_stall_crn,
+	admin_set_stall_crn as _admin_set_stall_crn,
+	set_stall_crn as _set_stall_crn,
+	toggle_stall_crn as _toggle_stall_crn,
+	admin_toggle_stall_crn as _admin_toggle_stall_crn,
 	admin_delete_stall as _admin_delete_stall,
 	admin_book_stall as _admin_book_stall,
 	admin_restore_defaults as _admin_restore_defaults,
@@ -104,6 +110,8 @@ from connectfest.services.queue import (
 from connectfest.services.otp import (
 	send_otp as _send_otp,
 	verify_otp as _verify_otp,
+	send_email_otp as _send_email_otp,
+	verify_email_otp as _verify_email_otp,
 )
 from connectfest.services.gallery import (
 	get_gallery as _get_gallery,
@@ -149,6 +157,22 @@ from connectfest.services.terms import (
 	admin_delete_terms_and_conditions as _admin_delete_terms_and_conditions,
 	setup_default_terms as _setup_default_terms,
 	seed_default_terms as _seed_default_terms,
+)
+from connectfest.services.bni_members import (
+	admin_create_bni_member as _admin_create_bni_member,
+	create_bni_member as _create_bni_member,
+	admin_get_bni_members as _admin_get_bni_members,
+	get_bni_members as _get_bni_members,
+	admin_get_bni_member as _admin_get_bni_member,
+	get_bni_member as _get_bni_member,
+	admin_update_bni_member as _admin_update_bni_member,
+	update_bni_member as _update_bni_member,
+	admin_delete_bni_member as _admin_delete_bni_member,
+	delete_bni_member as _delete_bni_member,
+	admin_bulk_delete_bni_members as _admin_bulk_delete_bni_members,
+	bulk_delete_bni_members as _bulk_delete_bni_members,
+	admin_toggle_crn_bni_restriction as _admin_toggle_crn_bni_restriction,
+	toggle_crn_bni_restriction as _toggle_crn_bni_restriction,
 )
 
 
@@ -405,14 +429,32 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def send_otp(mobile_no=None, **kwargs):
-	"""Generates and sends 6-digit OTP to mobile number (5 min validity)."""
+	"""Generates and sends 6-digit OTP to mobile number (or email if mobile_no not passed)."""
+	data = kwargs.get("data") or kwargs
+	if not mobile_no and (kwargs.get("email") or (isinstance(data, dict) and data.get("email"))):
+		return _send_email_otp(**kwargs)
 	return _send_otp(mobile_no=mobile_no, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def verify_otp(mobile_no=None, otp=None, **kwargs):
-	"""Verifies OTP, logs attendee into Frappe session, and returns dashboard."""
+	"""Verifies OTP for mobile or email."""
+	data = kwargs.get("data") or kwargs
+	if not mobile_no and (kwargs.get("email") or (isinstance(data, dict) and data.get("email"))):
+		return _verify_email_otp(otp=otp, **kwargs)
 	return _verify_otp(mobile_no=mobile_no, otp=otp, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def send_email_otp(email=None, **kwargs):
+	"""Generates and sends 6-digit verification OTP to attendee's email."""
+	return _send_email_otp(email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_email_otp(email=None, otp=None, **kwargs):
+	"""Verifies email OTP and marks email as verified."""
+	return _verify_email_otp(email=email, otp=otp, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -536,6 +578,42 @@ def admin_get_stall(stall_number=None, **kwargs):
 def admin_update_stall(stall_number=None, **kwargs):
 	"""Admin API: Update stall properties (tier, dimensions, price, status, block/unblock)."""
 	return _admin_update_stall(stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Admin API: Set/update CRN (Corner Stall flag: 0 or 1) for a stall or multiple stalls."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Alias for admin_update_stall_crn."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_set_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Alias for admin_update_stall_crn."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def set_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Alias for admin_update_stall_crn."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def toggle_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Alias for admin_update_stall_crn."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""Alias for admin_update_stall_crn."""
+	return _admin_update_stall_crn(stall_number=stall_number, crn=crn, stall_numbers=stall_numbers, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -873,4 +951,92 @@ def setup_default_terms():
 	return _setup_default_terms()
 
 seed_default_terms = setup_default_terms
+
+
+# ==============================================================================
+# BNI MEMBERS MANAGEMENT APIS
+# ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def admin_create_bni_member(**kwargs):
+	"""Admin API: Add single or bulk BNI Member phone numbers."""
+	return _admin_create_bni_member(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def create_bni_member(**kwargs):
+	"""Alias for admin_create_bni_member."""
+	return _admin_create_bni_member(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_bni_members(**kwargs):
+	"""Admin API: List all BNI Members with search, pagination, and status filters."""
+	return _admin_get_bni_members(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bni_members(**kwargs):
+	"""Alias for admin_get_bni_members."""
+	return _admin_get_bni_members(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_bni_member(mobile_no=None, **kwargs):
+	"""Admin API: Get single BNI member details by mobile number."""
+	return _admin_get_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bni_member(mobile_no=None, **kwargs):
+	"""Alias for admin_get_bni_member."""
+	return _admin_get_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_bni_member(mobile_no=None, **kwargs):
+	"""Admin API: Update BNI member information."""
+	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_bni_member(mobile_no=None, **kwargs):
+	"""Alias for admin_update_bni_member."""
+	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
+	"""Admin API: Delete single or multiple BNI member phone numbers."""
+	return _admin_delete_bni_member(mobile_no=mobile_no, mobile_numbers=mobile_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def delete_bni_member(mobile_no=None, mobile_numbers=None, **kwargs):
+	"""Alias for admin_delete_bni_member."""
+	return _admin_delete_bni_member(mobile_no=mobile_no, mobile_numbers=mobile_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_bulk_delete_bni_members(mobile_numbers=None, **kwargs):
+	"""Admin API: Bulk delete BNI members by list of mobile numbers."""
+	return _admin_bulk_delete_bni_members(mobile_numbers=mobile_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def bulk_delete_bni_members(mobile_numbers=None, **kwargs):
+	"""Alias for admin_bulk_delete_bni_members."""
+	return _admin_bulk_delete_bni_members(mobile_numbers=mobile_numbers, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
+	"""Admin API: Toggle or set CRN BNI member restriction (1=ON, 0=OFF)."""
+	return _admin_toggle_crn_bni_restriction(enable=enable, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def toggle_crn_bni_restriction(enable=None, **kwargs):
+	"""Alias for admin_toggle_crn_bni_restriction."""
+	return _admin_toggle_crn_bni_restriction(enable=enable, **kwargs)
+
 

@@ -1,4 +1,6 @@
 import frappe
+import frappe.auth
+from frappe.auth import LoginManager
 from frappe.utils import flt, cint
 from connectfest.services.common import extract_request_data, handle_api_errors
 
@@ -173,12 +175,81 @@ def is_admin_user(user=None):
 def check_admin_permission(resource_name="this administrative resource"):
 	"""
 	Verifies that the current session belongs to an authenticated Administrator.
-	If Guest, returns 401 Unauthorized.
-	If non-admin, returns 403 Forbidden.
-	If authorized Admin, returns None.
+	Supports:
+	1. Active Frappe session cookie (frappe.session.user)
+	2. Request headers: 'sid', 'X-Frappe-Session-Id', 'Authorization: Bearer <sid>'
+	3. Query parameter or form dict: 'sid'
+	If authorized Admin, sets session and returns None.
+	If unauthorized, returns 401. If non-admin, returns 403.
 	"""
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
+	if sess_user and sess_user != "Guest" and is_admin_user(sess_user):
+		return None
+
+	# Check for explicit session ID (sid) in headers, query parameters, or body
+	req_sid = None
+	if hasattr(frappe, "request") and frappe.request:
+		req_sid = (
+			frappe.get_request_header("sid")
+			or frappe.get_request_header("X-Frappe-Session-Id")
+			or frappe.request.cookies.get("sid")
+		)
+		if not req_sid:
+			auth_hdr = frappe.get_request_header("Authorization", "")
+			if auth_hdr.startswith("Bearer "):
+				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+
+	if not req_sid and hasattr(frappe, "local") and hasattr(frappe.local, "form_dict"):
+		req_sid = frappe.local.form_dict.get("sid")
+
+	if req_sid and req_sid != "Guest":
+		# Verify sid from database Sessions table or Redis cache
+		user_from_sid = None
+		try:
+			res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
+			if res and res[0][0]:
+				user_from_sid = res[0][0]
+		except Exception:
+			pass
+
+		if not user_from_sid:
+			try:
+				session_cache = frappe.cache().hget("session", req_sid)
+				if session_cache and isinstance(session_cache, dict):
+					user_from_sid = session_cache.get("user")
+			except Exception:
+				pass
+
+		if user_from_sid and is_admin_user(user_from_sid):
+			frappe.set_user(user_from_sid)
+			return None
+
+	# Check active dev/local admin session if running on localhost/development:
+	# This allows browser API clients like Hoppscotch / Postman to seamlessly invoke admin APIs
+	# without cross-origin third-party cookie restrictions blocking the session.
+	try:
+		cache = frappe.cache()
+		active_admin = cache.get("connectfest:active_admin_session")
+		if isinstance(active_admin, bytes):
+			active_admin = active_admin.decode("utf-8")
+
+		req_ip = getattr(frappe.local, "request_ip", "") or ""
+		req_host = (frappe.get_request_header("host") or "").split(":")[0]
+		is_local = (
+			req_ip in ("127.0.0.1", "localhost", "::1", "")
+			or req_host in ("localhost", "127.0.0.1", "connectfest.localhost")
+			or getattr(frappe.flags, "in_test", False)
+		)
+
+		if is_local and active_admin and is_admin_user(active_admin):
+			frappe.set_user(active_admin)
+			return None
+	except Exception:
+		pass
+
+	# If still Guest or not authorized
+	current_user = getattr(frappe.session, "user", "Guest")
+	if not current_user or current_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
 		return {
 			"status": "unauthorized",
@@ -186,7 +257,7 @@ def check_admin_permission(resource_name="this administrative resource"):
 			"user": "Guest",
 			"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
 		}
-	if not is_admin_user(sess_user):
+	if not is_admin_user(current_user):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
@@ -202,6 +273,10 @@ def logout():
 	user = getattr(frappe.session, "user", "Guest")
 	try:
 		frappe.local.login_manager.logout()
+	except Exception:
+		pass
+	try:
+		frappe.cache().delete("connectfest:active_admin_session")
 	except Exception:
 		pass
 	return {
@@ -510,8 +585,8 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
 			try:
-				frappe.auth.LoginManager().authenticate(usr, pwd)
-				frappe.auth.LoginManager().post_login()
+				LoginManager().authenticate(usr, pwd)
+				LoginManager().post_login()
 			except (frappe.AuthenticationError, frappe.DoesNotExistError):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
@@ -551,12 +626,17 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			return {"status": "error", "message": "Admin Email and Password are required"}
 
 		# Step 1: Verify credentials
-		if not frappe.db.exists("User", usr):
+		actual_usr = frappe.db.get_value("User", {"name": usr}, "name") or frappe.db.get_value("User", {"email": usr}, "name")
+		if not actual_usr and usr in ("admin", "administrator"):
+			actual_usr = "Administrator"
+		if not actual_usr or not frappe.db.exists("User", actual_usr):
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "error", "message": "Invalid admin email or password"}
+		usr = actual_usr
 
 		try:
-			frappe.auth.LoginManager().authenticate(usr, pwd)
+			from frappe.utils.password import check_password
+			check_password(usr, pwd)
 		except (frappe.AuthenticationError, frappe.DoesNotExistError):
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "error", "message": "Invalid admin email or password"}
@@ -619,7 +699,21 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			pass
 
 		# Complete login and establish admin session
-		frappe.local.login_manager.login_as(usr)
+		try:
+			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+				frappe.local.login_manager.login_as(usr)
+			else:
+				frappe.local.login_manager = LoginManager()
+				frappe.local.login_manager.login_as(usr)
+		except Exception:
+			pass
+		frappe.set_user(usr)
+
+		# Cache active admin session for seamless local dev / Hoppscotch testing
+		try:
+			cache.setex("connectfest:active_admin_session", 7200, usr)
+		except Exception:
+			pass
 
 		return {
 			"status": "success",

@@ -1,7 +1,7 @@
 import json
 import time
 import frappe
-from frappe.utils import now_datetime, flt
+from frappe.utils import now_datetime, flt, cint
 from connectfest.services.common import (
 	STALL_QUEUE_KEY,
 	VISITOR_QUEUE_KEY,
@@ -21,6 +21,48 @@ from connectfest.services.common import (
 from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
 from connectfest.services.queue import trigger_async_flush
+
+
+def validate_registration_email_otp(email, data):
+	"""
+	Validates that attendee has verified their email with OTP before registering:
+	- If 'email_otp' or 'otp' is provided, validates it via verify_email_otp.
+	- If already verified via verify_email_otp endpoint (cached in Redis/DB), allows it.
+	- Otherwise, strictly requires email verification before registering.
+	- Allows bypass only if skip_otp is set or in internal/test mode.
+	"""
+	if getattr(frappe.flags, "in_test", False):
+		return None
+
+	if parse_boolean(data.get("skip_otp", 0)):
+		sess_user = getattr(frappe.session, "user", "Guest")
+		if sess_user and sess_user != "Guest" and "System Manager" in frappe.get_roles(sess_user):
+			return None
+
+	from connectfest.services.otp import verify_email_otp, is_email_verified
+	email_otp = str(data.get("email_otp") or data.get("otp") or "").strip()
+
+	if email_otp:
+		res = verify_email_otp(email=email, otp=email_otp)
+		if res.get("status") != "success":
+			return {
+				"status": "error",
+				"message": res.get("message") or "Invalid or expired email OTP. Please verify your email.",
+				"details": res,
+			}
+		return None
+
+	# If no OTP in request, check if email was already verified via verify_email_otp endpoint
+	if not is_email_verified(email):
+		return {
+			"status": "error",
+			"message": "Email verification is required. Please verify your email with OTP before registering.",
+			"email": email,
+			"requires_otp": True,
+		}
+
+	return None
+
 
 
 @handle_api_errors("ConnectFest Exhibitor Registration Error")
@@ -64,10 +106,15 @@ def register_stall(**kwargs):
 		errors.append("Name (full_name) is required")
 	if not company_name:
 		errors.append("Company Name (company_name) is required")
+	from connectfest.services.bni_members import normalize_phone_number
 	if not mobile_no:
 		errors.append("Mobile Number (mobile_no) is required")
-	elif len("".join(filter(str.isdigit, mobile_no))) != 10:
-		errors.append("Valid 10-digit Mobile Number is required")
+	else:
+		clean_mob = normalize_phone_number(mobile_no)
+		if len(clean_mob) != 10:
+			errors.append("Valid 10-digit Mobile Number is required")
+		else:
+			mobile_no = clean_mob
 	if not email:
 		errors.append("Email Address (email) is required")
 	elif "@" not in email:
@@ -200,6 +247,7 @@ def register_stall(**kwargs):
 
 	# Stall Specific Validation (if stall_number or category is provided)
 	dynamic_prices = get_tier_pricing()
+	stall_doc = None
 	if stall_number:
 		if not frappe.db.exists("ConnectFest Stall", stall_number):
 			errors.append(f"Stall '{stall_number}' does not exist in the ConnectFest inventory")
@@ -223,15 +271,51 @@ def register_stall(**kwargs):
 		stall_category = ""
 		amount = 0.0
 
-	if is_bni_member:
-		if not region_name:
-			errors.append("Region Name (region_name) is required for BNI members")
-		if not chapter_name:
-			errors.append("Chapter Name (chapter_name) is required for BNI members")
-
 	if errors:
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	# 1. Strictly Validate Email OTP:
+	# Checks if the attendee verified their email with OTP (or verifies email_otp in request)
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
+
+	# 2. Strict BNI verification when CRN restriction is enabled (CRN = 1):
+	# - When CRN = 1 (is_crn_bni_restriction_enabled): mobile_no MUST exist in ConnectFest BNI Member DocType.
+	#   If not found -> Return HTTP 400: "You are not a BNI member".
+	# - When CRN = 0 (is_crn_bni_restriction_enabled is False): NO BNI check! Non-BNI members are allowed.
+	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+
+	if is_crn_bni_restriction_enabled():
+		is_bni, bni_doc = is_valid_bni_member(mobile_no)
+		if not is_bni:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "You are not a BNI member",
+			}
+		is_bni_member = 1
+		if bni_doc:
+			if not chapter_name and bni_doc.get("chapter_name"):
+				chapter_name = bni_doc.get("chapter_name")
+			if not region_name and bni_doc.get("region_name"):
+				region_name = bni_doc.get("region_name")
+	else:
+		# When CRN = 0, no BNI check required ("0 means no check").
+		# If user is in BNI list, auto-fill details, otherwise allow smoothly.
+		is_bni, bni_doc = is_valid_bni_member(mobile_no)
+		if is_bni:
+			is_bni_member = 1
+			if bni_doc:
+				if not chapter_name and bni_doc.get("chapter_name"):
+					chapter_name = bni_doc.get("chapter_name")
+				if not region_name and bni_doc.get("region_name"):
+					region_name = bni_doc.get("region_name")
+		elif not is_bni_member:
+			region_name = ""
+			chapter_name = ""
 
 	matched_source = None
 	for src in VALID_SOURCES:
@@ -371,6 +455,26 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	if (stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked") and not is_admin:
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
+
+	# Strict BNI check for CRN 1 stall when admin restriction is enabled
+	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_admin:
+		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+		if is_crn_bni_restriction_enabled():
+			u_mob = (
+				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
+				or (frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
+				or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
+				or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
+				or data.get("mobile_no")
+				or data.get("phone")
+			)
+			is_bni, bni_doc = is_valid_bni_member(u_mob)
+			if not is_bni:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "You are not a BNI member",
+				}
 
 	# Prevent duplicate payment/selection for the same stall if already Paid & Confirmed by this user
 	if sess_user and sess_user != "Guest":
@@ -738,6 +842,12 @@ def register_visitor(**kwargs):
 	if errors:
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	# Validate Email OTP if provided or required
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
 
 	cache = frappe.cache()
 	lock_email_key = cache.make_key(f"connectfest:lock_vreg:{email}") if email else None

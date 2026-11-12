@@ -13,6 +13,7 @@
   "price",
   "status",
   "block",
+  "crn",
   "label",
   "x",
   "y",
@@ -83,6 +84,13 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Block / Aisle"
+  },
+  {
+   "default": "0",
+   "fieldname": "crn",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Corner Stall (CRN)"
   },
   {
    "fieldname": "label",

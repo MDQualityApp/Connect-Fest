@@ -260,13 +260,22 @@ def get_stalls(**kwargs):
 		filter_tier = (data.get("tier") or data.get("stall_category") or "").strip()
 		filter_status = (data.get("status") or "").strip().capitalize()
 		search_term = (data.get("search") or data.get("query") or "").strip().lower()
+		raw_crn = data.get("crn") if data.get("crn") is not None else kwargs.get("crn")
+		filter_crn = cint(raw_crn) if (raw_crn is not None and str(raw_crn).strip() != "") else None
 
 		raw_page = data.get("page")
 		raw_limit = data.get("limit") or data.get("page_size")
 		page = max(1, cint(raw_page)) if raw_page else 1
 		limit = cint(raw_limit) if raw_limit and str(raw_limit).lower() != "all" else 0
 
-		is_default = not filter_tier and not filter_status and not search_term and (limit == 0 or limit >= 220) and page == 1
+		is_default = (
+			not filter_tier
+			and not filter_status
+			and not search_term
+			and filter_crn is None
+			and (limit == 0 or limit >= 220)
+			and page == 1
+		)
 		cache = frappe.cache()
 		cache_key = cache.make_key(STALLS_INVENTORY_CACHE_KEY)
 
@@ -290,6 +299,7 @@ def get_stalls(**kwargs):
 				"price",
 				"status",
 				"block",
+				"crn",
 				"label",
 				"x",
 				"y",
@@ -325,6 +335,7 @@ def get_stalls(**kwargs):
 
 			tier_price = pricing.get(t, stall.price)
 			stall["price"] = tier_price
+			stall["crn"] = cint(stall.get("crn", 0))
 
 			# Release expired hold
 			if stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at <= now_dt:
@@ -378,6 +389,8 @@ def get_stalls(**kwargs):
 				continue
 			if filter_status and (s.status or "").lower() != filter_status.lower():
 				continue
+			if filter_crn is not None and s.get("crn") != filter_crn:
+				continue
 			if search_term:
 				match_num = search_term in (s.stall_number or "").lower()
 				match_comp = search_term in (s.get("booked_by_company") or "").lower()
@@ -404,12 +417,18 @@ def get_stalls(**kwargs):
 			{"name": "Wi-Fi & Cleaning", "detail": "High-speed event Wi-Fi and daily booth cleaning", "included": True},
 		]
 
+		from connectfest.services.bni_members import is_crn_bni_restriction_enabled
+		crn_restriction_active = is_crn_bni_restriction_enabled()
+
 		res = {
 			"status": "success",
+			"crn_bni_only": 1 if crn_restriction_active else 0,
+			"is_crn_bni_restriction_enabled": bool(crn_restriction_active),
 			"filters_applied": {
 				"tier": filter_tier or None,
 				"status": filter_status or None,
 				"search": search_term or None,
+				"crn": filter_crn,
 			},
 			"pagination": {
 				"current_page": page,
@@ -529,6 +548,24 @@ def hold_stall(stall_number=None, **kwargs):
 				"status": "error",
 				"message": f"Stall {stall_num} is already booked and confirmed by another exhibitor."
 			}
+
+		# Strict BNI check for CRN 1 stall when admin restriction is enabled
+		if cint(getattr(stall, "crn", 0)) == 1 and not is_admin:
+			from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+			if is_crn_bni_restriction_enabled():
+				u_mob = (
+					mobile_no
+					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
+					or (frappe.db.get_value("User", sess_u, "mobile_no") if sess_u and sess_u != "Guest" else None)
+					or (frappe.db.get_value("User", sess_u, "phone") if sess_u and sess_u != "Guest" else None)
+				)
+				is_bni, bni_doc = is_valid_bni_member(u_mob)
+				if not is_bni:
+					frappe.local.response["http_status_code"] = 400
+					return {
+						"status": "error",
+						"message": "You are not a BNI member",
+					}
 
 		# Authoritative Redis Hold Check
 		hold_info = check_stall_hold_in_redis(stall_num, stall)
@@ -703,6 +740,7 @@ def get_stall_detail(stall_number=None, **kwargs):
 			"status": "Blocked" if stall.is_blocked_by_admin else stall.status,
 			"is_blocked_by_admin": bool(stall.is_blocked_by_admin),
 			"hold_expires_at": str(stall.hold_expires_at) if stall.hold_expires_at else None,
+			"crn": cint(getattr(stall, "crn", 0) or 0),
 		}
 	}
 
@@ -929,6 +967,8 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	filter_status = (status or data.get("status") or "").strip()
 	filter_tier = (tier or data.get("tier") or "").strip()
 	search_term = (search or data.get("search") or data.get("q") or "").strip().lower()
+	raw_crn = data.get("crn") if data.get("crn") is not None else kwargs.get("crn")
+	filter_crn = cint(raw_crn) if (raw_crn is not None and str(raw_crn).strip() != "") else None
 
 	raw_page = data.get("page") or page
 	raw_limit = data.get("limit") or data.get("page_size") or limit
@@ -944,6 +984,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"price",
 			"status",
 			"block",
+			"crn",
 			"label",
 			"x",
 			"y",
@@ -984,6 +1025,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	total_revenue = 0.0
 
 	for s in stalls:
+		s["crn"] = cint(s.get("crn", 0))
 		# Attach zone
 		t = s.tier or "Regular"
 		if not s.get("zone"):
@@ -1020,6 +1062,8 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			continue
 		if filter_tier and (s.tier or "").lower() != filter_tier.lower():
 			continue
+		if filter_crn is not None and s.get("crn") != filter_crn:
+			continue
 		if search_term:
 			m_num = search_term in (s.stall_number or "").lower()
 			m_comp = search_term in (s.get("booked_by_company") or "").lower()
@@ -1047,6 +1091,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"status": filter_status or None,
 			"tier": filter_tier or None,
 			"search": search_term or None,
+			"crn": filter_crn,
 		},
 		"summary": {
 			"total_stalls": total_stalls,
@@ -1069,7 +1114,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	}
 
 
-def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price=None, zone=None, **kwargs):
+def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price=None, zone=None, crn=0, **kwargs):
 	"""
 	Admin API: Create a new exhibition stall.
 	Requires System Manager or Administrator privileges.
@@ -1085,6 +1130,8 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 	t = (tier or data.get("tier") or "Regular").strip()
 	dim = (dimensions or data.get("dimensions") or ("3 x 3 m" if t in ("Premium", "Standard") else ("6 x 3 m" if t == "Silver" else "2.5 x 2.5 m"))).strip()
 	z = (zone or data.get("zone") or ("Zone D - East Pavilions" if t == "Silver" else ("Zone C - Center Aisles" if t == "Premium" else ("Zone B - West Aisles" if t == "Standard" else "Zone E - South Entrance Corridor")))).strip()
+	raw_crn = crn if crn is not None else (data.get("crn") if "crn" in data else kwargs.get("crn", 0))
+	crn_val = 1 if (parse_boolean(raw_crn) or str(raw_crn).strip().lower() in ("1", "true", "yes", "on", "crn")) else 0
 
 	if not s_num:
 		frappe.local.response["http_status_code"] = 400
@@ -1107,6 +1154,7 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 		"zone": z,
 		"price": p,
 		"status": "Available",
+		"crn": crn_val,
 		"is_blocked_by_admin": 0,
 	})
 	doc.flags.ignore_permissions = True
@@ -1123,6 +1171,7 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 			"dimensions": dim,
 			"zone": z,
 			"price": p,
+			"crn": crn_val,
 			"status": "Available",
 		}
 	}
@@ -1145,6 +1194,7 @@ def admin_get_stall(stall_number=None, **kwargs):
 		return {"status": "error", "message": f"Stall '{s_num}' does not exist"}
 
 	stall = frappe.get_doc("ConnectFest Stall", s_num).as_dict()
+	stall["crn"] = cint(stall.get("crn", 0))
 	return {
 		"status": "success",
 		"stall": stall,
@@ -1176,16 +1226,107 @@ def admin_update_stall(stall_number=None, **kwargs):
 	if "status" in data: stall.status = data["status"]
 	if "is_blocked_by_admin" in data: stall.is_blocked_by_admin = cint(data["is_blocked_by_admin"])
 	if "blocked_reason" in data: stall.blocked_reason = data["blocked_reason"]
+	if "crn" in data or "crn" in kwargs:
+		raw_crn = data.get("crn") if "crn" in data else kwargs.get("crn")
+		stall.crn = 1 if (parse_boolean(raw_crn) or str(raw_crn).strip().lower() in ("1", "true", "yes", "on", "crn")) else 0
 
 	stall.save(ignore_permissions=True)
 	frappe.db.commit()
 	invalidate_stalls_cache()
 
+	res_stall = stall.as_dict()
+	res_stall["crn"] = cint(res_stall.get("crn", 0))
+
 	return {
 		"status": "success",
 		"message": f"Stall {s_num} updated successfully",
-		"stall": stall.as_dict(),
+		"stall": res_stall,
 	}
+
+
+def admin_update_stall_crn(stall_number=None, crn=None, stall_numbers=None, **kwargs):
+	"""
+	Admin API: Set/update CRN (Corner Stall flag: 0 or 1) for a stall or multiple stalls.
+	- stall_number / stall_numbers: Stall number(s) (e.g. 'A-01' or 'A-01, A-02' or ['A-01', 'A-02'])
+	- crn: 0 (Normal) or 1 (Corner Stall). If omitted, toggles current CRN state.
+	"""
+	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
+		from connectfest.services.auth import check_admin_permission
+		err = check_admin_permission("stall CRN controls")
+		if err:
+			return err
+
+	data = extract_request_data(kwargs)
+	raw_stalls = (
+		stall_numbers
+		or data.get("stall_numbers")
+		or stall_number
+		or data.get("stall_number")
+		or data.get("stall_no")
+		or data.get("stalls")
+		or kwargs.get("stalls")
+	)
+	stall_list = parse_stall_numbers(raw_stalls)
+
+	if not stall_list:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "Stall Number(s) (stall_number or stall_numbers) is required! E.g. 'A-01' or 'A-01, A-02'",
+		}
+
+	raw_crn = crn if crn is not None else (data.get("crn") if "crn" in data else kwargs.get("crn"))
+
+	updated = []
+	errors = []
+
+	for s_num in stall_list:
+		s_num_clean = safe_str(s_num).upper()
+		if not frappe.db.exists("ConnectFest Stall", s_num_clean):
+			errors.append(f"Stall '{s_num_clean}' not found")
+			continue
+
+		if raw_crn is None:
+			curr_crn = cint(frappe.db.get_value("ConnectFest Stall", s_num_clean, "crn") or 0)
+			target_crn = 0 if curr_crn == 1 else 1
+		else:
+			target_crn = 1 if (parse_boolean(raw_crn) or str(raw_crn).strip().lower() in ("1", "true", "yes", "on", "crn")) else 0
+
+		frappe.db.set_value("ConnectFest Stall", s_num_clean, "crn", target_crn, update_modified=True)
+		updated.append({"stall_number": s_num_clean, "crn": target_crn})
+
+	if not updated and errors:
+		frappe.local.response["http_status_code"] = 404
+		return {
+			"status": "error",
+			"message": "; ".join(errors),
+		}
+
+	frappe.db.commit()
+	invalidate_stalls_cache()
+
+	res = {
+		"status": "success",
+		"message": f"CRN updated successfully for {len(updated)} stall(s)",
+		"crn": updated[0]["crn"] if len(updated) == 1 else (target_crn if raw_crn is not None else None),
+		"updated_stalls": updated,
+		"count": len(updated),
+	}
+	if len(updated) == 1:
+		res["stall_number"] = updated[0]["stall_number"]
+
+	if errors:
+		res["warnings"] = errors
+
+	return res
+
+
+# Backward-compatible Aliases
+update_stall_crn = admin_update_stall_crn
+admin_set_stall_crn = admin_update_stall_crn
+set_stall_crn = admin_update_stall_crn
+toggle_stall_crn = admin_update_stall_crn
+admin_toggle_stall_crn = admin_update_stall_crn
 
 
 def admin_delete_stall(stall_number=None, **kwargs):
@@ -1293,6 +1434,7 @@ def build_connectfest_220_stalls():
 			'dimensions': dim_str,
 			'tier': t,
 			'zone': zone_map[g],
+			'crn': 0,
 			'default_price': default_prices.get(t, 25000.0),
 		})
 
@@ -1468,9 +1610,9 @@ def setup_default_stalls(preserve_booked=True):
 		if not existing:
 			frappe.db.sql("""
 				INSERT INTO `tabConnectFest Stall`
-				(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, block, label, x, y, width, height, creation, modified, modified_by, owner)
-				VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-			""", (stall_num, stall_num, tier, dims, zone, default_price, block, label, x, y, width, height, now_str, now_str, sess_user, sess_user))
+				(name, stall_number, tier, dimensions, zone, price, status, is_blocked_by_admin, block, crn, label, x, y, width, height, creation, modified, modified_by, owner)
+				VALUES (%s, %s, %s, %s, %s, %s, 'Available', 0, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+			""", (stall_num, stall_num, tier, dims, zone, default_price, block, cint(s.get("crn", 0)), label, x, y, width, height, now_str, now_str, sess_user, sess_user))
 			created_count += 1
 		else:
 			curr = existing[0]
