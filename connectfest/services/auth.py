@@ -703,6 +703,8 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			if not user_email:
 				user_email = frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": mob}, "email")
 			if not user_email:
+				user_email = frappe.db.get_value("ConnectFest BNI Event Registration", {"mobile_no": mob}, "email")
+			if not user_email:
 				user_email = frappe.db.get_value("User", {"phone": mob}, "name") or frappe.db.get_value("User", {"mobile_no": mob}, "name")
 			if user_email:
 				usr = user_email.strip().lower()

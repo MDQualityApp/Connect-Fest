@@ -644,13 +644,35 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					)
 				prev = prev_regs[0] if prev_regs else {}
 
+				if not prev_regs and (user_email or user_mobile):
+					# Event-only attendees cannot book or select stalls
+					bni_evt = frappe.db.sql("""
+						SELECT registration_id FROM `tabConnectFest BNI Event Registration`
+						WHERE (email = %s AND %s != '') OR (mobile_no = %s AND %s != '')
+						LIMIT 1
+					""", (user_email or "", user_email or "", user_mobile or "", user_mobile or ""), as_dict=True)
+					if bni_evt:
+						frappe.local.response["http_status_code"] = 403
+						return {
+							"status": "error",
+							"message": "Event attendees cannot book stalls. Stall booking is restricted to exhibitors only."
+						}
+
+				if not prev and (user_mobile or user_email):
+					from connectfest.services.bni_members import is_valid_bni_member
+					_, bni_m = is_valid_bni_member(mobile_no=user_mobile, email=user_email)
+					if bni_m:
+						prev = bni_m
+
 				company_name = (data.get("company_name") or prev.get("company_name") or "").strip()
 				if not company_name:
-					frappe.local.response["http_status_code"] = 400
-					return {
-						"status": "error",
-						"message": "Company Name (company_name) is required. Please complete exhibitor registration before selecting a stall, or provide 'registration_id'.",
-					}
+					cand_name_tmp = (data.get("full_name") or prev.get("full_name") or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else "") or "").strip()
+					if cand_name_tmp and "@" not in cand_name_tmp:
+						company_name = cand_name_tmp
+					elif user_email and "@" in user_email:
+						company_name = user_email.split("@")[0].title()
+					else:
+						company_name = "Exhibitor"
 
 				new_reg_id = generate_stall_id(cache)
 				cand_mob = (user_mobile or prev.get("mobile_no") or "").strip()

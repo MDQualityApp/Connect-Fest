@@ -130,6 +130,7 @@ def register_bni_event(**kwargs):
 		return {
 			"status": "already_registered",
 			"already_registered": True,
+			"is_logged_in": False,
 			"message": f"Mobile number '{mobile_no}' is already registered for {event_name}!",
 			"registration_id": existing_reg.get("registration_id") or existing_reg.get("name"),
 			"pass_code": existing_reg.get("pass_code"),
@@ -138,7 +139,7 @@ def register_bni_event(**kwargs):
 			"attendee": existing_reg,
 		}
 
-	# Auto-populate chapter / region / member name from BNI Member record if missing
+	# Auto-populate chapter / region / member name / email from BNI Member record if missing
 	if bni_doc:
 		if not chapter_name and bni_doc.get("chapter_name"):
 			chapter_name = bni_doc.get("chapter_name")
@@ -146,6 +147,17 @@ def register_bni_event(**kwargs):
 			region_name = bni_doc.get("region_name")
 		if not full_name and bni_doc.get("member_name"):
 			full_name = bni_doc.get("member_name")
+		if not email and bni_doc.get("email"):
+			email = str(bni_doc.get("email")).strip().lower()
+
+	# Resolve missing email from existing stall registration or user record
+	if not email and mobile_no:
+		email = (
+			frappe.db.get_value("ConnectFest Registration", {"mobile_no": mobile_no}, "email")
+			or frappe.db.get_value("User", {"mobile_no": mobile_no}, "name")
+			or frappe.db.get_value("User", {"phone": mobile_no}, "name")
+			or ""
+		).strip().lower()
 
 	# Validate Email and Full Name
 	errors = []
@@ -173,6 +185,7 @@ def register_bni_event(**kwargs):
 		return {
 			"status": "already_registered",
 			"already_registered": True,
+			"is_logged_in": False,
 			"message": f"Email '{email}' is already registered for {event_name}!",
 			"registration_id": existing_email_reg.get("registration_id") or existing_email_reg.get("name"),
 			"pass_code": existing_email_reg.get("pass_code"),
@@ -222,26 +235,12 @@ def register_bni_event(**kwargs):
 	})
 	frappe.db.commit()
 
-	# 5. Provision Frappe User & Auto-login attendee immediately
-	session_sid = None
+	# 5. Provision Frappe User account (No auto-login; attendee logs in via OTP)
 	try:
 		from connectfest.services.auth import ensure_frappe_user
 		ensure_frappe_user(email, full_name=full_name, mobile_no=mobile_no, role="Website User")
-
-		from frappe.auth import LoginManager
-		if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-			frappe.local.login_manager.login_as(email)
-		else:
-			frappe.local.login_manager = LoginManager()
-			frappe.local.login_manager.login_as(email)
-		frappe.set_user(email)
-		session_sid = (
-			getattr(getattr(frappe.local, "session_obj", None), "sid", None)
-			or getattr(getattr(frappe.local, "session", None), "sid", None)
-			or getattr(frappe.session, "sid", None)
-		)
 	except Exception as e:
-		frappe.log_error("Auto-login error on BNI registration", str(e))
+		frappe.log_error("User creation error on BNI registration", str(e))
 
 	# 6. Send Email Pass Confirmation
 	try:
@@ -274,23 +273,19 @@ def register_bni_event(**kwargs):
 			recipients=[email],
 			subject=subject,
 			message=email_body,
-			now=True,
-			delayed=False,
+			now=False,
+			delayed=True,
 		)
 		frappe.db.commit()
 	except Exception as e:
 		frappe.logger("connectfest").warning(f"[BNI Event] Failed to send confirmation email to {email}: {str(e)}")
 
 	frappe.local.response["http_status_code"] = 200
-	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"type": "bni_event",
-		"is_logged_in": True,
-		"session_user": getattr(frappe.session, "user", email),
-		"sid": session_sid,
-		"token": session_sid,
-		"message": "Event registration successful! User account created and logged in.",
+		"is_logged_in": False,
+		"message": "Event registration successful! Please log in using Email OTP to access your profile and pass.",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
 		"full_name": full_name,

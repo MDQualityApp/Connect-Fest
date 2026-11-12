@@ -503,6 +503,16 @@ def hold_stall(stall_number=None, **kwargs):
 				if not company_name:
 					company_name = (reg_data.get("company_name") or "").strip()
 
+		if not company_name:
+			if email:
+				c_name = frappe.db.get_value("ConnectFest BNI Event Registration", {"email": email}, "company_name") or frappe.db.get_value("ConnectFest Registration", {"email": email}, "company_name")
+				if c_name:
+					company_name = c_name.strip()
+			if not company_name and mobile_no:
+				c_name = frappe.db.get_value("ConnectFest BNI Event Registration", {"mobile_no": mobile_no}, "company_name") or frappe.db.get_value("ConnectFest Registration", {"mobile_no": mobile_no}, "company_name")
+				if c_name:
+					company_name = c_name.strip()
+
 		if not full_name or "@" in full_name:
 			if email:
 				cand = (frappe.db.get_value("ConnectFest Registration", {"email": email}, "full_name") or frappe.db.get_value("ConnectFest Visitor Registration", {"email": email}, "full_name") or frappe.db.get_value("User", email, "full_name") or "").strip()
