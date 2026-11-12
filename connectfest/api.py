@@ -1191,14 +1191,26 @@ def check_bni_number(mobile_no=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def check_event_number(mobile_no=None, **kwargs):
+	"""Alias for check_bni_event_number."""
+	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def register_bni_event(**kwargs):
 	"""
 	BNI Events Registration API.
 	Mandatory:
 	- Mobile number must exist in ConnectFest BNI Member DocType.
-	- Email OTP verification is required (No mobile OTP).
+	- Email OTP verification is optional during registration (can be sent/verified separately).
 	- Generates unique BNI Event Pass Code & QR Payload.
 	"""
+	return _register_bni_event(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def register_event(**kwargs):
+	"""Event Registration API (Universal alias for register_bni_event)."""
 	return _register_bni_event(**kwargs)
 
 

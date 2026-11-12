@@ -547,6 +547,29 @@ def hold_stall(stall_number=None, **kwargs):
 		sess_u = getattr(frappe.session, "user", "")
 		is_admin = is_admin_user(sess_u)
 
+		# Check if attendee is registered for Event only (cannot book stalls)
+		chk_e = email or (sess_u if sess_u and sess_u != "Guest" else None)
+		chk_m = mobile_no
+		if (chk_e or chk_m) and not is_admin:
+			event_reg = frappe.db.sql("""
+				SELECT name, registration_id FROM `tabConnectFest BNI Event Registration`
+				WHERE (email = %s AND %s != '') OR (mobile_no = %s AND %s != '')
+				LIMIT 1
+			""", (chk_e or "", chk_e or "", chk_m or "", chk_m or ""), as_dict=True)
+			if event_reg:
+				has_exhibitor = frappe.db.sql("""
+					SELECT name FROM `tabConnectFest Registration`
+					WHERE ((email = %s AND %s != '') OR (mobile_no = %s AND %s != ''))
+					  AND (payment_status = 'Paid' OR (stall_number IS NOT NULL AND stall_number != ''))
+					LIMIT 1
+				""", (chk_e or "", chk_e or "", chk_m or "", chk_m or ""))
+				if not has_exhibitor:
+					frappe.local.response["http_status_code"] = 403
+					return {
+						"status": "error",
+						"message": "Event attendees cannot book stalls. Stall booking is restricted to exhibitors only."
+					}
+
 		if (stall.is_blocked_by_admin or stall.status == "Blocked") and not is_admin:
 			frappe.local.response["http_status_code"] = 403
 			return {

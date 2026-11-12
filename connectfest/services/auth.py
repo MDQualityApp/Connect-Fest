@@ -26,6 +26,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 					has_reg = (
 						frappe.db.exists("ConnectFest Registration", {"email": existing_user_with_mob})
 						or frappe.db.exists("ConnectFest Visitor Registration", {"email": existing_user_with_mob})
+						or frappe.db.exists("ConnectFest BNI Event Registration", {"email": existing_user_with_mob})
 					)
 					if not has_reg:
 						# Stale / test user has this mobile; release it
@@ -418,6 +419,16 @@ def get_current_user_profile(**kwargs):
 		ORDER BY creation ASC
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
 
+	# Fetch event pass details (BNI Event)
+	events_raw = frappe.db.sql("""
+		SELECT name, registration_id, full_name, company_name, email, mobile_no,
+		       event_name, chapter_name, region_name, location, industry, segment,
+		       pass_code, qr_payload, status, checked_in, checked_in_at, creation
+		FROM `tabConnectFest BNI Event Registration`
+		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
+		ORDER BY creation ASC
+	""", (target_user, user_mobile, user_mobile), as_dict=True)
+
 	# Authoritative Name: Always display the exact full_name collected during ConnectFest Registration!
 	reg_name = None
 	for s in stalls_raw:
@@ -428,6 +439,11 @@ def get_current_user_profile(**kwargs):
 		for v in visitors_raw:
 			if v.get("full_name") and v.get("full_name").strip() and "@" not in v.get("full_name"):
 				reg_name = v.get("full_name").strip()
+				break
+	if not reg_name:
+		for e in events_raw:
+			if e.get("full_name") and e.get("full_name").strip() and "@" not in e.get("full_name"):
+				reg_name = e.get("full_name").strip()
 				break
 
 	if reg_name:
@@ -450,7 +466,7 @@ def get_current_user_profile(**kwargs):
 		except Exception:
 			pass
 
-	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls_raw else ("Visitor" if visitors_raw else "Attendee"))
+	role_type = "Administrator" if is_admin else ("Exhibitor" if stalls_raw else ("Visitor" if visitors_raw else ("Event Attendee" if events_raw else "Attendee")))
 
 	# Resolve user_mobile if not already set on User doctype
 	if not user_mobile:
@@ -458,21 +474,25 @@ def get_current_user_profile(**kwargs):
 			user_mobile = stalls_raw[0].get("mobile_no").strip()
 		elif visitors_raw and visitors_raw[0].get("mobile_no"):
 			user_mobile = visitors_raw[0].get("mobile_no").strip()
+		elif events_raw and events_raw[0].get("mobile_no"):
+			user_mobile = events_raw[0].get("mobile_no").strip()
 		else:
 			reg_m = (
 				frappe.db.get_value("ConnectFest Registration", {"email": target_user}, "mobile_no")
 				or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_user}, "mobile_no")
+				or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_user}, "mobile_no")
 			)
 			if reg_m:
 				user_mobile = reg_m.strip()
 
 	# Business details from primary registration
 	primary_reg = stalls_raw[0] if stalls_raw else None
-	company_name = (primary_reg.company_name if primary_reg else "") or ""
+	primary_event = events_raw[0] if events_raw else None
+	company_name = (primary_reg.company_name if primary_reg else (primary_event.company_name if primary_event else "")) or ""
 	company_logo = (primary_reg.company_logo if primary_reg else "") or ""
-	location = (primary_reg.location if primary_reg else "") or ""
-	industry = (primary_reg.industry if primary_reg else "") or ""
-	segment = (primary_reg.segment if primary_reg else "") or ""
+	location = (primary_reg.location if primary_reg else (primary_event.location if primary_event else "")) or ""
+	industry = (primary_reg.industry if primary_reg else (primary_event.industry if primary_event else "")) or ""
+	segment = (primary_reg.segment if primary_reg else (primary_event.segment if primary_event else "")) or ""
 
 	# Dynamic BNI Membership Check: 1 if current user is verified BNI member, else 0
 	# STRICTLY checked ONLY against 'ConnectFest BNI Member' DocType!
@@ -485,8 +505,8 @@ def get_current_user_profile(**kwargs):
 	# non_bni_extra_percentage: 0.0 if user is BNI member (no extra surcharge), else admin configured % (e.g. 20.0)
 	admin_extra_pct = get_non_bni_extra_percentage()
 	non_bni_extra_percentage = 0.0 if user_is_bni else admin_extra_pct
-	region_name = (primary_reg.region_name if primary_reg else "") or ""
-	chapter_name = (primary_reg.chapter_name if primary_reg else "") or ""
+	region_name = (primary_reg.region_name if primary_reg else (primary_event.region_name if primary_event else "")) or ""
+	chapter_name = (primary_reg.chapter_name if primary_reg else (primary_event.chapter_name if primary_event else "")) or ""
 	source_of_info = (primary_reg.source_of_info if primary_reg else "") or ""
 	bill = (primary_reg.get("bill") if primary_reg else "") or ""
 	gst = (primary_reg.get("gst") if primary_reg else "") or ""
@@ -573,6 +593,30 @@ def get_current_user_profile(**kwargs):
 			"created_at": str(v.creation),
 		})
 
+	event_passes = []
+	for e in events_raw:
+		chk_in = cint(e.get("checked_in") or 0)
+		event_passes.append({
+			"registration_id": e.registration_id or e.name,
+			"full_name": (e.full_name if (e.get("full_name") and "@" not in e.get("full_name")) else user_full_name),
+			"pass_code": e.pass_code,
+			"event_name": e.event_name or "ConnectFest BNI Events 2027",
+			"company_name": e.company_name or "",
+			"chapter_name": e.chapter_name or "",
+			"region_name": e.region_name or "",
+			"location": e.location or "",
+			"industry": e.industry or "",
+			"segment": e.segment or "",
+			"status": e.status or ("Checked In" if chk_in else "Registered"),
+			"checked_in": chk_in,
+			"is_attended": bool(chk_in),
+			"attended": chk_in,
+			"checked_in_at": str(e.checked_in_at or "") if chk_in else None,
+			"attended_at": str(e.checked_in_at or "") if chk_in else None,
+			"qr_payload": e.qr_payload or f"BNIEVENT:{e.pass_code}:{e.email}",
+			"created_at": str(e.creation),
+		})
+
 	stall_booking = stalls[0] if stalls else None
 	total_amount = sum(flt(s.get("amount", 0.0)) for s in stalls)
 	total_amount_paid = sum(flt(s.get("amount", 0.0)) for s in stalls if s.get("has_paid"))
@@ -609,6 +653,7 @@ def get_current_user_profile(**kwargs):
 		# Single Comprehensive Stall Booking Object & Multi-Stall Support
 		"has_stall_booking": bool(stalls),
 		"has_pending_selection": bool(pending_registrations and not stalls),
+		"can_book_stall": False if (event_passes and not stalls) else True,
 		"total_stalls": len(stalls),
 		"stall_numbers": [s["stall_number"] for s in stalls if s.get("stall_number")],
 		"total_amount": total_amount,
@@ -620,6 +665,15 @@ def get_current_user_profile(**kwargs):
 		# Visitor Pass
 		"has_visitor_pass": bool(visitor_passes),
 		"visitor_pass": visitor_passes[0] if visitor_passes else None,
+
+		# Event Pass & Attendance
+		"has_event_registration": bool(event_passes),
+		"has_event_pass": bool(event_passes),
+		"event_pass": event_passes[0] if event_passes else None,
+		"event_registration": event_passes[0] if event_passes else None,
+		"event_passes": event_passes,
+		"event_attended": any(ep.get("is_attended") for ep in event_passes),
+		"is_event_user": bool(event_passes),
 
 		# Venue & Dates
 		"venue": "Chennai Trade Centre, Nandambakkam",

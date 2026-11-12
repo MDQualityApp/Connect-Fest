@@ -119,16 +119,22 @@ def register_bni_event(**kwargs):
 	existing_reg = frappe.db.get_value(
 		"ConnectFest BNI Event Registration",
 		{"mobile_no": mobile_no},
-		["name", "registration_id", "pass_code", "full_name", "email", "status"],
+		["name", "registration_id", "pass_code", "full_name", "email", "mobile_no", "status", "checked_in", "checked_in_at"],
 		as_dict=True
 	)
 	if existing_reg:
+		from connectfest.services.auth import ensure_frappe_user
+		ensure_frappe_user(existing_reg.get("email") or email, full_name=existing_reg.get("full_name") or full_name, mobile_no=existing_reg.get("mobile_no") or mobile_no, role="Website User")
+		chk_in = cint(existing_reg.get("checked_in") or 0)
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"message": f"You are already registered for {event_name}!",
+			"already_registered": True,
+			"message": f"Mobile number '{mobile_no}' is already registered for {event_name}!",
 			"registration_id": existing_reg.get("registration_id") or existing_reg.get("name"),
 			"pass_code": existing_reg.get("pass_code"),
+			"checked_in": chk_in,
+			"is_attended": bool(chk_in),
 			"attendee": existing_reg,
 		}
 
@@ -156,16 +162,22 @@ def register_bni_event(**kwargs):
 	existing_email_reg = frappe.db.get_value(
 		"ConnectFest BNI Event Registration",
 		{"email": email},
-		["name", "registration_id", "pass_code", "full_name", "mobile_no", "status"],
+		["name", "registration_id", "pass_code", "full_name", "email", "mobile_no", "status", "checked_in", "checked_in_at"],
 		as_dict=True
 	)
 	if existing_email_reg:
+		from connectfest.services.auth import ensure_frappe_user
+		ensure_frappe_user(existing_email_reg.get("email") or email, full_name=existing_email_reg.get("full_name") or full_name, mobile_no=existing_email_reg.get("mobile_no") or mobile_no, role="Website User")
+		chk_in = cint(existing_email_reg.get("checked_in") or 0)
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"message": f"Email {email} is already registered for {event_name}!",
+			"already_registered": True,
+			"message": f"Email '{email}' is already registered for {event_name}!",
 			"registration_id": existing_email_reg.get("registration_id") or existing_email_reg.get("name"),
 			"pass_code": existing_email_reg.get("pass_code"),
+			"checked_in": chk_in,
+			"is_attended": bool(chk_in),
 			"attendee": existing_email_reg,
 		}
 
@@ -286,11 +298,16 @@ def register_bni_event(**kwargs):
 		"session_user": getattr(frappe.session, "user", email),
 		"sid": session_sid,
 		"token": session_sid,
-		"message": "BNI Event registration successful! You are logged in.",
+		"message": "Event registration successful! User account created and logged in.",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
 		"full_name": full_name,
 		"chapter_name": chapter_name,
+		"user_created": True,
+		"can_book_stall": False,
+		"checked_in": 0,
+		"is_attended": False,
+		"attended": 0,
 		"data": {
 			"name": doc.name,
 			"registration_id": doc.name,
@@ -307,6 +324,9 @@ def register_bni_event(**kwargs):
 			"pass_code": pass_code,
 			"status": "Registered",
 			"checked_in": 0,
+			"is_attended": False,
+			"attended": 0,
+			"can_book_stall": False,
 		}
 	}
 

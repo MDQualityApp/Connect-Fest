@@ -220,7 +220,21 @@ def register_stall(**kwargs):
 				"message": f"This {field_matched} is already registered as a Visitor! (Pass ID: {v.registration_id}). Each attendee can only be an Exhibitor or a Visitor, not both."
 			}
 
-		# 3. Check if mobile_no or phone is already bound to another User in Frappe
+		# 3. Check if already registered in Event Registration with this mobile or email
+		evt = frappe.db.sql("""
+			SELECT registration_id, email, mobile_no
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+			LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
+		if evt:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"This account is registered for the Event (Pass ID: {evt[0].registration_id})! Event attendees cannot register or book stalls."
+			}
+
+		# 4. Check if mobile_no or phone is already bound to another User in Frappe
 		if mobile_no:
 			user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
 			if user_with_mob and user_with_mob.lower() != email.lower():
