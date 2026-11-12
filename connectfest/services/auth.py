@@ -172,6 +172,25 @@ def is_admin_user(user=None):
 	return "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles
 
 
+def is_scanner_user(user=None):
+	"""Checks if a user has Gate Scanner or Administrator privileges."""
+	u = user or getattr(frappe.session, "user", None)
+	if not u or u == "Guest":
+		return False
+	if is_admin_user(u):
+		return True
+	roles = frappe.get_roles(u)
+	if "ConnectFest Gate Scanner" in roles or "Gate Scanner" in roles:
+		return True
+	try:
+		cache = frappe.cache()
+		if cache.sismember("connectfest:scanner_users", u):
+			return True
+	except Exception:
+		pass
+	return False
+
+
 def check_admin_permission(resource_name="this administrative resource"):
 	"""
 	Verifies that the current session belongs to an authenticated Administrator.
@@ -180,11 +199,19 @@ def check_admin_permission(resource_name="this administrative resource"):
 	2. Request headers: 'sid', 'X-Frappe-Session-Id', 'Authorization: Bearer <sid>'
 	3. Query parameter or form dict: 'sid'
 	If authorized Admin, sets session and returns None.
-	If unauthorized, returns 401. If non-admin, returns 403.
+	If unauthorized (Guest/not logged in), returns 401 Unauthorized.
+	If logged in user is non-admin, strictly returns 403 Forbidden.
 	"""
 	sess_user = getattr(frappe.session, "user", None)
-	if sess_user and sess_user != "Guest" and is_admin_user(sess_user):
-		return None
+	if sess_user and sess_user != "Guest":
+		if is_admin_user(sess_user):
+			return None
+		# Logged in but non-admin user
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": f"Access Denied: User '{sess_user}' is not an administrator and cannot access {resource_name}!",
+		}
 
 	# Check for explicit session ID (sid) in headers, query parameters, or body
 	req_sid = None
@@ -220,50 +247,24 @@ def check_admin_permission(resource_name="this administrative resource"):
 			except Exception:
 				pass
 
-		if user_from_sid and is_admin_user(user_from_sid):
-			frappe.set_user(user_from_sid)
-			return None
-
-	# Check active dev/local admin session if running on localhost/development:
-	# This allows browser API clients like Hoppscotch / Postman to seamlessly invoke admin APIs
-	# without cross-origin third-party cookie restrictions blocking the session.
-	try:
-		cache = frappe.cache()
-		active_admin = cache.get("connectfest:active_admin_session")
-		if isinstance(active_admin, bytes):
-			active_admin = active_admin.decode("utf-8")
-
-		req_ip = getattr(frappe.local, "request_ip", "") or ""
-		req_host = (frappe.get_request_header("host") or "").split(":")[0]
-		is_local = (
-			req_ip in ("127.0.0.1", "localhost", "::1", "")
-			or req_host in ("localhost", "127.0.0.1", "connectfest.localhost")
-			or getattr(frappe.flags, "in_test", False)
-		)
-
-		if is_local and active_admin and is_admin_user(active_admin):
-			frappe.set_user(active_admin)
-			return None
-	except Exception:
-		pass
+		if user_from_sid and user_from_sid != "Guest":
+			if is_admin_user(user_from_sid):
+				frappe.set_user(user_from_sid)
+				return None
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": f"Access Denied: User '{user_from_sid}' is not an administrator and cannot access {resource_name}!",
+			}
 
 	# If still Guest or not authorized
-	current_user = getattr(frappe.session, "user", "Guest")
-	if not current_user or current_user == "Guest":
-		frappe.local.response["http_status_code"] = 401
-		return {
-			"status": "unauthorized",
-			"is_logged_in": False,
-			"user": "Guest",
-			"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
-		}
-	if not is_admin_user(current_user):
-		frappe.local.response["http_status_code"] = 403
-		return {
-			"status": "forbidden",
-			"message": f"Access Denied: Only administrators can access {resource_name}!",
-		}
-	return None
+	frappe.local.response["http_status_code"] = 401
+	return {
+		"status": "unauthorized",
+		"is_logged_in": False,
+		"user": "Guest",
+		"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
+	}
 
 
 def logout():
@@ -394,6 +395,7 @@ def get_current_user_profile(**kwargs):
 		user_mobile = ""
 
 	is_admin = is_admin_user(target_user)
+	is_scanner = is_scanner_user(target_user)
 
 	# Fetch all stall booking details (Exhibitor)
 	stalls_raw = frappe.db.sql("""
@@ -561,6 +563,7 @@ def get_current_user_profile(**kwargs):
 		"roles": user_roles,
 		"role_type": role_type,
 		"is_admin": is_admin,
+		"is_scanner": is_scanner,
 
 		# Business / Attendee Profile
 		"company_name": company_name,
@@ -848,6 +851,200 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 	except Exception as e:
 		frappe.log_error("ConnectFest Toggle User Error", frappe.get_traceback())
 		return {"status": "error", "message": str(e)}
+
+
+def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full_name=None, enable=None, **kwargs):
+	"""
+	Admin API to delegate gate pass scanning access to a specific user (staff, volunteer, guard).
+	Allows them to scan and verify both Visitor passes and BNI Event passes at venue gates.
+	Accepts ONLY email: {"email": "user@example.com", "enable": 0/1}
+	"""
+	err = check_admin_permission("scanner access delegation")
+	if err:
+		return err
+
+	if isinstance(email, dict):
+		kwargs.update(email)
+		email = None
+	if isinstance(user_email, dict):
+		kwargs.update(user_email)
+		user_email = None
+
+	data = extract_request_data(kwargs)
+	target_email = (
+		(email if isinstance(email, str) else None)
+		or (user_email if isinstance(user_email, str) else None)
+		or data.get("email")
+		or data.get("user_email")
+		or data.get("user")
+		or ""
+	).strip().lower()
+	target_mob = (
+		(mobile_no if isinstance(mobile_no, str) else None)
+		or data.get("mobile_no")
+		or data.get("phone")
+		or data.get("mobile")
+		or ""
+	).strip()
+	name = (
+		(full_name if isinstance(full_name, str) else None)
+		or data.get("full_name")
+		or data.get("name")
+		or ""
+	).strip()
+
+	raw_enabled = None
+	if "enable" in data:
+		raw_enabled = data.get("enable")
+	elif "enabled" in data:
+		raw_enabled = data.get("enabled")
+	elif "status" in data:
+		raw_enabled = data.get("status")
+	elif enable is not None:
+		raw_enabled = enable
+
+	if raw_enabled is None:
+		new_enabled = 1
+	elif isinstance(raw_enabled, bool):
+		new_enabled = 1 if raw_enabled else 0
+	elif isinstance(raw_enabled, (int, float)):
+		new_enabled = 1 if int(raw_enabled) != 0 else 0
+	else:
+		s = str(raw_enabled).strip().lower()
+		new_enabled = 0 if s in ("0", "false", "no", "disabled", "disable", "revoke", "") else 1
+
+	if not target_email and target_mob:
+		target_email = (
+			frappe.db.get_value("ConnectFest Registration", {"mobile_no": target_mob}, "email")
+			or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": target_mob}, "email")
+			or frappe.db.get_value("ConnectFest BNI Event Registration", {"mobile_no": target_mob}, "email")
+			or frappe.db.get_value("User", {"phone": target_mob}, "name")
+			or frappe.db.get_value("User", {"mobile_no": target_mob}, "name")
+		)
+
+	if not target_email:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Email ('email') is required to grant scanner access"}
+
+	target_email = target_email.strip().lower()
+	if not name:
+		name = (
+			frappe.db.get_value("User", target_email, "full_name")
+			or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, "full_name")
+			or frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "full_name")
+			or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "full_name")
+			or target_email.split("@")[0].title()
+		)
+
+	# Ensure user account exists
+	ensure_frappe_user(target_email, full_name=name, mobile_no=target_mob, role="Website User")
+
+	# Ensure Role exists
+	if not frappe.db.exists("Role", "ConnectFest Gate Scanner"):
+		role_doc = frappe.get_doc({"doctype": "Role", "role_name": "ConnectFest Gate Scanner", "desk_access": 1})
+		role_doc.flags.ignore_permissions = True
+		role_doc.insert()
+		frappe.db.commit()
+
+	u_doc = frappe.get_doc("User", target_email)
+	cache = frappe.cache()
+
+	if new_enabled:
+		u_doc.add_roles("ConnectFest Gate Scanner")
+		u_doc.flags.ignore_permissions = True
+		u_doc.flags.ignore_password_policy = True
+		u_doc.save()
+		try:
+			cache.sadd("connectfest:scanner_users", target_email)
+			if target_mob:
+				cache.sadd("connectfest:scanner_users", target_mob)
+		except Exception:
+			pass
+		msg = f"Gate Scanner access granted successfully to '{target_email}' ({name}). They can now scan visitor and event passes."
+	else:
+		u_doc.remove_roles("ConnectFest Gate Scanner")
+		u_doc.flags.ignore_permissions = True
+		u_doc.save()
+		try:
+			cache.srem("connectfest:scanner_users", target_email)
+			if target_mob:
+				cache.srem("connectfest:scanner_users", target_mob)
+		except Exception:
+			pass
+		msg = f"Gate Scanner access revoked for '{target_email}'."
+
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"message": msg,
+		"user": target_email,
+		"full_name": name,
+		"mobile_no": target_mob or u_doc.mobile_no or u_doc.phone,
+		"scanner_access": bool(new_enabled),
+		"role": "ConnectFest Gate Scanner" if new_enabled else None,
+	}
+
+
+def admin_get_scanner_users(**kwargs):
+	"""
+	Admin API: Returns a list of all users who have Gate Scanner privileges.
+	"""
+	err = check_admin_permission("scanner users directory")
+	if err:
+		return err
+
+	scanner_users = frappe.db.sql("""
+		SELECT u.name as email, u.full_name, u.mobile_no, u.phone, u.enabled, u.creation, u.last_login
+		FROM `tabUser` u
+		JOIN `tabHas Role` r ON r.parent = u.name
+		WHERE r.role = 'ConnectFest Gate Scanner'
+		ORDER BY u.creation DESC
+	""", as_dict=True)
+
+	for u in scanner_users:
+		mail = u.get("email")
+		vis_count = frappe.db.sql("""
+			SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration`
+			WHERE checked_in_by = %s
+		""", (mail,), as_dict=True)[0].cnt
+
+		bni_count = frappe.db.sql("""
+			SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration`
+			WHERE checked_in_by = %s
+		""", (mail,), as_dict=True)[0].cnt
+
+		u["passes_scanned"] = vis_count + bni_count
+		u["scanner_role"] = "ConnectFest Gate Scanner"
+
+	return {
+		"status": "success",
+		"total_scanners": len(scanner_users),
+		"scanners": scanner_users,
+	}
+
+
+def admin_revoke_scanner_access(user_email=None, mobile_no=None, **kwargs):
+	"""Alias to quickly revoke gate scanner access with just email."""
+	if isinstance(user_email, dict):
+		kwargs.update(user_email)
+		user_email = None
+	return admin_grant_scanner_access(user_email=user_email, mobile_no=mobile_no, enable=0, **kwargs)
+
+
+def admin_toggle_scanner_access(user_email=None, mobile_no=None, enable=None, **kwargs):
+	"""Alias to toggle gate scanner access. If enable is not given, inverts current status."""
+	if isinstance(user_email, dict):
+		kwargs.update(user_email)
+		user_email = None
+
+	if enable is None and "enable" not in kwargs and "enabled" not in kwargs and "status" not in kwargs:
+		data = extract_request_data(kwargs)
+		target = (user_email or data.get("email") or data.get("user_email") or "").strip().lower()
+		if target and frappe.db.exists("User", target):
+			current_roles = frappe.get_roles(target)
+			enable = 0 if "ConnectFest Gate Scanner" in current_roles else 1
+
+	return admin_grant_scanner_access(user_email=user_email, mobile_no=mobile_no, enable=enable, **kwargs)
 
 
 @handle_api_errors("ConnectFest Admin Get All Users Error")

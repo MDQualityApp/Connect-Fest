@@ -279,7 +279,12 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 				or data.get("mobile_no")
 				or data.get("phone")
 			)
-			is_bni, bni_doc = is_valid_bni_member(u_mob)
+			u_email = (
+				record.get("email")
+				or (sess_user if sess_user and sess_user != "Guest" else None)
+				or data.get("email")
+			)
+			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
 			if not is_bni:
 				frappe.local.response["http_status_code"] = 400
 				return {
@@ -299,12 +304,25 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 		return {"status": hold_err.get("status", "error"), "message": hold_err.get("message")}
 
 	from connectfest.services.pricing import get_tier_details
+	from connectfest.services.bni_members import calculate_stall_price_for_user
+
 	category = (stall_category or stall_doc.tier or "Regular").strip()
 	tier_info = get_tier_details(stall_doc.tier)
-	base_amount = tier_info["price"]
-	gst_pct = tier_info.get("gst_percent", 18.0)
-	tax_amount = round(base_amount * (gst_pct / 100.0), 2)
-	total_amount = round(base_amount + tax_amount, 2)
+	user_mob = record.get("mobile_no") or data.get("mobile_no")
+	user_email = record.get("email") or sess_user
+	is_bni_flag = record.get("is_bni_member")
+
+	pricing = calculate_stall_price_for_user(
+		tier=stall_doc.tier,
+		user_mobile=user_mob,
+		user_email=user_email,
+		is_bni_member=is_bni_flag,
+		custom_base_price=tier_info["price"]
+	)
+	base_amount = pricing["base_amount"]
+	gst_pct = pricing["gst_percent"]
+	tax_amount = pricing["tax_amount"]
+	total_amount = pricing["total_amount"]
 	amount = total_amount
 	amount_in_paise = int(total_amount * 100)
 
@@ -314,6 +332,9 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	record["base_amount"] = base_amount
 	record["tax_amount"] = tax_amount
 	record["gst_percent"] = gst_pct
+	record["is_bni_member"] = pricing["is_bni_member"]
+	record["non_bni_extra_percentage"] = pricing["non_bni_extra_percentage"]
+	record["surcharge_amount"] = pricing["surcharge_amount"]
 
 	cfg = get_razorpay_config()
 	order_id = None
@@ -331,6 +352,10 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 					"registration_id": reg_id,
 					"stall_number": stall_num,
 					"stall_category": category,
+					"is_bni_member": pricing["is_bni_member"],
+					"non_bni_extra_percentage": pricing["non_bni_extra_percentage"],
+					"surcharge_amount": pricing["surcharge_amount"],
+					"original_price": pricing["original_price"],
 					"base_amount": base_amount,
 					"gst_percent": gst_pct,
 					"tax_amount": tax_amount,
@@ -846,7 +871,12 @@ def preview_payment(**kwargs):
 				or data.get("mobile_no")
 				or data.get("phone")
 			)
-			is_bni, bni_doc = is_valid_bni_member(u_mob)
+			u_email = (
+				record.get("email")
+				or (sess_user if sess_user and sess_user != "Guest" else None)
+				or data.get("email")
+			)
+			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
 			if not is_bni:
 				frappe.local.response["http_status_code"] = 400
 				return {
@@ -867,11 +897,24 @@ def preview_payment(**kwargs):
 
 	category = stall_doc.tier
 	from connectfest.services.pricing import get_tier_details
+	from connectfest.services.bni_members import calculate_stall_price_for_user
+
 	tier_info = get_tier_details(category)
-	base_amount = tier_info["price"]
-	gst_pct = tier_info.get("gst_percent", 18.0)
-	tax_amount = round(base_amount * (gst_pct / 100.0), 2)
-	total_amount = round(base_amount + tax_amount, 2)
+	user_mob = record.get("mobile_no") or data.get("mobile_no")
+	user_email = record.get("email") or sess_user
+	is_bni_flag = record.get("is_bni_member")
+
+	pricing = calculate_stall_price_for_user(
+		tier=category,
+		user_mobile=user_mob,
+		user_email=user_email,
+		is_bni_member=is_bni_flag,
+		custom_base_price=tier_info["price"]
+	)
+	base_amount = pricing["base_amount"]
+	gst_pct = pricing["gst_percent"]
+	tax_amount = pricing["tax_amount"]
+	total_amount = pricing["total_amount"]
 
 	record["stall_number"] = stall_num
 	record["stall_category"] = category
@@ -879,6 +922,9 @@ def preview_payment(**kwargs):
 	record["base_amount"] = base_amount
 	record["tax_amount"] = tax_amount
 	record["gst_percent"] = gst_pct
+	record["is_bni_member"] = pricing["is_bni_member"]
+	record["non_bni_extra_percentage"] = pricing["non_bni_extra_percentage"]
+	record["surcharge_amount"] = pricing["surcharge_amount"]
 	set_cached_record(cache, f"{STALL_CACHE_PREFIX}{docname}", record)
 
 	expires_in = 600
@@ -917,6 +963,10 @@ def preview_payment(**kwargs):
 		},
 		"pricing": {
 			"base_amount": base_amount,
+			"original_tier_price": pricing["original_price"],
+			"is_bni_member": pricing["is_bni_member"],
+			"non_bni_extra_percentage": pricing["non_bni_extra_percentage"],
+			"surcharge_amount": pricing["surcharge_amount"],
 			"gst_percent": gst_pct,
 			"tax_amount": tax_amount,
 			"total_amount": total_amount,

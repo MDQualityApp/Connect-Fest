@@ -53,6 +53,10 @@ from connectfest.services.auth import (
 	request_contact_update as _request_contact_update,
 	verify_and_update_contact as _verify_and_update_contact,
 	update_profile as _update_profile,
+	admin_grant_scanner_access as _admin_grant_scanner_access,
+	admin_get_scanner_users as _admin_get_scanner_users,
+	admin_revoke_scanner_access as _admin_revoke_scanner_access,
+	admin_toggle_scanner_access as _admin_toggle_scanner_access,
 )
 from connectfest.services.stalls import (
 	get_stalls as _get_stalls,
@@ -100,6 +104,8 @@ from connectfest.services.passes import (
 	verify_gate_pass as _verify_gate_pass,
 	get_registration as _get_registration,
 	get_my_dashboard as _get_my_dashboard,
+	get_scanned_users as _get_scanned_users,
+	admin_get_scanned_users as _admin_get_scanned_users,
 )
 from connectfest.services.queue import (
 	trigger_async_flush,
@@ -182,6 +188,8 @@ from connectfest.services.bni_members import (
 	bulk_delete_bni_members as _bulk_delete_bni_members,
 	admin_toggle_crn_bni_restriction as _admin_toggle_crn_bni_restriction,
 	toggle_crn_bni_restriction as _toggle_crn_bni_restriction,
+	admin_set_non_bni_extra_percentage as _admin_set_non_bni_extra_percentage,
+	get_non_bni_extra_percentage_info as _get_non_bni_extra_percentage_info,
 )
 
 
@@ -404,6 +412,27 @@ def verify_pass(pass_code=None, day=None, **kwargs):
 def Verify_Pass(pass_code=None, day=None, **kwargs):
 	"""Verify_Pass alias matching Hoppscotch collection."""
 	return _admin_verify_gate_pass(pass_code=pass_code, day=day, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None, page=1, limit=50, **kwargs):
+	"""
+	GET / POST: View scanned attendees (checked-in) and not-scanned attendees (pending).
+	Restricted strictly to Administrators and users with the dedicated 'ConnectFest Gate Scanner' role.
+	"""
+	return _get_scanned_users(status=status, pass_type=pass_type, search=search, scanned_by=scanned_by, page=page, limit=limit, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None, page=1, limit=50, **kwargs):
+	"""Admin alias for get_scanned_users."""
+	return _admin_get_scanned_users(status=status, pass_type=pass_type, search=search, scanned_by=scanned_by, page=page, limit=limit, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_check_in_list(**kwargs):
+	"""Alias for get_scanned_users."""
+	return _get_scanned_users(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1081,7 +1110,9 @@ def bulk_delete_bni_members(mobile_numbers=None, **kwargs):
 
 @frappe.whitelist(allow_guest=True)
 def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
-	"""Admin API: Toggle or set CRN BNI member restriction (1=ON, 0=OFF)."""
+	"""
+	Admin API: Toggle or set CRN BNI restriction (1=ON, 0=OFF) and configure non-BNI member extra percentage surcharge.
+	"""
 	return _admin_toggle_crn_bni_restriction(enable=enable, **kwargs)
 
 
@@ -1091,16 +1122,49 @@ def toggle_crn_bni_restriction(enable=None, **kwargs):
 	return _admin_toggle_crn_bni_restriction(enable=enable, **kwargs)
 
 
+@frappe.whitelist(allow_guest=True)
+def admin_set_non_bni_extra_percentage(percentage=None, **kwargs):
+	"""Admin API: Set the extra percentage surcharge for non-BNI members (e.g. 10 for 10%)."""
+	return _admin_set_non_bni_extra_percentage(percentage=percentage, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_non_bni_extra_percentage_info(**kwargs):
+	"""Public API: Get current CRN status and non-BNI extra percentage."""
+	return _get_non_bni_extra_percentage_info(**kwargs)
+
+
 # ============================================================================
 # ConnectFest BNI Events API (Registration, Email OTP, Pass Check & Verify)
 # ============================================================================
 
 from connectfest.services.bni_events import (
+	check_bni_event_number as _check_bni_event_number,
 	register_bni_event as _register_bni_event,
 	verify_bni_event_pass as _verify_bni_event_pass,
 	get_bni_event_pass as _get_bni_event_pass,
 	admin_get_bni_event_registrations as _admin_get_bni_event_registrations,
+	get_bni_event_registrations as _get_bni_event_registrations,
+	get_event_registrations as _get_event_registrations,
+	admin_get_event_registrations as _admin_get_event_registrations,
+	get_bni_event_registration as _get_bni_event_registration,
+	get_event_registration as _get_event_registration,
 )
+
+
+@frappe.whitelist(allow_guest=True)
+def check_bni_event_number(mobile_no=None, **kwargs):
+	"""
+	Pre-registration check API: Validates mobile number against BNI Member database
+	and checks if already registered before requesting OTP.
+	"""
+	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def check_bni_number(mobile_no=None, **kwargs):
+	"""Alias for check_bni_event_number."""
+	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1140,6 +1204,73 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 def admin_get_bni_event_registrations(**kwargs):
 	"""Admin API: List, search, filter BNI Event registrations and check-in stats."""
 	return _admin_get_bni_event_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bni_event_registrations(**kwargs):
+	"""GET API: List all BNI Event registered attendees with full payload & check-in counts."""
+	return _admin_get_bni_event_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_event_registrations(**kwargs):
+	"""GET API: Alias for get_bni_event_registrations."""
+	return _admin_get_bni_event_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_event_registrations(**kwargs):
+	"""Admin GET API: Alias for admin_get_bni_event_registrations."""
+	return _admin_get_bni_event_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_bni_event_registration(registration_id=None, pass_code=None, mobile_no=None, email=None, **kwargs):
+	"""GET API: Retrieve details and payload for a single registered BNI event attendee."""
+	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_event_registration(registration_id=None, pass_code=None, mobile_no=None, email=None, **kwargs):
+	"""GET API: Alias for get_bni_event_registration."""
+	return _get_bni_event_pass(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+# ============================================================================
+# Gate Scanner Access Delegation APIs (Admin grants volunteer/guard scan access)
+# ============================================================================
+
+@frappe.whitelist(allow_guest=True)
+def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full_name=None, enable=None, **kwargs):
+	"""
+	Admin API: Delegate gate pass scanning access to a specific staff/volunteer/user.
+	Once granted, they can scan both Visitor passes and BNI Event passes.
+	"""
+	return _admin_grant_scanner_access(email=email, user_email=user_email, mobile_no=mobile_no, full_name=full_name, enable=enable, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_toggle_scanner_access(user_email=None, mobile_no=None, enable=None, **kwargs):
+	"""Alias for admin_grant_scanner_access."""
+	return _admin_toggle_scanner_access(user_email=user_email, mobile_no=mobile_no, enable=enable, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_revoke_scanner_access(user_email=None, mobile_no=None, **kwargs):
+	"""Admin API: Revoke gate pass scanning access from a user."""
+	return _admin_revoke_scanner_access(user_email=user_email, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_scanner_users(**kwargs):
+	"""Admin API: List all users who have gate pass scanner privileges and their scan stats."""
+	return _admin_get_scanner_users(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_scanner_users(**kwargs):
+	"""Alias for admin_get_scanner_users."""
+	return _admin_get_scanner_users(**kwargs)
 
 
 

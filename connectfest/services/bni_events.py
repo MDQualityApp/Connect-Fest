@@ -6,22 +6,86 @@ from connectfest.services.bni_members import normalize_phone_number, is_valid_bn
 from connectfest.services.registration import validate_registration_email_otp
 
 
+@handle_api_errors("ConnectFest BNI Event Number Check Error")
+def check_bni_event_number(mobile_no=None, **kwargs):
+	"""
+	Pre-registration verification API for BNI Events:
+	1. Validates mobile number format.
+	2. Checks if mobile number belongs to a verified BNI member in 'ConnectFest BNI Member'.
+	3. Checks if the attendee is already registered for this BNI Event.
+	Returns member details (name, chapter, region) if valid.
+	"""
+	data = extract_request_data(kwargs)
+	mob = normalize_phone_number(mobile_no or data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+	email = safe_str(data.get("email") or kwargs.get("email")).strip().lower()
+
+	if (not mob or len(mob) != 10) and (not email or "@" not in email):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"is_bni_member": False,
+			"message": "Valid 10-digit Mobile Number or Email Address is required."
+		}
+
+	# 1. Check BNI membership
+	is_bni, bni_doc = is_valid_bni_member(mobile_no=mob, email=email)
+	if not is_bni:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"is_bni_member": False,
+			"message": "You are not a BNI member! Registration is strictly restricted to verified BNI members.",
+			"mobile_no": mob,
+		}
+
+	# 2. Check if already registered
+	existing_reg = frappe.db.get_value(
+		"ConnectFest BNI Event Registration",
+		{"mobile_no": mob},
+		["name", "registration_id", "pass_code", "full_name", "email", "chapter_name", "status"],
+		as_dict=True
+	)
+	if existing_reg:
+		frappe.local.response["http_status_code"] = 200
+		return {
+			"status": "already_registered",
+			"is_bni_member": True,
+			"already_registered": True,
+			"message": "You are already registered for the BNI Event!",
+			"registration_id": existing_reg.get("registration_id") or existing_reg.get("name"),
+			"pass_code": existing_reg.get("pass_code"),
+			"attendee": existing_reg,
+		}
+
+	frappe.local.response["http_status_code"] = 200
+	return {
+		"status": "success",
+		"is_bni_member": True,
+		"already_registered": False,
+		"message": "Verified BNI Member! You may proceed with Email OTP verification.",
+		"mobile_no": mob,
+		"member_name": (bni_doc.get("member_name") if bni_doc else "") or "",
+		"chapter_name": (bni_doc.get("chapter_name") if bni_doc else "") or "",
+		"region_name": (bni_doc.get("region_name") if bni_doc else "") or "",
+	}
+
+
 @handle_api_errors("ConnectFest BNI Event Registration Error")
 def register_bni_event(**kwargs):
 	"""
 	Dedicated BNI Event Registration API.
-	Requirements:
-	1. Attendee mobile_no MUST exist in 'ConnectFest BNI Member' DocType (Mandatory BNI / CNR member).
-	2. Email OTP verification is mandatory (No Mobile OTP required).
-	3. Generates unique BNI Event Pass Code & QR Payload for gate check-in.
-	4. Completely isolated from existing exhibitor/visitor flows.
+	Registration Flow:
+	1. FIRST: Check Mobile Number - strictly verify attendee mobile_no exists in 'ConnectFest BNI Member' DocType.
+	2. Check if this mobile number is already registered for this event.
+	3. SECOND: Verify Email OTP - only verified BNI members with valid email OTP can register.
+	4. Generates unique BNI Event Pass Code & QR Payload for gate check-in.
 	"""
 	data = extract_request_data(kwargs)
 
-	full_name = safe_str(data.get("full_name") or data.get("name"))
-	company_name = safe_str(data.get("company_name") or data.get("company"))
 	mobile_no = normalize_phone_number(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
 	email = safe_str(data.get("email")).strip().lower()
+	full_name = safe_str(data.get("full_name") or data.get("name"))
+	company_name = safe_str(data.get("company_name") or data.get("company"))
 
 	chapter_name = safe_str(data.get("chapter_name") or data.get("chapter"))
 	region_name = safe_str(data.get("region_name") or data.get("region"))
@@ -30,21 +94,18 @@ def register_bni_event(**kwargs):
 	segment = safe_str(data.get("segment"))
 	event_name = safe_str(data.get("event_name") or "ConnectFest BNI Events 2027")
 
-	errors = []
-	if not full_name:
-		errors.append("Full Name is required")
-	if not email or "@" not in email:
-		errors.append("Valid Email Address is required")
+	# =========================================================================
+	# STEP 1: FIRST CHECK NUMBER (Mobile Number Validation & BNI Verification)
+	# =========================================================================
 	if not mobile_no or len(mobile_no) != 10:
-		errors.append("Valid 10-digit Mobile Number is required")
-
-	if errors:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "Validation Failed", "errors": errors}
+		return {
+			"status": "error",
+			"message": "Valid 10-digit Mobile Number is required."
+		}
 
-	# 1. Mandatory BNI Member Verification:
-	# Must exist in ConnectFest BNI Member DocType (Checked before OTP validation)
-	is_bni, bni_doc = is_valid_bni_member(mobile_no)
+	# Verify mobile or email exists in ConnectFest BNI Member DocType
+	is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
 	if not is_bni:
 		frappe.local.response["http_status_code"] = 400
 		return {
@@ -53,36 +114,13 @@ def register_bni_event(**kwargs):
 			"mobile_no": mobile_no,
 		}
 
-	# 2. Mandatory Email OTP Verification (Checked after BNI membership is confirmed)
-	email_val_err = validate_registration_email_otp(email, data)
-	if email_val_err:
-		frappe.local.response["http_status_code"] = 400
-		return email_val_err
-
-	# Auto-populate chapter / region from BNI Member record if missing
-	if bni_doc:
-		if not chapter_name and bni_doc.get("chapter_name"):
-			chapter_name = bni_doc.get("chapter_name")
-		if not region_name and bni_doc.get("region_name"):
-			region_name = bni_doc.get("region_name")
-		if not full_name and bni_doc.get("member_name"):
-			full_name = bni_doc.get("member_name")
-
-	# 3. Check for duplicate registration for this BNI Event
+	# Check if this mobile number is already registered for this BNI Event
 	existing_reg = frappe.db.get_value(
 		"ConnectFest BNI Event Registration",
 		{"mobile_no": mobile_no},
 		["name", "registration_id", "pass_code", "full_name", "email", "status"],
 		as_dict=True
 	)
-	if not existing_reg:
-		existing_reg = frappe.db.get_value(
-			"ConnectFest BNI Event Registration",
-			{"email": email},
-			["name", "registration_id", "pass_code", "full_name", "mobile_no", "status"],
-			as_dict=True
-		)
-
 	if existing_reg:
 		frappe.local.response["http_status_code"] = 200
 		return {
@@ -92,6 +130,51 @@ def register_bni_event(**kwargs):
 			"pass_code": existing_reg.get("pass_code"),
 			"attendee": existing_reg,
 		}
+
+	# Auto-populate chapter / region / member name from BNI Member record if missing
+	if bni_doc:
+		if not chapter_name and bni_doc.get("chapter_name"):
+			chapter_name = bni_doc.get("chapter_name")
+		if not region_name and bni_doc.get("region_name"):
+			region_name = bni_doc.get("region_name")
+		if not full_name and bni_doc.get("member_name"):
+			full_name = bni_doc.get("member_name")
+
+	# Validate Email and Full Name
+	errors = []
+	if not full_name:
+		errors.append("Full Name is required")
+	if not email or "@" not in email:
+		errors.append("Valid Email Address is required")
+
+	if errors:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	# Check if email is already registered for this BNI Event
+	existing_email_reg = frappe.db.get_value(
+		"ConnectFest BNI Event Registration",
+		{"email": email},
+		["name", "registration_id", "pass_code", "full_name", "mobile_no", "status"],
+		as_dict=True
+	)
+	if existing_email_reg:
+		frappe.local.response["http_status_code"] = 200
+		return {
+			"status": "already_registered",
+			"message": f"Email {email} is already registered for {event_name}!",
+			"registration_id": existing_email_reg.get("registration_id") or existing_email_reg.get("name"),
+			"pass_code": existing_email_reg.get("pass_code"),
+			"attendee": existing_email_reg,
+		}
+
+	# =========================================================================
+	# STEP 2: VERIFY EMAIL OTP (Strictly executed AFTER number check passes)
+	# =========================================================================
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
 
 	# 4. Generate Pass Code & QR Code Payload
 	pass_random = frappe.generate_hash(length=8).upper()
@@ -134,7 +217,28 @@ def register_bni_event(**kwargs):
 	})
 	frappe.db.commit()
 
-	# 5. Send Email Pass Confirmation
+	# 5. Provision Frappe User & Auto-login attendee immediately
+	session_sid = None
+	try:
+		from connectfest.services.auth import ensure_frappe_user
+		ensure_frappe_user(email, full_name=full_name, mobile_no=mobile_no, role="Website User")
+
+		from frappe.auth import LoginManager
+		if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+			frappe.local.login_manager.login_as(email)
+		else:
+			frappe.local.login_manager = LoginManager()
+			frappe.local.login_manager.login_as(email)
+		frappe.set_user(email)
+		session_sid = (
+			getattr(getattr(frappe.local, "session_obj", None), "sid", None)
+			or getattr(getattr(frappe.local, "session", None), "sid", None)
+			or getattr(frappe.session, "sid", None)
+		)
+	except Exception as e:
+		frappe.log_error("Auto-login error on BNI registration", str(e))
+
+	# 6. Send Email Pass Confirmation
 	try:
 		subject = f"🎟️ Your BNI Event Pass: {event_name}"
 		email_body = f"""
@@ -176,12 +280,15 @@ def register_bni_event(**kwargs):
 	return {
 		"status": "success",
 		"type": "bni_event",
-		"message": "BNI Event registration successful! Digital pass has been generated.",
+		"is_logged_in": True,
+		"session_user": getattr(frappe.session, "user", email),
+		"sid": session_sid,
+		"token": session_sid,
+		"message": "BNI Event registration successful! You are logged in.",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
 		"full_name": full_name,
 		"chapter_name": chapter_name,
-		"qr_payload": qr_data,
 		"data": {
 			"name": doc.name,
 			"registration_id": doc.name,
@@ -344,7 +451,7 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 	record = frappe.db.get_value(
 		"ConnectFest BNI Event Registration",
 		filters,
-		["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "location", "industry", "segment", "event_name", "pass_code", "qr_payload", "status", "checked_in", "checked_in_at"],
+		["name", "registration_id", "full_name", "company_name", "mobile_no", "email", "chapter_name", "region_name", "location", "industry", "segment", "event_name", "pass_code", "status", "checked_in", "checked_in_at", "checked_in_by"],
 		as_dict=True
 	)
 	if not record:
@@ -361,8 +468,45 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 @handle_api_errors("ConnectFest Admin BNI Event Registrations Error")
 def admin_get_bni_event_registrations(**kwargs):
 	"""
-	Admin API: List BNI Event registrations with search, filter, and check-in stats.
+	Admin & Scanner API: List BNI Event registrations with search, filter, and check-in stats.
+	Restricted strictly to Event Administrators and authorized Gate Scanners.
 	"""
+	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import is_admin_user, is_scanner_user
+
+	# Resolve user from sid if Guest
+	if not sess_user or sess_user == "Guest":
+		req_sid = (
+			frappe.get_request_header("sid")
+			or frappe.get_request_header("X-Frappe-Session-Id")
+			or (frappe.request.cookies.get("sid") if hasattr(frappe, "request") and frappe.request else None)
+		)
+		if not req_sid:
+			auth_hdr = frappe.get_request_header("Authorization", "")
+			if auth_hdr.startswith("Bearer "):
+				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+		if req_sid and req_sid != "Guest":
+			try:
+				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
+				if res and res[0][0]:
+					sess_user = res[0][0]
+			except Exception:
+				pass
+
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+		}
+
+	if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": f"Access Denied: User '{sess_user}' does not have privileges! Only Administrators and authorized Gate Scanners can view event registrations.",
+		}
+
 	data = extract_request_data(kwargs)
 	search = safe_str(data.get("search") or kwargs.get("search")).strip()
 	status = safe_str(data.get("status") or kwargs.get("status")).strip()
@@ -391,7 +535,7 @@ def admin_get_bni_event_registrations(**kwargs):
 	items = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, mobile_no, email,
 		       chapter_name, region_name, location, industry, segment, event_name,
-		       pass_code, status, checked_in, checked_in_at, creation
+		       pass_code, status, checked_in, checked_in_at, checked_in_by, creation
 		FROM `tabConnectFest BNI Event Registration`
 		{where_clause}
 		ORDER BY creation DESC
@@ -419,4 +563,13 @@ def admin_get_bni_event_registrations(**kwargs):
 		"limit": limit,
 		"registrations": items
 	}
+
+
+# Aliases
+get_bni_event_registrations = admin_get_bni_event_registrations
+get_event_registrations = admin_get_bni_event_registrations
+admin_get_event_registrations = admin_get_bni_event_registrations
+get_bni_event_registration = get_bni_event_pass
+get_event_registration = get_bni_event_pass
+admin_get_bni_event_registration = get_bni_event_pass
 

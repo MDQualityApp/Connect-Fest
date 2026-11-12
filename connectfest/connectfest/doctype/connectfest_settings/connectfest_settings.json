@@ -22,7 +22,16 @@
   "event_name",
   "event_dates",
   "event_venue",
-  "crn_bni_only"
+  "crn_bni_only",
+  "bni_check_mobile",
+  "bni_check_email",
+  "non_bni_extra_percentage",
+  "wati_section",
+  "wati_enabled",
+  "wati_api_host",
+  "column_break_wati",
+  "wati_api_token",
+  "wati_template_name"
  ],
  "fields": [
   {
@@ -123,6 +132,58 @@
    "fieldname": "crn_bni_only",
    "fieldtype": "Check",
    "label": "Strictly Restrict CRN Stalls to BNI Members"
+  },
+  {
+   "default": "1",
+   "fieldname": "bni_check_mobile",
+   "fieldtype": "Check",
+   "label": "Check BNI Membership by Mobile Number"
+  },
+  {
+   "default": "1",
+   "fieldname": "bni_check_email",
+   "fieldtype": "Check",
+   "label": "Check BNI Membership by Email Address"
+  },
+  {
+   "default": "10",
+   "fieldname": "non_bni_extra_percentage",
+   "fieldtype": "Percent",
+   "label": "Non-BNI Member Extra Surcharge (%)"
+  },
+  {
+   "fieldname": "wati_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp (WATI) Configuration"
+  },
+  {
+   "default": "1",
+   "fieldname": "wati_enabled",
+   "fieldtype": "Check",
+   "label": "Enable WhatsApp Notifications"
+  },
+  {
+   "default": "https://live-mt-server.wati.io",
+   "fieldname": "wati_api_host",
+   "fieldtype": "Data",
+   "label": "WATI API Host"
+  },
+  {
+   "fieldname": "column_break_wati",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Bearer token from WATI Developer Console",
+   "fieldname": "wati_api_token",
+   "fieldtype": "Password",
+   "label": "WATI API Token"
+  },
+  {
+   "default": "welcome",
+   "description": "Approved template name in WATI (e.g. welcome, connectfest_stall_booking)",
+   "fieldname": "wati_template_name",
+   "fieldtype": "Data",
+   "label": "WATI Template Name"
   }
  ],
  "index_web_pages_for_search": 0,

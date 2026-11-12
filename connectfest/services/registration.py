@@ -25,42 +25,25 @@ from connectfest.services.queue import trigger_async_flush
 
 def validate_registration_email_otp(email, data):
 	"""
-	Validates that attendee has verified their email with OTP before registering:
-	- If 'email_otp' or 'otp' is provided, validates it via verify_email_otp.
-	- If already verified via verify_email_otp endpoint (cached in Redis/DB), allows it.
-	- Otherwise, strictly requires email verification before registering.
-	- Allows bypass only if skip_otp is set or in internal/test mode.
+	Email OTP validation during registration:
+	Registration does NOT require mandatory email OTP upfront.
+	Users register directly with their details, exactly like mobile registration flow.
+	Login is handled later via send_email_otp + verify_email_otp.
+	If the user happens to supply an email OTP, validate it, but do NOT block if omitted.
 	"""
 	if getattr(frappe.flags, "in_test", False):
 		return None
 
-	if parse_boolean(data.get("skip_otp", 0)):
-		sess_user = getattr(frappe.session, "user", "Guest")
-		if sess_user and sess_user != "Guest" and "System Manager" in frappe.get_roles(sess_user):
-			return None
-
-	from connectfest.services.otp import verify_email_otp, is_email_verified
 	email_otp = str(data.get("email_otp") or data.get("otp") or "").strip()
-
 	if email_otp:
+		from connectfest.services.otp import verify_email_otp
 		res = verify_email_otp(email=email, otp=email_otp)
 		if res.get("status") != "success":
 			return {
 				"status": "error",
-				"message": res.get("message") or "Invalid or expired email OTP. Please verify your email.",
+				"message": res.get("message") or "Invalid or expired email OTP.",
 				"details": res,
 			}
-		return None
-
-	# If no OTP in request, check if email was already verified via verify_email_otp endpoint
-	if not is_email_verified(email):
-		return {
-			"status": "error",
-			"message": "Email verification is required. Please verify your email with OTP before registering.",
-			"email": email,
-			"requires_otp": True,
-		}
-
 	return None
 
 
@@ -282,7 +265,7 @@ def register_stall(**kwargs):
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 
 	if is_crn_bni_restriction_enabled():
-		is_bni, bni_doc = is_valid_bni_member(mobile_no)
+		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
 		if not is_bni:
 			frappe.local.response["http_status_code"] = 400
 			return {
@@ -298,7 +281,7 @@ def register_stall(**kwargs):
 	else:
 		# When CRN = 0, no BNI check required ("0 means no check").
 		# If user is in BNI list, auto-fill details, otherwise allow smoothly.
-		is_bni, bni_doc = is_valid_bni_member(mobile_no)
+		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
 		if is_bni:
 			is_bni_member = 1
 			if bni_doc:
@@ -395,17 +378,36 @@ def register_stall(**kwargs):
 			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
 
 		# Provision Frappe User account immediately (Synchronous - zero background worker/cron dependency)
+		session_sid = None
 		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 			if company_logo:
 				frappe.db.set_value("User", email, "user_image", company_logo)
+
+			# Auto-login attendee into Frappe session immediately
+			from frappe.auth import LoginManager
+			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+				frappe.local.login_manager.login_as(email)
+			else:
+				frappe.local.login_manager = LoginManager()
+				frappe.local.login_manager.login_as(email)
+			frappe.set_user(email)
+			session_sid = (
+				getattr(getattr(frappe.local, "session_obj", None), "sid", None)
+				or getattr(getattr(frappe.local, "session", None), "sid", None)
+				or getattr(frappe.session, "sid", None)
+			)
 		except Exception:
 			pass
 
 		response_data = {
 			"status": "success",
 			"type": "stall",
-			"message": "Exhibitor registration successful! Please proceed to select stall.",
+			"is_logged_in": True,
+			"session_user": getattr(frappe.session, "user", email),
+			"sid": session_sid,
+			"token": session_sid,
+			"message": "Exhibitor registration successful! You are logged in.",
 			"registration_id": actual_reg_id,
 			"full_name": full_name,
 			"data": record,
@@ -469,8 +471,14 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				or data.get("mobile_no")
 				or data.get("phone")
 			)
-			is_bni, bni_doc = is_valid_bni_member(u_mob)
-			if not is_bni:
+			u_email = (
+				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
+				or (frappe.db.get_value("ConnectFest Registration", reg_id, "email") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
+				or (sess_user if sess_user and sess_user != "Guest" else None)
+				or data.get("email")
+			)
+			is_bni_valid, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			if not is_bni_valid:
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
@@ -619,9 +627,25 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					}
 
 				new_reg_id = generate_stall_id(cache)
-				dynamic_prices = get_tier_pricing()
+				cand_mob = (user_mobile or prev.get("mobile_no") or "").strip()
+				cand_email = (user_email or prev.get("email") or "").strip().lower()
+
+				from connectfest.services.bni_members import is_valid_bni_member, calculate_stall_price_for_user
+				is_bni = parse_boolean(data.get("is_bni_member", prev.get("is_bni_member") or 0))
+				if cand_mob or cand_email:
+					v_bni, b_info = is_valid_bni_member(mobile_no=cand_mob, email=cand_email)
+					if v_bni:
+						is_bni = 1
+
+				price_info = calculate_stall_price_for_user(
+					tier=stall_doc.tier,
+					user_mobile=cand_mob,
+					user_email=cand_email,
+					is_bni_member=is_bni,
+					custom_base_price=stall_doc.price
+				)
 				tier = stall_doc.tier
-				price = dynamic_prices.get(tier, stall_doc.price)
+				price = price_info["total_amount"]
 
 				cand_name = (
 					data.get("full_name")
@@ -637,11 +661,16 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				raw_source = data.get("source_of_info") or prev.get("source_of_info") or "Website"
 				matched_source = raw_source if raw_source in VALID_SOURCES else "Other"
 
-				is_bni = parse_boolean(data.get("is_bni_member", prev.get("is_bni_member") or 0))
 				region_name = (data.get("region_name") or prev.get("region_name") or "").strip()
 				chapter_name = (data.get("chapter_name") or prev.get("chapter_name") or "").strip()
-				if is_bni and not (region_name and chapter_name):
-					is_bni = 0
+				if is_bni:
+					if not (region_name and chapter_name) and (cand_mob or cand_email):
+						_, b_info = is_valid_bni_member(mobile_no=cand_mob, email=cand_email)
+						if b_info:
+							chapter_name = chapter_name or b_info.get("chapter_name") or ""
+							region_name = region_name or b_info.get("region_name") or ""
+					region_name = region_name or "BNI"
+					chapter_name = chapter_name or "BNI"
 
 				new_doc = frappe.get_doc({
 					"doctype": "ConnectFest Registration",
@@ -748,9 +777,16 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				except Exception:
 					pass
 
-	dynamic_prices = get_tier_pricing()
+	from connectfest.services.bni_members import calculate_stall_price_for_user
+	price_info = calculate_stall_price_for_user(
+		tier=stall_doc.tier,
+		user_mobile=user_mobile or record.get("mobile_no"),
+		user_email=user_email or record.get("email"),
+		is_bni_member=record.get("is_bni_member"),
+		custom_base_price=stall_doc.price
+	)
 	tier = stall_doc.tier
-	price = dynamic_prices.get(tier, stall_doc.price)
+	price = price_info["total_amount"]
 
 	record["stall_number"] = stall_num
 	record["stall_category"] = tier
@@ -1028,21 +1064,36 @@ def register_visitor(**kwargs):
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
 		# Provision Frappe User account immediately
+		session_sid = None
 		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+			if visitor_image:
+				frappe.db.set_value("User", email, "user_image", visitor_image)
+
+			# Auto-login visitor into Frappe session immediately upon registration
+			from frappe.auth import LoginManager
+			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+				frappe.local.login_manager.login_as(email)
+			else:
+				frappe.local.login_manager = LoginManager()
+				frappe.local.login_manager.login_as(email)
+			frappe.set_user(email)
+			session_sid = (
+				getattr(getattr(frappe.local, "session_obj", None), "sid", None)
+				or getattr(getattr(frappe.local, "session", None), "sid", None)
+				or getattr(frappe.session, "sid", None)
+			)
 		except Exception:
 			pass
-
-		if visitor_image:
-			try:
-				frappe.db.set_value("User", email, "user_image", visitor_image)
-			except Exception:
-				pass
 
 		return {
 			"status": "success",
 			"type": "visitor",
-			"message": "Visitor registration successful! Your entrance pass is ready.",
+			"is_logged_in": True,
+			"session_user": getattr(frappe.session, "user", email),
+			"sid": session_sid,
+			"token": session_sid,
+			"message": "Visitor registration successful! You are logged in.",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
 			"full_name": full_name,

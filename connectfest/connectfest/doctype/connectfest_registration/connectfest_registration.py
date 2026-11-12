@@ -75,7 +75,7 @@ class ConnectFestRegistration(Document):
 		if self.is_bni_member:
 			for field in ["region_name", "chapter_name"]:
 				if not self.get(field):
-					frappe.throw(frappe._("{0} is mandatory for BNI Members").format(self.meta.get_label(field)))
+					self.set(field, "BNI")
 
 		if self.email:
 			from connectfest.services.auth import ensure_frappe_user

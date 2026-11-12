@@ -12,46 +12,68 @@ DEFAULT_WATI_HOST = "https://live-mt-server.wati.io"
 def get_wati_config():
 	"""
 	Retrieves WATI configuration safely from:
-	1. frappe.conf (site_config.json)
-	2. ConnectFest Settings doctype (if available)
+	1. ConnectFest Settings doctype (highest priority)
+	2. frappe.conf (site_config.json)
 	3. Environment variables
 	"""
-	host = (
-		frappe.conf.get("wati_api_host")
-		or os.environ.get("WATI_API_HOST")
-		or DEFAULT_WATI_HOST
-	).rstrip("/")
+	host = None
+	token = None
+	template_name = None
+	enabled = True
 
-	token = (
-		frappe.conf.get("wati_api_token")
-		or frappe.conf.get("wati_api_key")
-		or os.environ.get("WATI_API_TOKEN")
-		or os.environ.get("WATI_API_KEY")
-	)
-
-	template_name = (
-		frappe.conf.get("wati_template_name")
-		or os.environ.get("WATI_TEMPLATE_NAME")
-		or ""
-	)
-
-	# Optional override from ConnectFest Settings DocType if exists
+	# 1. First priority: ConnectFest Settings DocType
 	try:
 		if frappe.db.exists("DocType", "ConnectFest Settings"):
-			doc = frappe.get_cached_doc("ConnectFest Settings")
-			if getattr(doc, "wati_api_token", None):
-				token = doc.wati_api_token
+			doc = frappe.get_doc("ConnectFest Settings")
+			if hasattr(doc, "wati_enabled"):
+				enabled = bool(doc.wati_enabled)
+
+			# Password field requires get_password
+			if hasattr(doc, "get_password"):
+				pwd_token = doc.get_password("wati_api_token", raise_exception=False)
+				if pwd_token:
+					token = pwd_token.strip()
+
+			if not token and getattr(doc, "wati_api_token", None):
+				token = str(doc.wati_api_token).strip()
+
 			if getattr(doc, "wati_api_host", None):
-				host = doc.wati_api_host.rstrip("/")
+				host = str(doc.wati_api_host).strip().rstrip("/")
+
 			if getattr(doc, "wati_template_name", None):
-				template_name = doc.wati_template_name
+				template_name = str(doc.wati_template_name).strip()
 	except Exception:
 		pass
+
+	# 2. Second priority: Fallback to frappe.conf (site_config.json) / ENV
+	if not host:
+		host = (
+			frappe.conf.get("wati_api_host")
+			or os.environ.get("WATI_API_HOST")
+			or DEFAULT_WATI_HOST
+		).rstrip("/")
+
+	if not token:
+		token = (
+			frappe.conf.get("wati_api_token")
+			or frappe.conf.get("wati_api_key")
+			or os.environ.get("WATI_API_TOKEN")
+			or os.environ.get("WATI_API_KEY")
+			or ""
+		).strip()
+
+	if not template_name:
+		template_name = (
+			frappe.conf.get("wati_template_name")
+			or os.environ.get("WATI_TEMPLATE_NAME")
+			or "welcome"
+		).strip()
 
 	return {
 		"host": host,
 		"token": token,
-		"template_name": (template_name or "").strip(),
+		"template_name": template_name,
+		"enabled": enabled,
 	}
 
 
@@ -124,8 +146,8 @@ def resolve_booking_template(preferred_name=None):
 		if any(keyword in tname for keyword in ["booking", "stall", "connectfest", "confirmation", "receipt"]):
 			return t.get("name")
 
-	# Fallbacks available in WATI
-	for fallback in ["welcome_wati_v3", "default_welcome_v2", "welcome"]:
+	# Fallbacks available in WATI (welcome is clean with 0 params and approved)
+	for fallback in ["welcome", "default_welcome_v2", "welcome_wati_v3"]:
 		if fallback in approved_map:
 			return fallback
 
@@ -138,6 +160,12 @@ def send_wati_template_message(mobile, template_name=None, custom_params=None, b
 	Safe, non-blocking failover with full logging.
 	"""
 	config = get_wati_config()
+	if config.get("enabled") is False:
+		return {
+			"status": "skipped",
+			"message": "WhatsApp notifications are disabled in ConnectFest Settings",
+		}
+
 	if not config["token"]:
 		return {
 			"status": "skipped",
@@ -151,13 +179,40 @@ def send_wati_template_message(mobile, template_name=None, custom_params=None, b
 			"message": f"Invalid mobile number for WhatsApp: {mobile}",
 		}
 
-	# Resolve template name
+	# Resolve template name and match parameters
 	resolved_template = template_name or resolve_booking_template()
 	if not resolved_template:
 		return {
 			"status": "skipped",
 			"message": "No approved WATI template found to send",
 		}
+
+	# Ensure parameter count strictly matches Meta template expectations (avoids Error 132016)
+	approved = get_approved_templates()
+	approved_map = {t.get("name"): t for t in approved}
+	target_tmpl = approved_map.get(resolved_template)
+
+	final_params = []
+	if target_tmpl:
+		expected_params = target_tmpl.get("custom_params") or []
+		if expected_params and isinstance(expected_params, list):
+			param_dict = {str(p.get("name")): p.get("value") for p in (custom_params or []) if isinstance(p, dict)}
+			for idx, exp in enumerate(expected_params, start=1):
+				exp_name = str(exp.get("name") or idx)
+				val = (
+					param_dict.get(exp_name)
+					or param_dict.get(str(idx))
+					or param_dict.get("name")
+					or param_dict.get("full_name")
+					or exp.get("value")
+					or ""
+				)
+				final_params.append({"name": exp_name, "value": str(val)})
+		else:
+			# Template takes 0 parameters (like 'welcome')
+			final_params = []
+	else:
+		final_params = custom_params or []
 
 	url = f"{config['host']}/api/ext/v3/messageTemplates/send"
 	headers = {
@@ -175,7 +230,7 @@ def send_wati_template_message(mobile, template_name=None, custom_params=None, b
 			{
 				"target": target,
 				"local_message_id": local_msg_id,
-				"custom_params": custom_params or [],
+				"custom_params": final_params,
 			}
 		],
 	}
@@ -346,4 +401,3 @@ def test_wati_connection():
 		"approved_templates_count": len(templates),
 		"approved_templates": [t.get("name") for t in templates],
 	}
-

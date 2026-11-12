@@ -417,13 +417,25 @@ def get_stalls(**kwargs):
 			{"name": "Wi-Fi & Cleaning", "detail": "High-speed event Wi-Fi and daily booth cleaning", "included": True},
 		]
 
-		from connectfest.services.bni_members import is_crn_bni_restriction_enabled
+		from connectfest.services.bni_members import is_crn_bni_restriction_enabled, get_non_bni_extra_percentage
 		crn_restriction_active = is_crn_bni_restriction_enabled()
+		non_bni_pct = get_non_bni_extra_percentage()
+
+		for s in paginated_stalls:
+			base_p = flt(s.get("price", 0.0))
+			s["non_bni_extra_percentage"] = non_bni_pct
+			s["non_bni_price"] = round(base_p * (1.0 + non_bni_pct / 100.0), 2)
 
 		res = {
 			"status": "success",
 			"crn_bni_only": 1 if crn_restriction_active else 0,
 			"is_crn_bni_restriction_enabled": bool(crn_restriction_active),
+			"non_bni_extra_percentage": non_bni_pct,
+			"crn_settings": {
+				"crn_bni_only": 1 if crn_restriction_active else 0,
+				"is_crn_bni_restriction_enabled": bool(crn_restriction_active),
+				"non_bni_extra_percentage": non_bni_pct,
+			},
 			"filters_applied": {
 				"tier": filter_tier or None,
 				"status": filter_status or None,
@@ -559,7 +571,12 @@ def hold_stall(stall_number=None, **kwargs):
 					or (frappe.db.get_value("User", sess_u, "mobile_no") if sess_u and sess_u != "Guest" else None)
 					or (frappe.db.get_value("User", sess_u, "phone") if sess_u and sess_u != "Guest" else None)
 				)
-				is_bni, bni_doc = is_valid_bni_member(u_mob)
+				u_email = (
+					email
+					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
+					or (sess_u if sess_u and sess_u != "Guest" else None)
+				)
+				is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
 				if not is_bni:
 					frappe.local.response["http_status_code"] = 400
 					return {
@@ -1024,8 +1041,15 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	total_hold = 0
 	total_revenue = 0.0
 
+	from connectfest.services.bni_members import get_non_bni_extra_percentage, is_crn_bni_restriction_enabled
+	non_bni_extra_percentage = get_non_bni_extra_percentage()
+	crn_bni_restriction = is_crn_bni_restriction_enabled()
+
 	for s in stalls:
 		s["crn"] = cint(s.get("crn", 0))
+		base_p = flt(s.get("price", 0.0))
+		s["non_bni_extra_percentage"] = non_bni_extra_percentage
+		s["non_bni_price"] = round(base_p * (1.0 + non_bni_extra_percentage / 100.0), 2)
 		# Attach zone
 		t = s.tier or "Regular"
 		if not s.get("zone"):
@@ -1087,6 +1111,14 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 
 	return {
 		"status": "success",
+		"non_bni_extra_percentage": non_bni_extra_percentage,
+		"is_crn_bni_restriction_enabled": crn_bni_restriction,
+		"crn_bni_only": 1 if crn_bni_restriction else 0,
+		"crn_settings": {
+			"crn_bni_only": 1 if crn_bni_restriction else 0,
+			"is_crn_bni_restriction_enabled": crn_bni_restriction,
+			"non_bni_extra_percentage": non_bni_extra_percentage,
+		},
 		"filters": {
 			"status": filter_status or None,
 			"tier": filter_tier or None,
@@ -1101,6 +1133,14 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"hold": total_hold,
 			"total_revenue": total_revenue,
 			"matching_stalls": filtered_count,
+			"non_bni_extra_percentage": non_bni_extra_percentage,
+			"is_crn_bni_restriction_enabled": crn_bni_restriction,
+			"crn_bni_only": 1 if crn_bni_restriction else 0,
+			"crn_settings": {
+				"crn_bni_only": 1 if crn_bni_restriction else 0,
+				"is_crn_bni_restriction_enabled": crn_bni_restriction,
+				"non_bni_extra_percentage": non_bni_extra_percentage,
+			},
 		},
 		"pagination": {
 			"current_page": p,

@@ -1,6 +1,6 @@
 import re
 import frappe
-from frappe.utils import cint
+from frappe.utils import cint, flt
 from connectfest.services.common import extract_request_data, parse_boolean, safe_str
 
 
@@ -33,23 +33,110 @@ def normalize_phone_number(raw_phone):
 	return digits
 
 
-def is_valid_bni_member(mobile_no):
+def get_bni_verification_settings():
 	"""
-	Checks whether a given mobile number belongs to a registered BNI Member.
-	Matches exact normalized 10-digit number.
+	Reads dynamic BNI verification settings from ConnectFest Settings:
+	- crn_bni_only: Master toggle for CRN stall restriction (default True)
+	- check_mobile: Validate BNI membership by Mobile Number (default True)
+	- check_email: Validate BNI membership by Email Address (default True)
+	Note: If both check_mobile and check_email are OFF (0), CRN restriction is automatically OFF!
+	"""
+	try:
+		doc = frappe.get_cached_doc("ConnectFest Settings")
+		raw_crn = getattr(doc, "crn_bni_only", 1)
+		raw_mob = getattr(doc, "bni_check_mobile", 1)
+		raw_email = getattr(doc, "bni_check_email", 1)
+
+		crn_only = True if (raw_crn is None or str(raw_crn).strip() == "") else bool(cint(raw_crn))
+		check_mob = True if (raw_mob is None or str(raw_mob).strip() == "") else bool(cint(raw_mob))
+		check_email = True if (raw_email is None or str(raw_email).strip() == "") else bool(cint(raw_email))
+
+		if not check_mob and not check_email:
+			crn_only = False
+
+		return {
+			"crn_bni_only": crn_only,
+			"check_mobile": check_mob,
+			"check_email": check_email,
+		}
+	except Exception:
+		return {
+			"crn_bni_only": True,
+			"check_mobile": True,
+			"check_email": True,
+		}
+
+
+def is_valid_bni_member(mobile_no=None, email=None):
+	"""
+	Dynamically checks whether a given mobile number and/or email belongs to a registered BNI Member
+	based on Admin settings in ConnectFest Settings (bni_check_mobile & bni_check_email):
+	- Mobile Only ON: checks only mobile_no.
+	- Email Only ON: checks only email.
+	- Both ON: if both mobile_no and email are supplied, checks that BOTH match the same BNI member record;
+	           if only one is supplied, checks that field.
+	- Both OFF: returns (False, None) / restriction disabled.
 	Returns: (is_valid: bool, member_doc: dict or None)
 	"""
-	clean_mob = normalize_phone_number(mobile_no)
-	if not clean_mob or len(clean_mob) != 10:
+	cfg = get_bni_verification_settings()
+	check_mob = cfg["check_mobile"]
+	check_email = cfg["check_email"]
+
+	clean_mob = normalize_phone_number(mobile_no) if mobile_no else ""
+	clean_email = str(email or "").strip().lower() if email and "@" in str(email) else ""
+
+	if not check_mob and not check_email:
 		return False, None
 
-	# Query by exact match or right-10 digit match
-	members = frappe.db.sql("""
-		SELECT name, mobile_no, member_name
-		FROM `tabConnectFest BNI Member`
-		WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
-		LIMIT 1
-	""", {"mob": clean_mob}, as_dict=True)
+	# Filter inputs according to dynamic admin flags
+	use_mob = clean_mob if (check_mob and clean_mob and len(clean_mob) >= 8) else ""
+	use_email = clean_email if (check_email and clean_email) else ""
+
+	if check_mob and check_email:
+		if use_mob and use_email:
+			# Strict match: Both mobile number AND email must match the same BNI Member record
+			members = frappe.db.sql("""
+				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+				FROM `tabConnectFest BNI Member`
+				WHERE (mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s)
+				  AND LOWER(TRIM(email)) = %(email)s
+				LIMIT 1
+			""", {"mob": use_mob, "email": use_email}, as_dict=True)
+		elif use_mob:
+			members = frappe.db.sql("""
+				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+				FROM `tabConnectFest BNI Member`
+				WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+				LIMIT 1
+			""", {"mob": use_mob}, as_dict=True)
+		elif use_email:
+			members = frappe.db.sql("""
+				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+				FROM `tabConnectFest BNI Member`
+				WHERE LOWER(TRIM(email)) = %(email)s
+				LIMIT 1
+			""", {"email": use_email}, as_dict=True)
+		else:
+			return False, None
+	elif check_mob:
+		if not use_mob:
+			return False, None
+		members = frappe.db.sql("""
+			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+			FROM `tabConnectFest BNI Member`
+			WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+			LIMIT 1
+		""", {"mob": use_mob}, as_dict=True)
+	else:
+		# Email Only Check
+		if not use_email:
+			return False, None
+		members = frappe.db.sql("""
+			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+			FROM `tabConnectFest BNI Member`
+			WHERE LOWER(TRIM(email)) = %(email)s
+			LIMIT 1
+		""", {"email": use_email}, as_dict=True)
 
 	if members:
 		return True, members[0]
@@ -85,10 +172,60 @@ def admin_create_bni_member(**kwargs):
 
 	data = extract_request_data(kwargs)
 
+	def _extract_member_dict(obj, fallback_name="", fallback_email="", fallback_company="", fallback_industry="", fallback_chapter=""):
+		if not isinstance(obj, dict):
+			c_mob = normalize_phone_number(obj)
+			if not c_mob:
+				return None
+			return {
+				"mobile_no": c_mob,
+				"first_name": "",
+				"last_name": "",
+				"member_name": fallback_name,
+				"email": fallback_email,
+				"company_name": fallback_company,
+				"industry": fallback_industry,
+				"chapter_name": fallback_chapter,
+			}
+		m_raw = (
+			obj.get("mobile_no")
+			or obj.get("Phone Number")
+			or obj.get("phone_number")
+			or obj.get("phone")
+			or obj.get("mobile")
+			or obj.get("number")
+		)
+		c_mob = normalize_phone_number(m_raw)
+		if not c_mob:
+			return None
+		f_name = safe_str(obj.get("first_name") or obj.get("First Name") or obj.get("firstname") or "")
+		l_name = safe_str(obj.get("last_name") or obj.get("Last Name") or obj.get("lastname") or "")
+		m_name = safe_str(obj.get("member_name") or obj.get("Member Name") or obj.get("name") or "")
+		if not m_name:
+			m_name = f"{f_name} {l_name}".strip() or fallback_name
+		e_val = str(obj.get("email") or obj.get("Email") or obj.get("email_id") or fallback_email or "").strip().lower()
+		comp = safe_str(obj.get("company_name") or obj.get("Company") or obj.get("company") or fallback_company or "")
+		ind = safe_str(obj.get("industry") or obj.get("Industry") or fallback_industry or "")
+		chap = safe_str(obj.get("chapter_name") or obj.get("Chapter Name") or obj.get("chapter") or fallback_chapter or "")
+		return {
+			"mobile_no": c_mob,
+			"first_name": f_name,
+			"last_name": l_name,
+			"member_name": m_name,
+			"email": e_val,
+			"company_name": comp,
+			"industry": ind,
+			"chapter_name": chap,
+		}
+
 	# Handle case where request payload is directly a list: e.g. [{"mobile_no": ...}, ...]
 	if isinstance(data, list):
 		raw_items = data
 		default_name = ""
+		default_email = ""
+		default_company = ""
+		default_industry = ""
+		default_chapter = ""
 	else:
 		raw_items = (
 			data.get("members")
@@ -98,82 +235,146 @@ def admin_create_bni_member(**kwargs):
 			or kwargs.get("items")
 		)
 		default_name = safe_str(data.get("member_name") or data.get("name") or kwargs.get("member_name") or "")
+		default_email = str(data.get("email") or data.get("Email") or kwargs.get("email") or "").strip().lower()
+		default_company = safe_str(data.get("company_name") or data.get("Company") or data.get("company") or "")
+		default_industry = safe_str(data.get("industry") or data.get("Industry") or "")
+		default_chapter = safe_str(data.get("chapter_name") or data.get("Chapter Name") or data.get("chapter") or "")
 
-	items_to_process = []  # list of tuples: (clean_mobile, name)
+	items_to_process = []
+	duplicates = []
+	errors = []
 	seen_mobs = set()
+	seen_emails = set()
 
+	raw_list = []
 	if raw_items and isinstance(raw_items, (list, tuple)):
-		for it in raw_items:
-			if isinstance(it, dict):
-				m_raw = it.get("mobile_no") or it.get("mobile") or it.get("phone") or it.get("number") or it.get("name")
-				n_val = safe_str(it.get("member_name") or it.get("name") or default_name)
-			else:
-				m_raw = it
-				n_val = default_name
-			c_mob = normalize_phone_number(m_raw)
-			if c_mob and c_mob not in seen_mobs:
-				seen_mobs.add(c_mob)
-				items_to_process.append((c_mob, n_val))
+		raw_list = list(raw_items)
 	else:
-		raw_mob = data.get("mobile_no") or data.get("mobile") or data.get("phone") or kwargs.get("mobile_no")
 		raw_mobs = data.get("mobile_numbers") or data.get("numbers") or kwargs.get("mobile_numbers")
-
 		if raw_mobs and isinstance(raw_mobs, (list, tuple)):
-			for m in raw_mobs:
-				if isinstance(m, dict):
-					m_raw = m.get("mobile_no") or m.get("mobile") or m.get("phone") or m.get("number")
-					n_val = safe_str(m.get("member_name") or m.get("name") or default_name)
-				else:
-					m_raw = m
-					n_val = default_name
-				c_mob = normalize_phone_number(m_raw)
-				if c_mob and c_mob not in seen_mobs:
-					seen_mobs.add(c_mob)
-					items_to_process.append((c_mob, n_val))
-		elif raw_mob:
-			for part in str(raw_mob).split(","):
-				c_mob = normalize_phone_number(part)
-				if c_mob and c_mob not in seen_mobs:
-					seen_mobs.add(c_mob)
-					items_to_process.append((c_mob, default_name))
+			raw_list = list(raw_mobs)
+		else:
+			raw_mob = (
+				data.get("mobile_no")
+				or data.get("Phone Number")
+				or data.get("phone_number")
+				or data.get("mobile")
+				or data.get("phone")
+				or kwargs.get("mobile_no")
+			)
+			if raw_mob:
+				for part in str(raw_mob).split(","):
+					single_obj = dict(data) if isinstance(data, dict) else {}
+					single_obj["mobile_no"] = part.strip()
+					raw_list.append(single_obj)
+			elif isinstance(data, dict) and (data.get("email") or data.get("Email")):
+				raw_list.append(dict(data))
 
-	if not items_to_process:
+	if not raw_list:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "Valid 10-digit Mobile Number (mobile_no) or members list is required!",
+			"message": "Mobile Number (mobile_no) and Email (email) or members list are required!",
 		}
 
+	for idx, it in enumerate(raw_list, start=1):
+		parsed = _extract_member_dict(it, default_name, default_email, default_company, default_industry, default_chapter)
+		if not parsed or not parsed.get("mobile_no") or len(parsed["mobile_no"]) != 10:
+			errors.append({"row": idx, "item": it, "reason": "Valid 10-digit Mobile Number (mobile_no) is mandatory."})
+			continue
+		em = parsed.get("email") or ""
+		if not em or "@" not in em or "." not in em.split("@")[-1]:
+			errors.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": "Valid Email Address (email) is mandatory."})
+			continue
+		if parsed["mobile_no"] in seen_mobs:
+			duplicates.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": f"Duplicate mobile_no '{parsed['mobile_no']}' in request batch."})
+			continue
+		if em in seen_emails:
+			duplicates.append({"row": idx, "mobile_no": parsed["mobile_no"], "email": em, "reason": f"Duplicate email '{em}' in request batch."})
+			continue
+		seen_mobs.add(parsed["mobile_no"])
+		seen_emails.add(em)
+		items_to_process.append(parsed)
+
 	created = []
-	updated = []
+	for item in items_to_process:
+		mob = item["mobile_no"]
+		em = item["email"]
 
-	for mob, m_name in items_to_process:
-		existing = frappe.db.get_value("ConnectFest BNI Member", {"mobile_no": mob}, "name")
-		if existing:
-			doc = frappe.get_doc("ConnectFest BNI Member", existing)
-			if m_name:
-				doc.member_name = m_name
-			doc.save(ignore_permissions=True)
-			updated.append({"mobile_no": mob, "member_name": doc.member_name})
-		else:
-			doc = frappe.get_doc({
-				"doctype": "ConnectFest BNI Member",
+		# Strict duplicate check against DB (No overwrite allowed!)
+		existing_mob = frappe.db.get_value("ConnectFest BNI Member", {"mobile_no": mob}, "name")
+		if existing_mob:
+			duplicates.append({
 				"mobile_no": mob,
-				"member_name": m_name,
+				"email": em,
+				"reason": f"Mobile number '{mob}' is already registered as a BNI Member.",
 			})
-			doc.insert(ignore_permissions=True)
-			created.append({"mobile_no": mob, "member_name": doc.member_name})
+			continue
 
-	frappe.db.commit()
+		existing_email = frappe.db.sql(
+			"SELECT name, mobile_no FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s LIMIT 1",
+			{"em": em},
+			as_dict=True,
+		)
+		if existing_email:
+			duplicates.append({
+				"mobile_no": mob,
+				"email": em,
+				"reason": f"Email '{em}' is already registered as a BNI Member (Mobile: {existing_email[0].get('mobile_no')}).",
+			})
+			continue
+
+		doc = frappe.get_doc({
+			"doctype": "ConnectFest BNI Member",
+			"mobile_no": mob,
+			"first_name": item.get("first_name") or "",
+			"last_name": item.get("last_name") or "",
+			"member_name": item.get("member_name") or "",
+			"email": em,
+			"company_name": item.get("company_name") or "",
+			"industry": item.get("industry") or "",
+			"chapter_name": item.get("chapter_name") or "",
+		})
+		doc.insert(ignore_permissions=True)
+		created.append({
+			"name": doc.name,
+			"mobile_no": mob,
+			"first_name": doc.first_name,
+			"last_name": doc.last_name,
+			"member_name": doc.member_name,
+			"email": doc.email,
+			"company_name": doc.company_name,
+			"industry": doc.industry,
+			"chapter_name": doc.chapter_name,
+		})
+
+	if created:
+		frappe.db.commit()
+
+	if not created and (duplicates or errors):
+		frappe.local.response["http_status_code"] = 409 if (duplicates and not errors) else 400
+		first_msg = (duplicates[0]["reason"] if duplicates else errors[0]["reason"])
+		return {
+			"status": "error",
+			"message": first_msg,
+			"created": created,
+			"duplicates": duplicates,
+			"errors": errors,
+			"created_count": 0,
+			"duplicate_count": len(duplicates),
+			"error_count": len(errors),
+		}
 
 	return {
 		"status": "success",
-		"message": f"Successfully processed {len(items_to_process)} BNI Member(s) (Created: {len(created)}, Updated: {len(updated)})",
+		"message": f"Created {len(created)} BNI Member(s) (Duplicates skipped: {len(duplicates)}, Errors: {len(errors)})",
 		"created": created,
-		"updated": updated,
+		"duplicates": duplicates,
+		"errors": errors,
 		"created_count": len(created),
-		"updated_count": len(updated),
-		"total_processed": len(items_to_process),
+		"duplicate_count": len(duplicates),
+		"error_count": len(errors),
+		"total_processed": len(raw_list),
 	}
 
 
@@ -199,7 +400,7 @@ def admin_get_bni_members(**kwargs):
 
 	members = frappe.get_all(
 		"ConnectFest BNI Member",
-		fields=["name", "mobile_no", "member_name", "creation", "modified"],
+		fields=["name", "first_name", "last_name", "member_name", "mobile_no", "email", "company_name", "industry", "chapter_name", "creation", "modified"],
 		order_by="creation DESC",
 		limit=5000,
 	)
@@ -213,8 +414,10 @@ def admin_get_bni_members(**kwargs):
 		if search:
 			clean_s = normalize_phone_number(search)
 			m_mob = search in (m.mobile_no or "").lower() or (clean_s and clean_s in (m.mobile_no or ""))
-			m_name = search in (m.member_name or "").lower()
-			if not (m_mob or m_name):
+			m_name = search in (m.member_name or "").lower() or search in (m.first_name or "").lower() or search in (m.last_name or "").lower()
+			m_email = search in (m.email or "").lower()
+			m_comp = search in (m.company_name or "").lower() or search in (m.chapter_name or "").lower()
+			if not (m_mob or m_name or m_email or m_comp):
 				continue
 		filtered.append(m)
 
@@ -267,7 +470,7 @@ def admin_get_bni_member(mobile_no=None, **kwargs):
 		member = frappe.db.get_value(
 			"ConnectFest BNI Member",
 			{"mobile_no": clean_mob},
-			["name", "mobile_no", "member_name", "creation", "modified"],
+			["name", "first_name", "last_name", "member_name", "mobile_no", "email", "company_name", "industry", "chapter_name", "creation", "modified"],
 			as_dict=True,
 		)
 	if not member and raw_mob:
@@ -315,9 +518,36 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 		}
 
 	doc = frappe.get_doc("ConnectFest BNI Member", doc_name)
+	if "first_name" in data:
+		doc.first_name = safe_str(data.get("first_name"))
+	if "last_name" in data:
+		doc.last_name = safe_str(data.get("last_name"))
 	new_name = data.get("member_name") if "member_name" in data else data.get("name") if "name" in data else None
 	if new_name is not None:
 		doc.member_name = safe_str(new_name)
+	elif "first_name" in data or "last_name" in data:
+		doc.member_name = f"{doc.first_name or ''} {doc.last_name or ''}".strip()
+
+	if "email" in data:
+		new_email = str(data.get("email") or "").strip().lower()
+		if not new_email or "@" not in new_email or "." not in new_email.split("@")[-1]:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Valid Email Address (email) is mandatory."}
+		dup_email = frappe.db.sql(
+			"SELECT name FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s AND name != %(cur)s LIMIT 1",
+			{"em": new_email, "cur": doc.name},
+			as_dict=True,
+		)
+		if dup_email:
+			frappe.local.response["http_status_code"] = 409
+			return {"status": "error", "message": f"Email '{new_email}' is already assigned to another BNI Member"}
+		doc.email = new_email
+	if "company_name" in data or "company" in data:
+		doc.company_name = safe_str(data.get("company_name") if "company_name" in data else data.get("company"))
+	if "industry" in data:
+		doc.industry = safe_str(data.get("industry"))
+	if "chapter_name" in data or "chapter" in data:
+		doc.chapter_name = safe_str(data.get("chapter_name") if "chapter_name" in data else data.get("chapter"))
 
 	# Support updating / renaming to a new mobile number
 	new_mob_raw = data.get("new_mobile_no") or data.get("new_mobile") or data.get("new_phone")
@@ -438,22 +668,93 @@ def admin_bulk_delete_bni_members(**kwargs):
 def is_crn_bni_restriction_enabled():
 	"""
 	Returns whether Admin has enabled strict BNI restriction for CRN 1 (Corner) stalls.
-	Defaults to 1 (True).
+	Automatically returns False if BOTH bni_check_mobile and bni_check_email are disabled!
+	Defaults to True.
+	"""
+	return get_bni_verification_settings()["crn_bni_only"]
+
+
+def get_non_bni_extra_percentage():
+	"""
+	Returns the extra percentage surcharge configured by Admin for non-BNI members.
+	Defaults to 10.0 (or whatever Admin configured).
 	"""
 	try:
-		val = frappe.db.get_single_value("ConnectFest Settings", "crn_bni_only")
-		if val is None or str(val).strip() == "":
-			return True
-		return bool(cint(val))
+		val = frappe.db.get_single_value("ConnectFest Settings", "non_bni_extra_percentage")
+		if val is not None and str(val).strip() != "":
+			return max(0.0, flt(val))
 	except Exception:
-		return True
+		pass
+	return 10.0
+
+
+def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_bni_member=None, custom_base_price=None):
+	"""
+	Calculates the exact stall price and tax breakdown based on BNI membership status:
+	- If attendee mobile_no exists in 'ConnectFest BNI Member' (or is_bni_member is True):
+	  Attendee pays the standard stall price (0% extra surcharge).
+	- If attendee is NOT a BNI member:
+	  Admin-configured extra percentage (non_bni_extra_percentage) is added to base price.
+	  Eg: Silver = Rs 100, Extra = 10% -> Base = Rs 110 (+ GST 18%).
+	"""
+	from connectfest.services.pricing import get_tier_details
+	tier_info = get_tier_details(tier) if tier else {"price": custom_base_price or 0.0, "gst_percent": 18.0}
+	original_price = flt(custom_base_price if custom_base_price is not None else tier_info.get("price", 0.0))
+	gst_pct = flt(tier_info.get("gst_percent", 18.0))
+
+	# Resolve user mobile
+	clean_mob = normalize_phone_number(user_mobile) if user_mobile else ""
+	if not clean_mob and user_email:
+		clean_email = str(user_email).strip().lower()
+		clean_mob = (
+			frappe.db.get_value("ConnectFest Registration", {"email": clean_email}, "mobile_no")
+			or frappe.db.get_value("User", clean_email, "mobile_no")
+			or frappe.db.get_value("User", clean_email, "phone")
+			or ""
+		)
+		clean_mob = normalize_phone_number(clean_mob)
+
+	# Check BNI status
+	is_bni = False
+	if clean_mob or user_email:
+		is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
+	elif is_bni_member is not None:
+		is_bni = bool(cint(is_bni_member))
+
+	if is_bni:
+		surcharge_pct = 0.0
+		surcharge_amt = 0.0
+		final_base_price = original_price
+	else:
+		surcharge_pct = get_non_bni_extra_percentage()
+		surcharge_amt = round(original_price * (surcharge_pct / 100.0), 2)
+		final_base_price = round(original_price + surcharge_amt, 2)
+
+	tax_amount = round(final_base_price * (gst_pct / 100.0), 2)
+	total_amount = round(final_base_price + tax_amount, 2)
+
+	return {
+		"tier": tier,
+		"is_bni_member": is_bni,
+		"mobile_no": clean_mob,
+		"original_price": original_price,
+		"non_bni_extra_percentage": surcharge_pct,
+		"surcharge_amount": surcharge_amt,
+		"base_amount": final_base_price,
+		"gst_percent": gst_pct,
+		"tax_amount": tax_amount,
+		"total_amount": total_amount,
+	}
 
 
 def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	"""
-	Admin API: Toggle or set CRN BNI member restriction on/off.
-	- enable: 1 (ON - strictly verified against BNI Member doctype for CRN stalls)
-	          0 (OFF - normal flow, anyone can book/register)
+	Admin API: Toggle or set CRN BNI member restriction & dynamic validation rules:
+	- enable / crn_bni_only: 1 (ON) / 0 (OFF)
+	- bni_check_mobile (or check_mobile): 1 (ON) / 0 (OFF)
+	- bni_check_email (or check_email): 1 (ON) / 0 (OFF)
+	  * Note: If BOTH bni_check_mobile and bni_check_email are OFF (0), crn_bni_only turns OFF automatically!
+	- non_bni_extra_percentage (or extra_percentage, percent): e.g. 10.0
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
@@ -462,28 +763,148 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 			return err
 
 	data = extract_request_data(kwargs)
-	raw_val = enable if enable is not None else data.get("enable") if "enable" in data else data.get("is_enabled") if "is_enabled" in data else kwargs.get("enable")
+	cfg = get_bni_verification_settings()
 
-	curr = is_crn_bni_restriction_enabled()
-	if raw_val is None:
+	raw_mob_chk = (
+		data.get("bni_check_mobile")
+		if "bni_check_mobile" in data
+		else data.get("check_mobile")
+		if "check_mobile" in data
+		else data.get("mobile_check")
+		if "mobile_check" in data
+		else kwargs.get("bni_check_mobile")
+	)
+	raw_email_chk = (
+		data.get("bni_check_email")
+		if "bni_check_email" in data
+		else data.get("check_email")
+		if "check_email" in data
+		else data.get("email_check")
+		if "email_check" in data
+		else kwargs.get("bni_check_email")
+	)
+
+	new_check_mob = (1 if (parse_boolean(raw_mob_chk) or str(raw_mob_chk).strip().lower() in ("1", "true", "yes", "on")) else 0) if raw_mob_chk is not None else (1 if cfg["check_mobile"] else 0)
+	new_check_email = (1 if (parse_boolean(raw_email_chk) or str(raw_email_chk).strip().lower() in ("1", "true", "yes", "on")) else 0) if raw_email_chk is not None else (1 if cfg["check_email"] else 0)
+
+	raw_val = enable if enable is not None else data.get("enable") if "enable" in data else data.get("is_enabled") if "is_enabled" in data else data.get("crn_bni_only") if "crn_bni_only" in data else kwargs.get("enable")
+
+	curr = cfg["crn_bni_only"]
+	has_val = raw_val is not None
+	has_other = any(k in data for k in ("non_bni_extra_percentage", "extra_percentage", "percent", "bni_check_mobile", "check_mobile", "mobile_check", "bni_check_email", "check_email", "email_check"))
+
+	if not has_val and not has_other:
 		new_val = 0 if curr else 1
-	else:
+	elif has_val:
 		new_val = 1 if (parse_boolean(raw_val) or str(raw_val).strip().lower() in ("1", "true", "yes", "on")) else 0
+	else:
+		new_val = 1 if curr else 0
+
+	# If both mobile and email checks are OFF -> automatically turn CRN restriction OFF
+	if new_check_mob == 0 and new_check_email == 0:
+		new_val = 0
+	elif has_val and new_val == 1 and new_check_mob == 0 and new_check_email == 0:
+		new_val = 0
 
 	frappe.db.set_single_value("ConnectFest Settings", "crn_bni_only", new_val)
+	frappe.db.set_single_value("ConnectFest Settings", "bni_check_mobile", new_check_mob)
+	frappe.db.set_single_value("ConnectFest Settings", "bni_check_email", new_check_email)
+
+	# Update non-BNI extra percentage if provided
+	raw_pct = (
+		data.get("non_bni_extra_percentage")
+		if "non_bni_extra_percentage" in data
+		else data.get("extra_percentage")
+		if "extra_percentage" in data
+		else data.get("extra_percent")
+		if "extra_percent" in data
+		else data.get("percent")
+		if "percent" in data
+		else kwargs.get("non_bni_extra_percentage")
+		if "non_bni_extra_percentage" in kwargs
+		else kwargs.get("extra_percentage")
+	)
+
+	curr_pct = get_non_bni_extra_percentage()
+	if raw_pct is not None:
+		try:
+			new_pct = max(0.0, flt(raw_pct))
+			frappe.db.set_single_value("ConnectFest Settings", "non_bni_extra_percentage", new_pct)
+			curr_pct = new_pct
+		except Exception:
+			pass
+
 	frappe.db.commit()
+	try:
+		frappe.clear_cache(doctype="ConnectFest Settings")
+	except Exception:
+		pass
 
 	try:
 		from connectfest.services.stalls import invalidate_stalls_cache
+		from connectfest.services.pricing import invalidate_pricing_cache
 		invalidate_stalls_cache()
+		invalidate_pricing_cache()
 	except Exception:
 		pass
 
 	return {
 		"status": "success",
-		"message": f"CRN BNI restriction successfully {'enabled' if new_val else 'disabled'}",
+		"message": f"CRN BNI restriction {'enabled' if new_val else 'disabled'} (Mobile Check: {'ON' if new_check_mob else 'OFF'}, Email Check: {'ON' if new_check_email else 'OFF'}). Non-BNI extra percentage set to {curr_pct}%.",
 		"crn_bni_only": new_val,
 		"is_enabled": bool(new_val),
+		"bni_check_mobile": new_check_mob,
+		"bni_check_email": new_check_email,
+		"non_bni_extra_percentage": curr_pct,
+	}
+
+
+def admin_set_non_bni_extra_percentage(percentage=None, **kwargs):
+	"""
+	Admin API: Dedicated endpoint to set the non-BNI member extra surcharge percentage.
+	"""
+	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
+		from connectfest.services.auth import check_admin_permission
+		err = check_admin_permission("Non-BNI extra pricing settings")
+		if err:
+			return err
+
+	data = extract_request_data(kwargs)
+	raw_pct = percentage if percentage is not None else data.get("percentage") or data.get("percent") or data.get("non_bni_extra_percentage")
+
+	if raw_pct is None:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Percentage (percentage) is required."}
+
+	new_pct = max(0.0, flt(raw_pct))
+	frappe.db.set_single_value("ConnectFest Settings", "non_bni_extra_percentage", new_pct)
+	frappe.db.commit()
+
+	try:
+		from connectfest.services.pricing import invalidate_pricing_cache
+		invalidate_pricing_cache()
+	except Exception:
+		pass
+
+	return {
+		"status": "success",
+		"message": f"Non-BNI member extra percentage updated to {new_pct}%.",
+		"non_bni_extra_percentage": new_pct,
+	}
+
+
+def get_non_bni_extra_percentage_info(**kwargs):
+	"""
+	Public API: Returns the current CRN restriction status, mobile/email check flags, and non-BNI extra percentage.
+	"""
+	cfg = get_bni_verification_settings()
+	return {
+		"status": "success",
+		"crn_bni_only": 1 if cfg["crn_bni_only"] else 0,
+		"is_crn_bni_restriction_enabled": cfg["crn_bni_only"],
+		"bni_check_mobile": 1 if cfg["check_mobile"] else 0,
+		"bni_check_email": 1 if cfg["check_email"] else 0,
+		"non_bni_extra_percentage": get_non_bni_extra_percentage(),
 	}
 
 

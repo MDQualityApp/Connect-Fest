@@ -6,24 +6,66 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "first_name",
+  "last_name",
+  "member_name",
+  "email",
   "mobile_no",
-  "member_name"
+  "company_name",
+  "industry",
+  "chapter_name"
  ],
  "fields": [
   {
-   "fieldname": "mobile_no",
+   "fieldname": "first_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Mobile Number",
-   "reqd": 1,
-   "unique": 1,
-   "search_index": 1
+   "label": "First Name"
+  },
+  {
+   "fieldname": "last_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Last Name"
   },
   {
    "fieldname": "member_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Member Name"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email",
+   "search_index": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "mobile_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Mobile Number",
+   "reqd": 1,
+   "search_index": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "label": "Company"
+  },
+  {
+   "fieldname": "industry",
+   "fieldtype": "Data",
+   "label": "Industry"
+  },
+  {
+   "fieldname": "chapter_name",
+   "fieldtype": "Data",
+   "label": "Chapter Name"
   }
  ],
  "index_web_pages_for_search": 0,

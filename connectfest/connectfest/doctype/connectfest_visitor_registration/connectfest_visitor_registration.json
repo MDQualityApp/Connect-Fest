@@ -20,7 +20,8 @@
   "pass_code",
   "qr_payload",
   "checked_in",
-  "checked_in_at"
+  "checked_in_at",
+  "checked_in_by"
  ],
  "fields": [
   {
@@ -125,6 +126,12 @@
    "fieldname": "checked_in_at",
    "fieldtype": "Datetime",
    "label": "Checked In At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "checked_in_by",
+   "fieldtype": "Data",
+   "label": "Checked In By",
    "read_only": 1
   }
  ],
