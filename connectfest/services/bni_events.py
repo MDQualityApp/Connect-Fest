@@ -27,14 +27,15 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 			"message": "Valid 10-digit Mobile Number or Email Address is required."
 		}
 
-	# 1. Check BNI membership
+	# 1. Check CNR membership
 	is_bni, bni_doc = is_valid_bni_member(mobile_no=mob, email=email)
 	if not is_bni:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
 			"is_bni_member": False,
-			"message": "You are not a BNI member! Registration is strictly restricted to verified BNI members.",
+			"is_cnr_member": False,
+			"message": "You are not a CNR member! Registration is strictly restricted to verified CNR members.",
 			"mobile_no": mob,
 		}
 
@@ -55,12 +56,12 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 		}
 
 	frappe.local.response["http_status_code"] = 200
-	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"is_bni_member": True,
+		"is_cnr_member": True,
 		"already_registered": False,
-		"message": "Verified BNI Member! You may proceed with registration.",
+		"message": "Verified CNR Member! You may proceed with registration.",
 		"mobile_no": mob,
 		"member_name": (bni_doc.get("member_name") if bni_doc else "") or "",
 		"chapter_name": (bni_doc.get("chapter_name") if bni_doc else "") or "",
@@ -102,13 +103,13 @@ def register_bni_event(**kwargs):
 			"message": "Valid 10-digit Mobile Number is required."
 		}
 
-	# Verify mobile or email exists in ConnectFest BNI Member DocType
+	# Verify mobile or email exists in ConnectFest CNR Member DocType
 	is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
 	if not is_bni:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "You are not a BNI member! Registration is strictly restricted to verified BNI members.",
+			"message": "You are not a CNR member! Registration is strictly restricted to verified CNR members.",
 			"mobile_no": mobile_no,
 		}
 

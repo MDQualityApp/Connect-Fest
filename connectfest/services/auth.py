@@ -41,7 +41,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 			# Ensure role exists in tabRole
 			roles_list = []
 			if role:
-				if role not in ("Website User", "System Manager", "All") and not frappe.db.exists("Role", role):
+				if not frappe.db.exists("Role", role):
 					try:
 						r_doc = frappe.get_doc({
 							"doctype": "Role",
@@ -1137,8 +1137,28 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 
 	if new_enabled:
 		if not has_role:
-			u_doc = frappe.get_doc("User", target_email)
-			u_doc.add_roles("ConnectFest Gate Scanner")
+			# Ensure role exists in tabRole
+			if not frappe.db.exists("Role", "ConnectFest Gate Scanner"):
+				try:
+					r_doc = frappe.get_doc({
+						"doctype": "Role",
+						"role_name": "ConnectFest Gate Scanner",
+						"desk_access": 0,
+					})
+					r_doc.insert(ignore_permissions=True)
+				except Exception:
+					pass
+			# Direct insert into tabHas Role (ultra-fast <5ms, completely bypasses heavy User.save and link validations)
+			doc = frappe.get_doc({
+				"doctype": "Has Role",
+				"parent": target_email,
+				"parenttype": "User",
+				"parentfield": "roles",
+				"role": "ConnectFest Gate Scanner",
+			})
+			doc.db_insert()
+			frappe.clear_cache(user=target_email)
+			cache.hdel("roles", target_email)
 		try:
 			cache.sadd("connectfest:scanner_users", target_email)
 			if target_mob or u_data.get("mobile_no"):
@@ -1148,8 +1168,10 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 		msg = f"Gate Scanner access granted successfully to '{target_email}' ({name}). They can now scan visitor and event passes."
 	else:
 		if has_role:
-			u_doc = frappe.get_doc("User", target_email)
-			u_doc.remove_roles("ConnectFest Gate Scanner")
+			# Direct delete from tabHas Role (instant, no User.save, no LinkValidationError)
+			frappe.db.sql("DELETE FROM `tabHas Role` WHERE parent = %s AND role = 'ConnectFest Gate Scanner'", (target_email,))
+			frappe.clear_cache(user=target_email)
+			cache.hdel("roles", target_email)
 		try:
 			cache.srem("connectfest:scanner_users", target_email)
 			if target_mob or u_data.get("mobile_no"):
