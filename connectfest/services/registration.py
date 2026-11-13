@@ -143,7 +143,7 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": "This mobile number is already registered with another account! Each mobile number can only be used once."
+					"message": f"Mobile number '{req_mobile}' is already registered with another account! Each mobile number can only be used once."
 				}
 
 			# Conflict B: Email already registered with a DIFFERENT mobile number!
@@ -151,7 +151,7 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": "This email address is already registered with a different mobile number! Please use your registered mobile number."
+					"message": f"Email address '{req_email}' is already registered with a different mobile number! Please use your registered mobile number."
 				}
 
 			# Check if user already booked this specific stall
@@ -222,31 +222,64 @@ def register_stall(**kwargs):
 					ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
 					return {
 						"status": "already_registered",
+						"registration_id": p_rec.get("registration_id") or p_rec.get("name"),
 						"message": "An exhibitor registration already exists with these details.",
 					}
 
-		# 2. Check if mobile_no or phone is already bound to another User in Frappe
+		# 2. Check if already registered in Visitor Registration with this mobile or email
+		vis = frappe.db.sql("""
+			SELECT registration_id, email, mobile_no
+			FROM `tabConnectFest Visitor Registration`
+			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+			LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
+		if vis:
+			v = vis[0]
+			v_email = (v.get("email") or "").strip().lower()
+			v_mobile = (v.get("mobile_no") or "").strip()
+			if mobile_no and v_mobile == mobile_no and v_email != email.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Mobile number '{mobile_no}' is already registered as a Visitor! Each mobile number can only be used once."
+				}
+			if email.lower() == v_email and mobile_no and v_mobile != mobile_no:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Email '{email}' is already registered as a Visitor with a different mobile number! Please use your registered mobile number."
+				}
+
+			# Exact match or conflict in Visitor Registration - strictly block duplicate role
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "This account is already registered as a Visitor! Each attendee can only be an Exhibitor or a Visitor, not both."
+			}
+
+		# 3. Check if already registered in Event Registration with this mobile or email
+		evt = frappe.db.sql("""
+			SELECT registration_id, email, mobile_no
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
+			LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
+		if evt:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "This account is registered for the Event! Event attendees cannot register or book stalls."
+			}
+
+		# 4. Check if mobile_no or phone is already bound to another User in Frappe
 		if mobile_no:
 			user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
 			if user_with_mob and user_with_mob.lower() != email.lower():
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": "This mobile number is already registered with another account! Each mobile number can only be used once."
+					"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once."
 				}
-
-	# Email verification check (Must be verified via OTP prior to registration)
-	from connectfest.services.otp import is_email_verified, verify_otp_inline
-	req_otp = data.get("otp") or kwargs.get("otp")
-	if not is_email_verified(email):
-		if req_otp and verify_otp_inline(email, req_otp):
-			pass
-		else:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "Email verification is required before registration! Please verify your email using OTP."
-			}
 
 	# Stall Specific Validation (if stall_number or category is provided)
 	dynamic_prices = get_tier_pricing()
@@ -987,7 +1020,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": "This mobile number is already registered with another account! Each mobile number can only be used once."
+				"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once."
 			}
 
 		# Conflict B: Email matches, but mobile is different!
@@ -995,7 +1028,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": "This email address is already registered with a different mobile number! Please use your registered mobile number."
+				"message": f"Email address '{email}' is already registered with a different mobile number! Please use your registered mobile number."
 			}
 
 		if visitor_image and not rec.get("visitor_image"):
@@ -1018,6 +1051,29 @@ def register_visitor(**kwargs):
 			"message": "You are already registered for ConnectFest 2027! Please log in using Email OTP to access your entrance pass.",
 		}
 
+	# Check if already registered as an exhibitor with this email or mobile
+	exhibitor = frappe.db.sql("""
+		SELECT registration_id, email, mobile_no
+		FROM `tabConnectFest Registration`
+		WHERE email = %(email)s OR mobile_no = %(mobile)s
+		LIMIT 1
+	""", {"email": email, "mobile": mobile_no}, as_dict=True)
+	if exhibitor:
+		ex = exhibitor[0]
+		ex_email = (ex.get("email") or "").strip().lower()
+		ex_mobile = (ex.get("mobile_no") or "").strip()
+		if mobile_no and ex_mobile == mobile_no and ex_email != email.lower():
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Mobile number '{mobile_no}' is already registered with an Exhibitor! Each mobile number can only be used once."
+			}
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "This account is already registered as an Exhibitor! Exhibitors get automated badge access.",
+		}
+
 	# Check if mobile_no is bound to another active User
 	if mobile_no:
 		user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
@@ -1025,20 +1081,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": "This mobile number is already registered with another account! Each mobile number can only be used once.",
-			}
-
-	# Email verification check (Must be verified via OTP prior to registration)
-	from connectfest.services.otp import is_email_verified, verify_otp_inline
-	req_otp = data.get("otp") or kwargs.get("otp")
-	if not is_email_verified(email):
-		if req_otp and verify_otp_inline(email, req_otp):
-			pass
-		else:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "Email verification is required before registration! Please verify your email using OTP."
+				"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once.",
 			}
 
 	cache = frappe.cache()
