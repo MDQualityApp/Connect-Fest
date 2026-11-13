@@ -51,10 +51,7 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 			"status": "already_registered",
 			"is_bni_member": True,
 			"already_registered": True,
-			"message": "You are already registered for the BNI Event!",
-			"registration_id": existing_reg.get("registration_id") or existing_reg.get("name"),
-			"pass_code": existing_reg.get("pass_code"),
-			"attendee": existing_reg,
+			"message": "This mobile number is already registered for the BNI Event! Please log in using Email OTP to access your pass.",
 		}
 
 	frappe.local.response["http_status_code"] = 200
@@ -125,18 +122,12 @@ def register_bni_event(**kwargs):
 	if existing_reg:
 		from connectfest.services.auth import ensure_frappe_user
 		ensure_frappe_user(existing_reg.get("email") or email, full_name=existing_reg.get("full_name") or full_name, mobile_no=existing_reg.get("mobile_no") or mobile_no, role="Website User")
-		chk_in = cint(existing_reg.get("checked_in") or 0)
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
 			"already_registered": True,
 			"is_logged_in": False,
-			"message": f"Mobile number '{mobile_no}' is already registered for {event_name}!",
-			"registration_id": existing_reg.get("registration_id") or existing_reg.get("name"),
-			"pass_code": existing_reg.get("pass_code"),
-			"checked_in": chk_in,
-			"is_attended": bool(chk_in),
-			"attendee": existing_reg,
+			"message": "This mobile number is already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
 	# Auto-populate chapter / region / member name / email from BNI Member record if missing
@@ -180,18 +171,12 @@ def register_bni_event(**kwargs):
 	if existing_email_reg:
 		from connectfest.services.auth import ensure_frappe_user
 		ensure_frappe_user(existing_email_reg.get("email") or email, full_name=existing_email_reg.get("full_name") or full_name, mobile_no=existing_email_reg.get("mobile_no") or mobile_no, role="Website User")
-		chk_in = cint(existing_email_reg.get("checked_in") or 0)
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
 			"already_registered": True,
 			"is_logged_in": False,
-			"message": f"Email '{email}' is already registered for {event_name}!",
-			"registration_id": existing_email_reg.get("registration_id") or existing_email_reg.get("name"),
-			"pass_code": existing_email_reg.get("pass_code"),
-			"checked_in": chk_in,
-			"is_attended": bool(chk_in),
-			"attendee": existing_email_reg,
+			"message": "This email address is already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
 	# 4. Generate Pass Code & QR Code Payload
@@ -556,6 +541,18 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 			"status": "error",
 			"message": f"BNI Event Pass not found for identifier '{reg_id or mob or mail or code}'"
 		}
+
+	# If matching only by mobile or email without code/registration_id, ensure session matches or is admin/scanner
+	if not code and not reg_id:
+		from connectfest.services.auth import is_admin_user, is_scanner_user
+		sess_u = getattr(frappe.session, "user", "")
+		rec_email = (record.get("email") or "").lower()
+		if sess_u == "Guest" or (sess_u.lower() != rec_email and not is_admin_user(sess_u) and not is_scanner_user(sess_u)):
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"message": "Authentication required! Please provide registration_id or pass_code, or log in using Email OTP to access your pass.",
+			}
 
 	qr_payload = f"CONNECTFEST2027:BNI_EVENT:{record.get('pass_code')}:{record.get('email')}:{record.get('mobile_no')}"
 

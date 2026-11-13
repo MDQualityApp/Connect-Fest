@@ -1572,7 +1572,7 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 			existing_m = frappe.db.get_value("ConnectFest Registration", {"mobile_no": new_mob}, "name") or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": new_mob}, "name")
 			if existing_m:
 				frappe.local.response["http_status_code"] = 409
-				return {"status": "error", "message": f"Mobile number {new_mob} is already registered to another attendee!"}
+				return {"status": "error", "message": "This mobile number is already registered to another account!"}
 
 		if new_em:
 			if "@" not in new_em:
@@ -1581,7 +1581,7 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 			existing_e = frappe.db.exists("User", new_em)
 			if existing_e:
 				frappe.local.response["http_status_code"] = 409
-				return {"status": "error", "message": f"Email address {new_em} is already registered to another attendee!"}
+				return {"status": "error", "message": "This email address is already registered to another account!"}
 
 		cache = frappe.cache()
 		target_val = new_mob or new_em

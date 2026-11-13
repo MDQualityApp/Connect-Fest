@@ -130,7 +130,7 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Mobile number '{req_mobile}' is already registered with another account ({ex_email})! Each mobile number can only be used once."
+					"message": f"Mobile number '{req_mobile}' is already registered with another account! Each mobile number can only be used once."
 				}
 
 			# Conflict B: Email already registered with a DIFFERENT mobile number!
@@ -138,7 +138,7 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Email address '{req_email}' is already registered with mobile number {ex_mobile}! Please use your registered mobile number."
+					"message": f"Email address '{req_email}' is already registered with a different mobile number! Please use your registered mobile number."
 				}
 
 			# Check if user already booked this specific stall
@@ -151,7 +151,7 @@ def register_stall(**kwargs):
 					frappe.local.response["http_status_code"] = 400
 					return {
 						"status": "error",
-						"message": f"You have already booked and confirmed stall '{stall_number}' (Registration ID: {already_booked_this[0].get('registration_id')})."
+						"message": f"Stall '{stall_number}' is already booked and confirmed."
 					}
 
 				# If user has an existing Pending registration for this same stall, return it
@@ -164,9 +164,8 @@ def register_stall(**kwargs):
 					ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
 					return {
 						"status": "already_registered",
-						"message": f"You already have a pending registration for stall '{stall_number}'! (Registration ID: {p_rec.registration_id}). Please proceed to complete payment.",
+						"message": f"A pending registration already exists for stall '{stall_number}'. Please log in to complete payment.",
 						"registration_id": p_rec.registration_id,
-						"data": p_rec,
 					}
 			else:
 				# No stall_number specified:
@@ -183,9 +182,8 @@ def register_stall(**kwargs):
 						ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
 						return {
 							"status": "already_registered",
-							"message": f"An exhibitor registration already exists with this email and mobile number! (Registration ID: {p_rec.registration_id}). Please proceed to select your stall and complete payment.",
+							"message": "An exhibitor registration already exists with these details. Please log in to select your stall and complete payment.",
 							"registration_id": p_rec.registration_id,
-							"data": p_rec,
 						}
 
 		# 2. Check if already registered in Visitor Registration with this mobile or email
@@ -203,21 +201,20 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Mobile number '{mobile_no}' is already registered as a Visitor under {v_email}! Each mobile number can only be used once."
+					"message": f"Mobile number '{mobile_no}' is already registered as a Visitor! Each mobile number can only be used once."
 				}
 			if email.lower() == v_email and mobile_no and v_mobile != mobile_no:
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Email '{email}' is already registered as a Visitor with mobile number {v_mobile}! Please use your registered mobile number."
+					"message": f"Email '{email}' is already registered as a Visitor with a different mobile number! Please use your registered mobile number."
 				}
 
 			# Exact match or conflict in Visitor Registration - strictly block duplicate role
-			field_matched = "email and mobile number" if (email.lower() == v_email and mobile_no == v_mobile) else ("email" if email.lower() == v_email else "mobile number")
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"This {field_matched} is already registered as a Visitor! (Pass ID: {v.registration_id}). Each attendee can only be an Exhibitor or a Visitor, not both."
+				"message": "This account is already registered as a Visitor! Each attendee can only be an Exhibitor or a Visitor, not both."
 			}
 
 		# 3. Check if already registered in Event Registration with this mobile or email
@@ -231,7 +228,7 @@ def register_stall(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"This account is registered for the Event (Pass ID: {evt[0].registration_id})! Event attendees cannot register or book stalls."
+				"message": "This account is registered for the Event! Event attendees cannot register or book stalls."
 			}
 
 		# 4. Check if mobile_no or phone is already bound to another User in Frappe
@@ -241,7 +238,7 @@ def register_stall(**kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"Mobile number '{mobile_no}' is already registered with another account ({user_with_mob})! Each mobile number can only be used once."
+					"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once."
 				}
 
 	# Stall Specific Validation (if stall_number or category is provided)
@@ -980,7 +977,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"Mobile number '{mobile_no}' is already registered with another visitor ({rec_email})! Each mobile number can only be used once."
+				"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once."
 			}
 
 		# Conflict B: Email matches, but mobile is different!
@@ -988,7 +985,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"Email address '{email}' is already registered with mobile number {rec_mobile}! Please use your registered mobile number."
+				"message": f"Email address '{email}' is already registered with a different mobile number! Please use your registered mobile number."
 			}
 
 		if visitor_image and not rec.get("visitor_image"):
@@ -1008,24 +1005,7 @@ def register_visitor(**kwargs):
 
 		return {
 			"status": "already_registered",
-			"message": "You are already registered for ConnectFest 2027! Here is your entrance pass.",
-			"registration_id": rec.registration_id,
-			"data": rec,
-			"pass": {
-				"pass_code": rec.pass_code or f"CF27-{rec.name[-6:]}",
-				"full_name": rec.full_name,
-				"visitor_image": rec.get("visitor_image") or visitor_image or "",
-				"email": rec.email,
-				"mobile_no": rec.mobile_no,
-				"which_day": rec.which_day or "Both days",
-				"access": "BOTH DAYS" if (rec.which_day or "Both days") == "Both days" else rec.which_day.upper(),
-				"area_of_interest": rec.area_of_interest or "",
-				"venue": "Chennai Trade Centre, Nandambakkam",
-				"dates": "20 & 21 Feb 2027",
-				"qr_payload": rec.qr_payload or f"CONNECTFEST2027:{rec.pass_code}:{rec.email}",
-				"status": rec.status,
-				"checked_in": rec.checked_in,
-			},
+			"message": "You are already registered for ConnectFest 2027! Please log in using Email OTP to access your entrance pass.",
 		}
 
 	# Check if already registered as an exhibitor with this email or mobile
@@ -1043,13 +1023,12 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"Mobile number '{mobile_no}' is already registered with an Exhibitor ({ex_email})! Each mobile number can only be used once."
+				"message": f"Mobile number '{mobile_no}' is already registered with an Exhibitor! Each mobile number can only be used once."
 			}
-		field_matched = "email" if ex_email == email.lower() else "mobile number"
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": f"This {field_matched} is already registered as an Exhibitor! (Registration ID: {ex.registration_id}). Exhibitors get automated badge access.",
+			"message": "This account is already registered as an Exhibitor! Exhibitors get automated badge access.",
 		}
 
 	# Check if mobile_no is bound to another active User
@@ -1059,7 +1038,7 @@ def register_visitor(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": f"Mobile number '{mobile_no}' is already registered with another account ({user_with_mob})! Each mobile number can only be used once.",
+				"message": f"Mobile number '{mobile_no}' is already registered with another account! Each mobile number can only be used once.",
 			}
 
 	cache = frappe.cache()

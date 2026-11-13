@@ -350,7 +350,7 @@ def admin_create_bni_member(**kwargs):
 				duplicates.append({
 					"mobile_no": mob,
 					"email": em,
-					"reason": f"Email '{em}' is already registered as a BNI Member (Mobile: {existing_email[0].get('mobile_no')}).",
+					"reason": f"Email '{em}' is already registered as a BNI Member.",
 				})
 				continue
 

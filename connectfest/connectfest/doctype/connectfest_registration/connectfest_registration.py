@@ -52,15 +52,15 @@ class ConnectFestRegistration(Document):
 
 					# Conflict A: Mobile already used by another email
 					if req_mob and ex_mob == req_mob and ex_email != req_email:
-						frappe.throw(frappe._("Mobile number '{0}' is already registered with another account ({1})!").format(req_mob, ex_email))
+						frappe.throw(frappe._("Mobile number '{0}' is already registered with another account! Each mobile number can only be used once.").format(req_mob))
 
 					# Conflict B: Email already used by another mobile
 					if req_email and ex_email == req_email and req_mob and ex_mob != req_mob:
-						frappe.throw(frappe._("Email address '{0}' is already registered with mobile number {1}!").format(req_email, ex_mob))
+						frappe.throw(frappe._("Email address '{0}' is already registered with a different mobile number! Please use your registered mobile number.").format(req_email))
 
 					# If same stall already booked and paid by this user
 					if self.stall_number and ex.get("stall_number") == self.stall_number and ex.get("payment_status") == "Paid":
-						frappe.throw(frappe._("Stall '{0}' is already booked and paid for (Registration ID: {1}).").format(self.stall_number, ex.get("registration_id") or ex.get("name")))
+						frappe.throw(frappe._("Stall '{0}' is already booked and confirmed.").format(self.stall_number))
 
 		if self.payment_mode and self.payment_mode.lower() in ("cash", "cheque", "bank transfer"):
 			sess_user = getattr(frappe.session, "user", None)
@@ -83,8 +83,7 @@ class ConnectFestRegistration(Document):
 				frappe.throw(frappe._("Stall '{0}' is blocked by administration ({1})").format(self.stall_number, stall.blocked_reason or "Reserved"))
 
 			if stall.status == "Booked" and stall.booked_by_registration and stall.booked_by_registration != (self.registration_id or self.name):
-				booked_by = stall.booked_by_name or stall.booked_by_company or stall.booked_by_registration or "another exhibitor"
-				frappe.throw(frappe._("Stall '{0}' is already booked and confirmed by {1}").format(self.stall_number, booked_by))
+				frappe.throw(frappe._("Stall '{0}' is already booked and confirmed by another exhibitor.").format(self.stall_number))
 
 		self.set_pricing()
 
