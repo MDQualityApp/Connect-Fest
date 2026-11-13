@@ -37,11 +37,27 @@ def setup_site_config_defaults():
 		pass
 
 
+def ensure_standard_roles():
+	"""Guarantees essential roles exist in tabRole without risking LinkValidationError."""
+	try:
+		for r_name, desk_acc, is_cust in [("Website User", 0, 0), ("ConnectFest Gate Scanner", 0, 1)]:
+			frappe.db.sql("""
+				INSERT IGNORE INTO `tabRole` 
+				(name, role_name, desk_access, is_custom, disabled, creation, modified, modified_by, owner) 
+				VALUES (%s, %s, %s, %s, 0, NOW(), NOW(), 'Administrator', 'Administrator')
+			""", (r_name, r_name, desk_acc, is_cust))
+		frappe.db.commit()
+		frappe.clear_cache(doctype="Role")
+	except Exception:
+		pass
+
+
 def after_migrate():
 	"""
 	Hook executed automatically at the end of `bench migrate`.
 	Ensures site_config defaults, 220 standard stalls, pricing tiers, sponsors, terms, and settings exist.
 	"""
+	ensure_standard_roles()
 	setup_site_config_defaults()
 
 	try:
@@ -67,6 +83,7 @@ def after_install():
 	"""
 	Hook executed automatically after the app is installed onto a site.
 	"""
+	ensure_standard_roles()
 	setup_site_config_defaults()
 
 	try:
