@@ -4,6 +4,27 @@ from frappe.auth import LoginManager
 from frappe.utils import flt, cint
 from connectfest.services.common import extract_request_data, handle_api_errors
 
+OTP_CACHE_PREFIX = "connectfest:otp:"
+TEST_MASTER_OTPS = ["123456", "999999"]
+
+
+def is_otp_test_mode():
+	"""
+	Checks if ConnectFest is running with Razorpay test keys (starts with rzp_test_).
+	Allows test master OTPs (123456, 999999) for testing while on test credentials.
+	"""
+	try:
+		key_id = None
+		if frappe.db.exists("DocType", "ConnectFest Settings"):
+			key_id = frappe.db.get_single_value("ConnectFest Settings", "razorpay_key_id")
+		if not key_id:
+			key_id = frappe.conf.get("razorpay_key_id")
+		if not key_id or str(key_id).startswith("rzp_test_"):
+			return True
+	except Exception:
+		pass
+	return False
+
 
 def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 	"""
@@ -827,7 +848,10 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 	Dedicated Secure Admin Login with Two-Factor Authentication (Password + 2FA OTP).
 	Strictly restricted to users with 'System Manager' or 'Administrator' roles.
 	"""
-	from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
+	try:
+		from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
+	except Exception:
+		pass
 	import random
 	try:
 		data = extract_request_data(kwargs)
@@ -1748,7 +1772,10 @@ def verify_and_update_contact(otp=None, **kwargs):
 	"""
 	Verifies the OTP and updates mobile number and/or email in Frappe User and Registration records.
 	"""
-	from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
+	try:
+		from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
+	except Exception:
+		pass
 	import json
 	try:
 		sess_user = getattr(frappe.session, "user", None)
