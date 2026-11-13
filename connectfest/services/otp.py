@@ -9,6 +9,25 @@ OTP_CACHE_PREFIX = "connectfest:otp:"
 EMAIL_OTP_CACHE_PREFIX = "connectfest:otp:email:"
 EMAIL_VERIFIED_CACHE_PREFIX = "connectfest:email_verified:"
 DEFAULT_OTP_EXPIRY_SECONDS = 300  # Default 5 minutes (industry standard, ensures enough time for email delivery)
+TEST_MASTER_OTPS = ["123456", "999999"]
+
+
+def is_otp_test_mode():
+	"""
+	Checks if ConnectFest is running with Razorpay test keys (starts with rzp_test_).
+	Allows test master OTPs (123456, 999999) for testing while on test credentials.
+	"""
+	try:
+		key_id = None
+		if frappe.db.exists("DocType", "ConnectFest Settings"):
+			key_id = frappe.db.get_single_value("ConnectFest Settings", "razorpay_key_id")
+		if not key_id:
+			key_id = frappe.conf.get("razorpay_key_id")
+		if not key_id or str(key_id).startswith("rzp_test_"):
+			return True
+	except Exception:
+		pass
+	return False
 
 # Progressive Escalation Lockout Tiers:
 # 1st violation: 10 minutes
