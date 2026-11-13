@@ -165,7 +165,6 @@ def register_stall(**kwargs):
 					return {
 						"status": "already_registered",
 						"message": f"A pending registration already exists for stall '{stall_number}'. Please log in to complete payment.",
-						"registration_id": p_rec.registration_id,
 					}
 			else:
 				# No stall_number specified:
@@ -183,7 +182,6 @@ def register_stall(**kwargs):
 						return {
 							"status": "already_registered",
 							"message": "An exhibitor registration already exists with these details. Please log in to select your stall and complete payment.",
-							"registration_id": p_rec.registration_id,
 						}
 
 		# 2. Check if already registered in Visitor Registration with this mobile or email
@@ -404,45 +402,24 @@ def register_stall(**kwargs):
 			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
 
 		# Provision Frappe User account immediately (Synchronous - zero background worker/cron dependency)
-		session_sid = None
+		# Provision Frappe User account immediately (without auto-login)
 		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 			if company_logo:
 				frappe.db.set_value("User", email, "user_image", company_logo)
-
-			# Auto-login attendee into Frappe session immediately
-			from frappe.auth import LoginManager
-			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-				frappe.local.login_manager.login_as(email)
-			else:
-				frappe.local.login_manager = LoginManager()
-				frappe.local.login_manager.login_as(email)
-			frappe.set_user(email)
-			session_sid = (
-				getattr(getattr(frappe.local, "session_obj", None), "sid", None)
-				or getattr(getattr(frappe.local, "session", None), "sid", None)
-				or getattr(frappe.session, "sid", None)
-			)
 		except Exception:
 			pass
 
 		response_data = {
 			"status": "success",
-			"type": "stall",
-			"is_logged_in": True,
-			"session_user": getattr(frappe.session, "user", email),
-			"sid": session_sid,
-			"token": session_sid,
-			"message": "Exhibitor registration successful! You are logged in.",
-			"registration_id": actual_reg_id,
-			"full_name": full_name,
-			"data": record,
+			"message": "Exhibitor registration successful!",
 		}
 
 		if create_order and stall_number:
 			from connectfest.services.payments import create_razorpay_order
 			order_info = create_razorpay_order(registration_id=actual_reg_id, stall_number=stall_number, is_internal=True)
-			response_data["razorpay_order"] = order_info.get("order")
+			if order_info and order_info.get("order"):
+				response_data["razorpay_order"] = order_info.get("order")
 
 		return response_data
 	except Exception as e:
@@ -494,7 +471,32 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 			if reg_id:
 				reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member")) or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
 			if not reg_bni and sess_user and sess_user != "Guest":
-				reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "is_bni_member"))
+				user_mobs = [sess_user]
+				u_mob_val = (frappe.db.get_value("User", sess_user, "mobile_no") or frappe.db.get_value("User", sess_user, "phone") or "").strip()
+				if u_mob_val:
+					user_mobs.append(u_mob_val)
+				mobs_tuple = tuple(set(user_mobs))
+				has_reg_bni = frappe.db.sql("""
+					SELECT name FROM `tabConnectFest Registration`
+					WHERE (email = %(user)s OR mobile_no IN %(mobs)s)
+					  AND is_bni_member = 1
+					LIMIT 1
+				""", {"user": sess_user, "mobs": mobs_tuple}, as_dict=True)
+				if has_reg_bni:
+					reg_bni = 1
+
+			if not reg_bni:
+				req_m = (data.get("mobile_no") or data.get("phone") or "").strip()
+				req_e = (data.get("email") or "").strip().lower()
+				if req_m or req_e:
+					has_data_bni = frappe.db.sql("""
+						SELECT name FROM `tabConnectFest Registration`
+						WHERE (email = %(e)s OR (mobile_no = %(m)s AND %(m)s != ''))
+						  AND is_bni_member = 1
+						LIMIT 1
+					""", {"e": req_e, "m": req_m}, as_dict=True)
+					if has_data_bni:
+						reg_bni = 1
 
 			u_mob = (
 				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
@@ -1102,42 +1104,17 @@ def register_visitor(**kwargs):
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
-		# Provision Frappe User account immediately
-		session_sid = None
+		# Provision Frappe User account immediately (without auto-login)
 		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 			if visitor_image:
 				frappe.db.set_value("User", email, "user_image", visitor_image)
-
-			# Auto-login visitor into Frappe session immediately upon registration
-			from frappe.auth import LoginManager
-			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-				frappe.local.login_manager.login_as(email)
-			else:
-				frappe.local.login_manager = LoginManager()
-				frappe.local.login_manager.login_as(email)
-			frappe.set_user(email)
-			session_sid = (
-				getattr(getattr(frappe.local, "session_obj", None), "sid", None)
-				or getattr(getattr(frappe.local, "session", None), "sid", None)
-				or getattr(frappe.session, "sid", None)
-			)
 		except Exception:
 			pass
 
 		return {
 			"status": "success",
-			"type": "visitor",
-			"is_logged_in": True,
-			"session_user": getattr(frappe.session, "user", email),
-			"sid": session_sid,
-			"token": session_sid,
-			"message": "Visitor registration successful! You are logged in.",
-			"registration_id": reg_id,
-			"pass_code": pass_code,
-			"full_name": full_name,
-			"data": record,
-			"pass": pass_info,
+			"message": "Visitor registration successful!",
 		}
 	except Exception as e:
 		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())

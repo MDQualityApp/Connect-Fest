@@ -57,6 +57,27 @@ def get_base_url():
 	return "https://connectfestapp.mdqapps.online"
 
 
+def get_attendee_dashboard_url():
+	"""
+	Resolves the Attendee Dashboard URL dynamically configured in ConnectFest Settings.
+	Falls back to base_url/ if not configured or empty.
+	"""
+	base_url = get_base_url()
+	custom_url = None
+	try:
+		custom_url = frappe.db.get_single_value("ConnectFest Settings", "frontend_dashboard_url")
+	except Exception:
+		pass
+
+	if custom_url and str(custom_url).strip():
+		c_url = str(custom_url).strip()
+		if c_url.startswith("/"):
+			return f"{base_url}{c_url}"
+		return c_url
+
+	return f"{base_url}/"
+
+
 def build_confirmation_html(data):
 	full_name = data.get("full_name") or "Valued Attendee"
 	company_name = data.get("company_name") or ""
@@ -71,7 +92,7 @@ def build_confirmation_html(data):
 
 	base_url = get_base_url()
 	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
-	dashboard_url = f"{base_url}/"
+	dashboard_url = get_attendee_dashboard_url()
 
 	return f"""
 	<div style="{get_email_header_style()}">
@@ -211,7 +232,7 @@ def build_failure_html(data):
 			</p>
 
 			<div style="text-align: center; margin-bottom: 24px;">
-				<a href="{get_base_url()}/" style="background: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">Retry Payment Now</a>
+				<a href="{get_attendee_dashboard_url()}" style="background: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block;">Retry Payment Now</a>
 			</div>
 		</div>
 

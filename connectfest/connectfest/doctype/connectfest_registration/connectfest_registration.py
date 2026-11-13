@@ -24,14 +24,16 @@ class ConnectFestRegistration(Document):
 			try:
 				from connectfest.services.bni_members import is_valid_bni_member
 				is_bni, bni_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email)
-				self.is_bni_member = 1 if is_bni else 0
 				if is_bni:
+					self.is_bni_member = 1
 					self.claimed_bni_member = 1
 					if bni_doc:
 						if not self.chapter_name and bni_doc.get("chapter_name"):
 							self.chapter_name = bni_doc.get("chapter_name")
 						if not self.region_name and bni_doc.get("region_name"):
 							self.region_name = bni_doc.get("region_name")
+				elif cint(self.is_bni_member) != 1:
+					self.is_bni_member = 0
 			except Exception:
 				pass
 

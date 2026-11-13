@@ -22,10 +22,13 @@
   "event_name",
   "event_dates",
   "event_venue",
+  "frontend_dashboard_url",
   "crn_bni_only",
   "bni_check_mobile",
   "bni_check_email",
   "non_bni_extra_percentage",
+  "otp_section",
+  "otp_expiry_seconds",
   "wati_section",
   "wati_enabled",
   "wati_api_host",
@@ -128,6 +131,12 @@
    "label": "Venue"
   },
   {
+   "description": "Custom URL for 'View Attendee Dashboard' button in confirmation emails (e.g. https://connectfest.in/dashboard or /dashboard). Defaults to site home page if left blank.",
+   "fieldname": "frontend_dashboard_url",
+   "fieldtype": "Data",
+   "label": "Attendee Dashboard URL (Email Button)"
+  },
+  {
    "default": "1",
    "fieldname": "crn_bni_only",
    "fieldtype": "Check",
@@ -150,6 +159,18 @@
    "fieldname": "non_bni_extra_percentage",
    "fieldtype": "Percent",
    "label": "Non-BNI Member Extra Surcharge (%)"
+  },
+  {
+   "fieldname": "otp_section",
+   "fieldtype": "Section Break",
+   "label": "OTP & Authentication Configuration"
+  },
+  {
+   "default": "120",
+   "description": "OTP validity duration in seconds (e.g. 120 for 2 minutes, 300 for 5 minutes). Defaults to 120.",
+   "fieldname": "otp_expiry_seconds",
+   "fieldtype": "Int",
+   "label": "OTP Expiry (Seconds)"
   },
   {
    "fieldname": "wati_section",

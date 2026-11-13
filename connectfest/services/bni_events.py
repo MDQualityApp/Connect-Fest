@@ -125,8 +125,6 @@ def register_bni_event(**kwargs):
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"already_registered": True,
-			"is_logged_in": False,
 			"message": "This mobile number is already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
@@ -174,8 +172,6 @@ def register_bni_event(**kwargs):
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"already_registered": True,
-			"is_logged_in": False,
 			"message": "This email address is already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
@@ -268,38 +264,7 @@ def register_bni_event(**kwargs):
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
-		"type": "bni_event",
-		"is_logged_in": False,
-		"message": "Event registration successful! Please log in using Email OTP to access your profile and pass.",
-		"registration_id": doc.name,
-		"pass_code": pass_code,
-		"full_name": full_name,
-		"chapter_name": chapter_name,
-		"user_created": True,
-		"can_book_stall": False,
-		"checked_in": 0,
-		"is_attended": False,
-		"attended": 0,
-		"data": {
-			"name": doc.name,
-			"registration_id": doc.name,
-			"full_name": full_name,
-			"company_name": company_name,
-			"mobile_no": mobile_no,
-			"email": email,
-			"chapter_name": chapter_name,
-			"region_name": region_name,
-			"location": location,
-			"industry": industry,
-			"segment": segment,
-			"event_name": event_name,
-			"pass_code": pass_code,
-			"status": "Registered",
-			"checked_in": 0,
-			"is_attended": False,
-			"attended": 0,
-			"can_book_stall": False,
-		}
+		"message": "Event registration successful!",
 	}
 
 
