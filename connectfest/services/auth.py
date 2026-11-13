@@ -131,30 +131,21 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 					needs_name = True
 
 				if needs_enable or needs_phone or needs_mob or needs_name:
-					u_doc = frappe.get_doc("User", clean_email)
-					changed = False
-					if not u_doc.enabled:
-						u_doc.enabled = 1
-						changed = True
+					updates = {}
+					if needs_enable:
+						updates["enabled"] = 1
 					if clean_mob:
-						if not u_doc.phone:
-							u_doc.phone = clean_mob
-							changed = True
-						if not u_doc.mobile_no and not frappe.db.exists("User", {"mobile_no": clean_mob}):
-							u_doc.mobile_no = clean_mob
-							changed = True
+						if not user_vals.get("phone"):
+							updates["phone"] = clean_mob
+						if not user_vals.get("mobile_no") and not frappe.db.exists("User", {"mobile_no": clean_mob}):
+							updates["mobile_no"] = clean_mob
 					if needs_name and clean_fn:
 						names = clean_fn.split(" ", 1)
-						u_doc.first_name = names[0]
-						u_doc.last_name = names[1] if len(names) > 1 else ""
-						u_doc.full_name = clean_fn
-						changed = True
-					if changed:
-						u_doc.flags.ignore_permissions = True
-						u_doc.flags.ignore_password_policy = True
-						u_doc.on_update = lambda *args, **kwargs: None
-						u_doc.save()
-						frappe.db.commit()
+						updates["first_name"] = names[0]
+						updates["last_name"] = names[1] if len(names) > 1 else ""
+						updates["full_name"] = clean_fn
+					if updates:
+						frappe.db.set_value("User", clean_email, updates, update_modified=False)
 		return clean_email
 	except Exception as e:
 		frappe.clear_messages()

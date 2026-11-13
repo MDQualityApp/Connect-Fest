@@ -241,25 +241,26 @@ def release_expired_holds():
 					pass
 				released_stalls.append(s)
 
-		frappe.db.commit()
-		invalidate_stalls_cache()
+		if released_stalls:
+			frappe.db.commit()
+			invalidate_stalls_cache()
 
-		try:
-			from connectfest.services.realtime import broadcast_stall_update
-			for s in released_stalls:
-				stall_num = s.get("stall_number") or s.get("name")
-				broadcast_stall_update(stall_num, "Available", {
-					"tier": s.get("tier"),
-					"price": s.get("price"),
-					"dimensions": s.get("dimensions"),
-					"is_blocked_by_admin": bool(s.get("is_blocked_by_admin")),
-					"blocked_reason": s.get("blocked_reason"),
-					"booked_by_company": None,
-					"booked_by_name": None,
-					"hold_expires_at": None,
-				})
-		except Exception:
-			pass
+			try:
+				from connectfest.services.realtime import broadcast_stall_update
+				for s in released_stalls:
+					stall_num = s.get("stall_number") or s.get("name")
+					broadcast_stall_update(stall_num, "Available", {
+						"tier": s.get("tier"),
+						"price": s.get("price"),
+						"dimensions": s.get("dimensions"),
+						"is_blocked_by_admin": bool(s.get("is_blocked_by_admin")),
+						"blocked_reason": s.get("blocked_reason"),
+						"booked_by_company": None,
+						"booked_by_name": None,
+						"hold_expires_at": None,
+					})
+			except Exception:
+				pass
 
 		return {
 			"status": "success",
