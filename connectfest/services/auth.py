@@ -202,6 +202,55 @@ def is_scanner_user(user=None):
 	return False
 
 
+def check_scanner_status(email=None, **kwargs):
+	"""
+	Public API to check if an email or mobile has Gate Scanner or Administrator privileges.
+	Accessible by guest / unauthenticated users.
+	Accepts email, email_id, user_email, mobile_no, phone.
+	Returns: {
+		"status": "success",
+		"email": target_email,
+		"is_scanner": True / False
+	}
+	"""
+	data = extract_request_data(kwargs)
+	target_email = str(email or data.get("email") or data.get("email_id") or data.get("user_email") or "").strip().lower()
+
+	if not target_email:
+		mob = str(data.get("mobile_no") or data.get("phone") or kwargs.get("mobile_no") or kwargs.get("phone") or "").strip()
+		if mob:
+			target_email = (
+				frappe.db.get_value("ConnectFest Registration", {"mobile_no": mob}, "email")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": mob}, "email")
+				or frappe.db.get_value("ConnectFest BNI Event Registration", {"mobile_no": mob}, "email")
+				or frappe.db.get_value("User", {"mobile_no": mob}, "name")
+				or frappe.db.get_value("User", {"phone": mob}, "name")
+				or ""
+			)
+			if target_email:
+				target_email = target_email.strip().lower()
+
+	if not target_email:
+		u_val = str(email or data.get("user") or data.get("username") or "").strip()
+		if u_val and (frappe.db.exists("User", u_val) or u_val.lower() in ("administrator", "admin")):
+			target_email = u_val
+
+	if not target_email or ("@" not in target_email and not frappe.db.exists("User", target_email)):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "A valid email address or user account is required to check scanner access.",
+		}
+
+	is_scanner = bool(is_scanner_user(target_email))
+
+	return {
+		"status": "success",
+		"email": target_email,
+		"is_scanner": is_scanner,
+	}
+
+
 def check_admin_permission(resource_name="this administrative resource"):
 	"""
 	Verifies that the current session belongs to an authenticated Administrator.
@@ -1022,59 +1071,101 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 		return {"status": "error", "message": "Email ('email') is required to grant scanner access"}
 
 	target_email = target_email.strip().lower()
-	if not name:
-		name = (
-			frappe.db.get_value("User", target_email, "full_name")
-			or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, "full_name")
-			or frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "full_name")
-			or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "full_name")
-			or target_email.split("@")[0].title()
+
+	# Fast O(1) Check User Existence via direct indexed SQL (sub-millisecond)
+	# Gate Scanner is a staff/security privilege. Do NOT auto-create dummy users for non-existent emails!
+	u_rows = frappe.db.sql(
+		"SELECT name, full_name, mobile_no, phone FROM `tabUser` WHERE name = %s LIMIT 1",
+		(target_email,),
+		as_dict=True
+	)
+	reg_user = None
+	if not u_rows:
+		reg_rows = frappe.db.sql("""
+			SELECT full_name, mobile_no FROM `tabConnectFest Registration` WHERE email = %(email)s
+			UNION
+			SELECT full_name, mobile_no FROM `tabConnectFest Visitor Registration` WHERE email = %(email)s
+			UNION
+			SELECT full_name, mobile_no FROM `tabConnectFest BNI Event Registration` WHERE email = %(email)s
+			LIMIT 1
+		""", {"email": target_email}, as_dict=True)
+		if reg_rows:
+			reg_user = reg_rows[0]
+		elif target_mob:
+			mob_rows = frappe.db.sql("""
+				SELECT full_name, email, mobile_no FROM `tabConnectFest Registration` WHERE mobile_no = %(mob)s
+				UNION
+				SELECT full_name, email, mobile_no FROM `tabConnectFest Visitor Registration` WHERE mobile_no = %(mob)s
+				UNION
+				SELECT full_name, email, mobile_no FROM `tabConnectFest BNI Event Registration` WHERE mobile_no = %(mob)s
+				LIMIT 1
+			""", {"mob": target_mob}, as_dict=True)
+			if mob_rows and mob_rows[0].get("email"):
+				target_email = mob_rows[0]["email"].strip().lower()
+				reg_user = mob_rows[0]
+
+		if not reg_user:
+			frappe.local.response["http_status_code"] = 404
+			return {
+				"status": "error",
+				"message": f"User with email '{target_email}' does not exist! Please check the email address or register the user first."
+			}
+
+		# Registered in ConnectFest but User record not yet created: provision once
+		ensure_frappe_user(
+			target_email,
+			full_name=reg_user.get("full_name") or name,
+			mobile_no=reg_user.get("mobile_no") or target_mob,
+			role="Website User"
+		)
+		u_rows = frappe.db.sql(
+			"SELECT name, full_name, mobile_no, phone FROM `tabUser` WHERE name = %s LIMIT 1",
+			(target_email,),
+			as_dict=True
 		)
 
-	# Ensure user account exists
-	ensure_frappe_user(target_email, full_name=name, mobile_no=target_mob, role="Website User")
+	u_data = u_rows[0] if u_rows else {}
+	if not name:
+		name = u_data.get("full_name") or (reg_user.get("full_name") if reg_user else None) or target_email.split("@")[0].title()
 
-	# Ensure Role exists
-	if not frappe.db.exists("Role", "ConnectFest Gate Scanner"):
-		role_doc = frappe.get_doc({"doctype": "Role", "role_name": "ConnectFest Gate Scanner", "desk_access": 1})
-		role_doc.flags.ignore_permissions = True
-		role_doc.insert()
-		frappe.db.commit()
-
-	u_doc = frappe.get_doc("User", target_email)
+	# Fast O(1) Role check from tabHas Role
+	has_role = bool(frappe.db.sql(
+		"SELECT name FROM `tabHas Role` WHERE parent = %s AND role = 'ConnectFest Gate Scanner' LIMIT 1",
+		(target_email,)
+	))
 	cache = frappe.cache()
 
 	if new_enabled:
-		u_doc.add_roles("ConnectFest Gate Scanner")
-		u_doc.flags.ignore_permissions = True
-		u_doc.flags.ignore_password_policy = True
-		u_doc.save()
+		if not has_role:
+			u_doc = frappe.get_doc("User", target_email)
+			u_doc.add_roles("ConnectFest Gate Scanner")
 		try:
 			cache.sadd("connectfest:scanner_users", target_email)
-			if target_mob:
-				cache.sadd("connectfest:scanner_users", target_mob)
+			if target_mob or u_data.get("mobile_no"):
+				cache.sadd("connectfest:scanner_users", target_mob or u_data.get("mobile_no"))
 		except Exception:
 			pass
 		msg = f"Gate Scanner access granted successfully to '{target_email}' ({name}). They can now scan visitor and event passes."
 	else:
-		u_doc.remove_roles("ConnectFest Gate Scanner")
-		u_doc.flags.ignore_permissions = True
-		u_doc.save()
+		if has_role:
+			u_doc = frappe.get_doc("User", target_email)
+			u_doc.remove_roles("ConnectFest Gate Scanner")
 		try:
 			cache.srem("connectfest:scanner_users", target_email)
-			if target_mob:
-				cache.srem("connectfest:scanner_users", target_mob)
+			if target_mob or u_data.get("mobile_no"):
+				cache.srem("connectfest:scanner_users", target_mob or u_data.get("mobile_no"))
 		except Exception:
 			pass
 		msg = f"Gate Scanner access revoked for '{target_email}'."
 
 	frappe.db.commit()
+	user_mobile_val = target_mob or u_data.get("mobile_no") or u_data.get("phone") or ""
 	return {
 		"status": "success",
 		"message": msg,
 		"user": target_email,
 		"full_name": name,
-		"mobile_no": target_mob or u_doc.mobile_no or u_doc.phone,
+		"mobile_no": user_mobile_val,
 		"scanner_access": bool(new_enabled),
 		"role": "ConnectFest Gate Scanner" if new_enabled else None,
 	}

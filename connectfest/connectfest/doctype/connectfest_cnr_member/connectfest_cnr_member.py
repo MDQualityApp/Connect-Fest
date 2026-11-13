@@ -23,11 +23,11 @@ def normalize_bni_phone(raw_phone):
 	return digits
 
 
-class ConnectFestBNIMember(Document):
+class ConnectFestCNRMember(Document):
 	def validate(self):
 		cleaned = normalize_bni_phone(self.mobile_no)
 		if not cleaned or len(cleaned) != 10:
-			frappe.throw("A valid 10-digit Mobile Number is required for BNI Member.")
+			frappe.throw("A valid 10-digit Mobile Number is required for CNR Member.")
 		self.mobile_no = cleaned
 
 	def after_insert(self):
@@ -43,17 +43,32 @@ class ConnectFestBNIMember(Document):
 		try:
 			from connectfest.services.bni_members import clear_bni_member_cache
 			clear_bni_member_cache()
-			if self.mobile_no:
-				frappe.db.sql("""
-					UPDATE `tabConnectFest Registration`
-					SET is_bni_member = %(is_bni)s
-					WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
-				""", {"mob": self.mobile_no, "is_bni": is_bni})
-			if self.email:
-				frappe.db.sql("""
-					UPDATE `tabConnectFest Registration`
-					SET is_bni_member = %(is_bni)s
-					WHERE email = %(email)s
-				""", {"email": self.email, "is_bni": is_bni})
+			if is_bni == 1:
+				if self.mobile_no:
+					frappe.db.sql("""
+						UPDATE `tabConnectFest Registration`
+						SET is_cnr_member = 1, is_bni_member = 1
+						WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+					""", {"mob": self.mobile_no})
+				if self.email:
+					frappe.db.sql("""
+						UPDATE `tabConnectFest Registration`
+						SET is_cnr_member = 1, is_bni_member = 1
+						WHERE email = %(email)s
+					""", {"email": self.email})
+			else:
+				# When removed from CNR roster, revoke CNR membership status only
+				if self.mobile_no:
+					frappe.db.sql("""
+						UPDATE `tabConnectFest Registration`
+						SET is_cnr_member = 0
+						WHERE mobile_no = %(mob)s OR RIGHT(mobile_no, 10) = %(mob)s
+					""", {"mob": self.mobile_no})
+				if self.email:
+					frappe.db.sql("""
+						UPDATE `tabConnectFest Registration`
+						SET is_cnr_member = 0
+						WHERE email = %(email)s
+					""", {"email": self.email})
 		except Exception:
 			pass

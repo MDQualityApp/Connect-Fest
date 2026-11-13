@@ -27,8 +27,37 @@ def invalidate_stalls_cache():
 	try:
 		cache = frappe.cache()
 		cache.delete(cache.make_key(STALLS_INVENTORY_CACHE_KEY))
+		cache.delete_value("connectfest:settings:stall_hold_minutes")
 	except Exception:
 		pass
+
+
+def get_stall_hold_duration_minutes():
+	"""
+	Returns the admin-configured stall hold duration in minutes.
+	Uses Redis caching for microsecond latency.
+	Defaults to 10 minutes if not configured or <= 0.
+	"""
+	cache = frappe.cache()
+	cache_key = "connectfest:settings:stall_hold_minutes"
+	try:
+		cached = cache.get_value(cache_key)
+		if cached is not None:
+			return max(1, cint(cached))
+	except Exception:
+		pass
+
+	try:
+		raw_val = frappe.db.get_single_value("ConnectFest Settings", "stall_hold_duration_minutes")
+		val = max(1, cint(raw_val)) if (raw_val is not None and str(raw_val).strip() != "") else 10
+	except Exception:
+		val = 10
+
+	try:
+		cache.set_value(cache_key, val, expires_in_sec=300)
+	except Exception:
+		pass
+	return val
 
 
 def check_stall_hold_in_redis(stall_number, stall_doc=None):
@@ -594,43 +623,53 @@ def hold_stall(stall_number=None, **kwargs):
 				"message": f"Stall {stall_num} is already booked and confirmed by another exhibitor."
 			}
 
-		# Strict BNI check for CRN 1 stall when admin restriction is enabled
-		if cint(getattr(stall, "crn", 0)) == 1 and not is_admin:
-			from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
-			if is_crn_bni_restriction_enabled():
-				reg_bni = 0
-				if reg_id:
-					reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member")) or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
-				if not reg_bni and sess_u and sess_u != "Guest":
-					reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "is_bni_member"))
-
-				u_mob = (
-					mobile_no
-					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
-					or (frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "mobile_no") if sess_u and sess_u != "Guest" else None)
-					or (frappe.db.get_value("User", sess_u, "mobile_no") if sess_u and sess_u != "Guest" else None)
-					or (frappe.db.get_value("User", sess_u, "phone") if sess_u and sess_u != "Guest" else None)
+		# Strict CNR check when admin restriction is enabled or for corner stalls
+		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+		should_check_cnr = (is_crn_bni_restriction_enabled() or cint(getattr(stall, "crn", 0)) == 1)
+		if should_check_cnr and not is_admin:
+			reg_bni = 0
+			if reg_id:
+				reg_bni = (
+					cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_cnr_member"))
+					or cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member"))
+					or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_cnr_member"))
+					or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
 				)
-				u_email = (
-					email
-					or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
-					or (sess_u if sess_u and sess_u != "Guest" else None)
+			if not reg_bni and sess_u and sess_u != "Guest":
+				reg_bni = (
+					cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "is_cnr_member"))
+					or cint(frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "is_bni_member"))
 				)
-				is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
-				if reg_bni == 1:
-					is_bni = True
 
-				if is_bni and reg_id:
-					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 1, update_modified=False)
-				elif not is_bni and reg_id and not reg_bni:
-					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 0, update_modified=False)
+			u_mob = (
+				mobile_no
+				or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
+				or (frappe.db.get_value("ConnectFest Registration", {"email": sess_u}, "mobile_no") if sess_u and sess_u != "Guest" else None)
+				or (frappe.db.get_value("User", sess_u, "mobile_no") if sess_u and sess_u != "Guest" else None)
+				or (frappe.db.get_value("User", sess_u, "phone") if sess_u and sess_u != "Guest" else None)
+			)
+			u_email = (
+				email
+				or (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
+				or (sess_u if sess_u and sess_u != "Guest" else None)
+			)
+			is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+			if reg_bni == 1:
+				is_bni = True
 
-				if not is_bni:
-					frappe.local.response["http_status_code"] = 400
-					return {
-						"status": "error",
-						"message": "You are not a BNI member",
-					}
+			if is_bni and reg_id:
+				frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 1, update_modified=False)
+				frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_cnr_member", 1, update_modified=False)
+			elif not is_bni and reg_id and not reg_bni:
+				frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member", 0, update_modified=False)
+				frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "is_cnr_member", 0, update_modified=False)
+
+			if not is_bni:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "Stall booking is strictly restricted to verified CNR (Chennai North Region) members",
+				}
 
 		# Authoritative Redis Hold Check
 		hold_info = check_stall_hold_in_redis(stall_num, stall)
@@ -660,12 +699,15 @@ def hold_stall(stall_number=None, **kwargs):
 					"message": f"Stall {stall_num} is currently held by another attendee completing payment. (Expires in Redis in {remaining_secs}s). Please select a different stall."
 				}
 
-		# Acquire Redis Atomic Lock (Primary 10,000+ RPS Defense with 600s TTL)
+		# Acquire Redis Atomic Lock (Primary 10,000+ RPS Defense with dynamic admin-configured TTL)
+		hold_duration_mins = get_stall_hold_duration_minutes()
+		hold_duration_secs = int(hold_duration_mins * 60)
+
 		cache = frappe.cache()
 		lock_key = f"{STALL_LOCK_PREFIX}{stall_num}"
 		new_token = f"hold_{uuid.uuid4().hex[:12]}"
 		now_dt = now_datetime()
-		expires_at = now_dt + timedelta(seconds=600)
+		expires_at = now_dt + timedelta(seconds=hold_duration_secs)
 		raw_key = cache.make_key(lock_key)
 
 		hold_payload = {
@@ -679,12 +721,12 @@ def hold_stall(stall_number=None, **kwargs):
 			"expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S")
 		}
 
-		# Atomic SET with exact 600s (10-minute) TTL in Redis
+		# Atomic SET with exact dynamic TTL in Redis
 		try:
-			cache.set(raw_key, json.dumps(hold_payload), ex=600)
+			cache.set(raw_key, json.dumps(hold_payload), ex=hold_duration_secs)
 		except Exception:
 			try:
-				cache.set(raw_key, new_token, ex=600)
+				cache.set(raw_key, new_token, ex=hold_duration_secs)
 			except Exception:
 				pass
 
@@ -727,12 +769,13 @@ def hold_stall(stall_number=None, **kwargs):
 
 		return {
 			"status": "success",
-			"message": f"Stall {stall_num} held successfully for 10 minutes",
+			"message": f"Stall {stall_num} held successfully for {hold_duration_mins} minutes",
 			"stall_number": stall_num,
 			"tier": stall.tier,
 			"price": current_price,
 			"hold_token": new_token,
-			"expires_in_seconds": 600,
+			"expires_in_seconds": hold_duration_secs,
+			"hold_duration_minutes": hold_duration_mins,
 			"hold_expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
 		}
 	except Exception as e:
@@ -779,6 +822,53 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 		pass
 
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
+
+
+def admin_set_stall_hold_duration(duration_minutes=None, **kwargs):
+	"""
+	Admin API: Update the dynamic stall hold duration in minutes.
+	Does NOT affect active existing holds (their timers remain untouched).
+	New holds created after this call will use the updated duration.
+	"""
+	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
+		from connectfest.services.auth import check_admin_permission
+		err = check_admin_permission("Stall hold configuration")
+		if err:
+			return err
+
+	data = extract_request_data(kwargs)
+	raw_val = duration_minutes if duration_minutes is not None else data.get("duration_minutes") or data.get("minutes") or data.get("stall_hold_duration_minutes")
+	if raw_val is None:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "duration_minutes is required"}
+
+	mins = max(1, cint(raw_val))
+	frappe.db.set_single_value("ConnectFest Settings", "stall_hold_duration_minutes", mins)
+	frappe.db.commit()
+
+	try:
+		frappe.cache().delete_value("connectfest:settings:stall_hold_minutes")
+	except Exception:
+		pass
+
+	return {
+		"status": "success",
+		"message": f"Stall hold duration updated to {mins} minutes. Active existing holds remain untouched.",
+		"stall_hold_duration_minutes": mins,
+		"stall_hold_duration_seconds": int(mins * 60)
+	}
+
+
+def get_stall_hold_settings(**kwargs):
+	"""
+	Public/Admin API: Get current stall hold duration settings.
+	"""
+	mins = get_stall_hold_duration_minutes()
+	return {
+		"status": "success",
+		"stall_hold_duration_minutes": mins,
+		"stall_hold_duration_seconds": int(mins * 60)
+	}
 
 
 def get_stall_detail(stall_number=None, **kwargs):
@@ -1866,11 +1956,11 @@ def admin_clear_all_bookings(**kwargs):
 		frappe.db.commit()
 		summary["bni_events_deleted"] = count_before
 
-	# 4. Clear BNI Member Directory (optional)
+	# 4. Clear CNR Member Directory (optional)
 	if clear_bni_members:
 		from connectfest.services.bni_members import clear_bni_member_cache
-		count_before = frappe.db.count("ConnectFest BNI Member")
-		frappe.db.sql("DELETE FROM `tabConnectFest BNI Member`")
+		count_before = frappe.db.count("ConnectFest CNR Member")
+		frappe.db.sql("DELETE FROM `tabConnectFest CNR Member`")
 		clear_bni_member_cache()
 		frappe.db.commit()
 		summary["bni_members_deleted"] = count_before
@@ -2275,7 +2365,9 @@ def admin_book_stall(**kwargs):
 	actual_pay_status = "Paid" if is_paid else "Pending"
 
 	now_dt = now_datetime()
-	hold_expires_at = now_dt + timedelta(minutes=10) if is_online else None
+	admin_hold_mins = get_stall_hold_duration_minutes()
+	admin_hold_secs = int(admin_hold_mins * 60)
+	hold_expires_at = now_dt + timedelta(minutes=admin_hold_mins) if is_online else None
 
 	# Book / Hold each stall
 	for st_num in stall_list:
@@ -2415,7 +2507,7 @@ def admin_book_stall(**kwargs):
 					"mode": "Online",
 					"admin": True,
 				}
-				cache.set(raw_lock_key, json.dumps(lock_data), ex=600)
+				cache.set(raw_lock_key, json.dumps(lock_data), ex=admin_hold_secs)
 			except Exception:
 				pass
 
@@ -2494,14 +2586,15 @@ def admin_book_stall(**kwargs):
 			return {
 				"status": "success",
 				"action": "hold_and_order_created",
-				"message": f"Stall '{st_num}' placed on 10-MINUTE HOLD for Online Payment. Proceed with online payment before the timer expires.",
+				"message": f"Stall '{st_num}' placed on {admin_hold_mins}-MINUTE HOLD for Online Payment. Proceed with online payment before the timer expires.",
 				"registration_id": first_reg_id,
 				"stall_number": st_num,
 				"amount": total_amount,
 				"payment_mode": "Online",
 				"payment_status": "Pending",
 				"hold_expires_at": str(hold_expires_at),
-				"expires_in_seconds": 600,
+				"expires_in_seconds": admin_hold_secs,
+				"hold_duration_minutes": admin_hold_mins,
 				"order": order_res.get("order"),
 				"customer": order_res.get("customer"),
 			}

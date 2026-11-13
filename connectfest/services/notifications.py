@@ -21,14 +21,18 @@ def get_email_header_style():
 def get_base_url():
 	"""
 	Dynamically resolves the environment base URL:
-	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns Local URL (e.g. http://localhost:8080).
+	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns IPv4 Local URL (http://127.0.0.1:8080)
+	  to prevent Chrome IPv6 [::1] connection refused errors.
 	- When executed on Live (connectfestapp.mdqapps.online or custom domain), returns Live HTTPS URL.
 	"""
 	# 1. Check HTTP Request context
 	if hasattr(frappe, "request") and getattr(frappe, "request", None):
 		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip()
 		if host:
-			if "localhost" in host or "127.0.0.1" in host:
+			if "localhost" in host:
+				port = host.split(":")[-1] if ":" in host else "8080"
+				return f"http://127.0.0.1:{port}"
+			elif "127.0.0.1" in host:
 				return f"http://{host}".rstrip("/")
 			elif "mdqapps.online" in host:
 				return f"https://{host}".rstrip("/")
@@ -37,22 +41,20 @@ def get_base_url():
 				return f"{scheme}://{host}".rstrip("/")
 
 	# 2. Check site config / frappe get_url()
-	try:
-		site_url = (frappe.utils.get_url() or "").strip().rstrip("/")
-		if site_url:
-			if "localhost" in site_url or "127.0.0.1" in site_url:
-				return "http://localhost:8080"
-			elif "mdqapps.online" in site_url:
-				return "https://connectfestapp.mdqapps.online"
-			elif site_url.startswith("http"):
-				return site_url
-	except Exception:
-		pass
-
-	# 3. Fallback based on local site
 	site_name = getattr(frappe.local, "site", "") or ""
 	if "localhost" in site_name or "local" in site_name:
-		return "http://localhost:8080"
+		return "http://127.0.0.1:8080"
+
+	# 3. Check ConnectFest Settings frontend_dashboard_url if configured
+	try:
+		f_url = frappe.db.get_single_value("ConnectFest Settings", "frontend_dashboard_url")
+		if f_url and str(f_url).strip().startswith("http"):
+			from urllib.parse import urlparse
+			parsed = urlparse(str(f_url).strip())
+			if parsed.scheme and parsed.netloc and "localhost" not in parsed.netloc:
+				return f"{parsed.scheme}://{parsed.netloc}"
+	except Exception:
+		pass
 
 	return "https://connectfestapp.mdqapps.online"
 
@@ -168,8 +170,7 @@ def build_confirmation_html(data):
 		</div>
 
 		<div style="background: #f1f5f9; padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-			<p style="margin: 0 0 4px;">ConnectFest 2027 • The Premier Business & Innovation Expo</p>
-			<p style="margin: 0;">Need help? Email support@connectfest2027.com or contact event desk.</p>
+			<p style="margin: 0;">ConnectFest 2027 • The Premier Business & Innovation Expo</p>
 		</div>
 	</div>
 	"""
@@ -237,8 +238,7 @@ def build_failure_html(data):
 		</div>
 
 		<div style="background: #f1f5f9; padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-			<p style="margin: 0 0 4px;">ConnectFest 2027 • The Premier Business & Innovation Expo</p>
-			<p style="margin: 0;">Assistance needed? Email support@connectfest2027.com or call +91 98400 00000</p>
+			<p style="margin: 0;">ConnectFest 2027 • The Premier Business & Innovation Expo</p>
 		</div>
 	</div>
 	"""

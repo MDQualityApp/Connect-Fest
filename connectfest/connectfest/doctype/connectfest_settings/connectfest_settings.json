@@ -27,6 +27,7 @@
   "bni_check_mobile",
   "bni_check_email",
   "non_bni_extra_percentage",
+  "stall_hold_duration_minutes",
   "otp_section",
   "otp_expiry_seconds",
   "wati_section",
@@ -140,25 +141,32 @@
    "default": "1",
    "fieldname": "crn_bni_only",
    "fieldtype": "Check",
-   "label": "Strictly Restrict CRN Stalls to BNI Members"
+   "label": "Strictly Restrict Registration & Stalls to CNR Members (Chennai North Region)"
   },
   {
    "default": "1",
    "fieldname": "bni_check_mobile",
    "fieldtype": "Check",
-   "label": "Check BNI Membership by Mobile Number"
+   "label": "Check CNR Membership by Mobile Number"
   },
   {
    "default": "1",
    "fieldname": "bni_check_email",
    "fieldtype": "Check",
-   "label": "Check BNI Membership by Email Address"
+   "label": "Check CNR Membership by Email Address"
   },
   {
    "default": "10",
    "fieldname": "non_bni_extra_percentage",
    "fieldtype": "Percent",
    "label": "Non-BNI Member Extra Surcharge (%)"
+  },
+  {
+   "default": "10",
+   "description": "Duration in minutes that a stall remains locked/held while exhibitor completes payment (e.g. 10 for 10 minutes, 5 for 5 minutes). Changing this affects only new holds; active existing holds remain unchanged.",
+   "fieldname": "stall_hold_duration_minutes",
+   "fieldtype": "Int",
+   "label": "Stall Hold Duration (Minutes)"
   },
   {
    "fieldname": "otp_section",

@@ -70,9 +70,13 @@ def register_stall(**kwargs):
 	location = safe_str(data.get("location"))
 	bill = safe_str(data.get("bill") or data.get("billing_name") or data.get("bill_to"))
 	gst = safe_str(data.get("gst") or data.get("gst_number") or data.get("gstin"))
-	raw_is_bni = parse_boolean(data.get("is_bni_member", 0))
-	claimed_bni_member = 1 if raw_is_bni else 0
-	is_bni_member = 0
+	raw_is_bni = (
+		parse_boolean(data.get("is_bni_member"))
+		or parse_boolean(data.get("bni"))
+		or parse_boolean(data.get("claimed_bni_member"))
+	)
+	is_bni_member = 1 if raw_is_bni else 0
+	is_cnr_member = 0
 
 	region_name = safe_str(data.get("region_name"))
 	chapter_name = safe_str(data.get("chapter_name"))
@@ -106,6 +110,15 @@ def register_stall(**kwargs):
 		errors.append("Valid Email Address is required")
 	if not source_of_info:
 		errors.append("How did you know about this event? (source_of_info) is required")
+
+	# BNI Yes/No Validation:
+	# If user says Yes to BNI (is_bni_member == 1), Chapter Name & Region Name are mandatory!
+	# If No (is_bni_member == 0), Chapter Name & Region Name are optional.
+	if is_bni_member == 1:
+		if not region_name:
+			errors.append("Region Name (region_name) is mandatory for BNI members")
+		if not chapter_name:
+			errors.append("Chapter Name (chapter_name) is mandatory for BNI members")
 
 	# Enforce Strict Uniqueness on Email and Mobile
 	if email or mobile_no:
@@ -168,21 +181,50 @@ def register_stall(**kwargs):
 					}
 			else:
 				# No stall_number specified:
-				# If there is an existing pending registration without stall chosen, reuse it
-				# unless caller explicitly requested a new registration (allow_new / new_booking)
+				# If user already has an existing registration (pending or paid), reuse & update it!
+				# Strict single registration per exhibitor account unless explicitly requested (allow_new / new_booking).
 				allow_new = parse_boolean(data.get("allow_new", 0)) or parse_boolean(data.get("new_booking", 0))
 				if not allow_new:
 					pending_no_stall = [
 						r for r in all_ex
 						if r.get("payment_status") != "Paid" and not r.get("stall_number")
 					]
-					if pending_no_stall:
-						p_rec = pending_no_stall[0]
-						ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
-						return {
-							"status": "already_registered",
-							"message": "An exhibitor registration already exists with these details. Please log in to select your stall and complete payment.",
-						}
+					p_rec = pending_no_stall[0] if pending_no_stall else all_ex[0]
+
+					# Update existing registration with latest business & profile info provided
+					upd_data = {}
+					if company_name:
+						upd_data["company_name"] = company_name
+					if location:
+						upd_data["location"] = location
+					if industry:
+						upd_data["industry"] = industry
+					if segment:
+						upd_data["segment"] = segment
+					if bill:
+						upd_data["bill"] = bill
+					if gst:
+						upd_data["gst"] = gst
+					if is_bni_member is not None:
+						upd_data["is_bni_member"] = is_bni_member
+					if region_name:
+						upd_data["region_name"] = region_name
+					if chapter_name:
+						upd_data["chapter_name"] = chapter_name
+					if source_of_info:
+						upd_data["source_of_info"] = source_of_info
+					if upd_data:
+						frappe.db.set_value("ConnectFest Registration", p_rec["name"], upd_data)
+						frappe.db.commit()
+						cache = frappe.cache()
+						cache.delete(f"{STALL_CACHE_PREFIX}{p_rec.get('registration_id')}")
+						cache.delete(f"{STALL_CACHE_PREFIX}{p_rec['name']}")
+					ensure_frappe_user(ex_email, p_rec.full_name or full_name, ex_mobile, role="Website User")
+					return {
+						"status": "already_registered",
+						"registration_id": p_rec.get("registration_id") or p_rec.get("name"),
+						"message": "An exhibitor registration already exists with these details.",
+					}
 
 		# 2. Check if already registered in Visitor Registration with this mobile or email
 		vis = frappe.db.sql("""
@@ -269,52 +311,46 @@ def register_stall(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
-	# 1. Strict BNI verification when CRN restriction is enabled (CRN = 1):
-	# - When CRN = 1 (is_crn_bni_restriction_enabled): mobile_no MUST exist in ConnectFest BNI Member DocType.
-	#   If not found -> Return HTTP 400: "You are not a BNI member" immediately BEFORE OTP validation!
-	# - When CRN = 0 (is_crn_bni_restriction_enabled is False): NO BNI check! Non-BNI members are allowed.
+	# 1. Authoritative CNR Verification against ConnectFest CNR Member:
+	# - Admin configures whether to verify by Mobile Number, Email, or Both.
+	# - When restriction is enabled (crn_bni_only = 1):
+	#   Only verified CNR members can register! Returns HTTP 400 immediately before OTP validation.
+	# - When restriction is disabled (crn_bni_only = 0):
+	#   Non-CNR members are allowed to register.
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 	from connectfest.services.auth import is_admin_user
 
 	sess_user = getattr(frappe.session, "user", None)
 	is_admin = is_admin_user(sess_user) if sess_user and sess_user != "Guest" else False
 
+	is_cnr, cnr_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
+	is_cnr_member = 1 if is_cnr else 0
+
 	stall_crn = 0
 	if stall_number and frappe.db.exists("ConnectFest Stall", stall_number):
 		stall_crn = cint(frappe.db.get_value("ConnectFest Stall", stall_number, "crn") or 0)
 
-	if stall_crn == 1 and not is_admin:
-		if is_crn_bni_restriction_enabled():
-			is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
-			if not is_bni:
-				frappe.local.response["http_status_code"] = 400
-				return {
-					"status": "error",
-					"message": "You are not a BNI member",
-				}
-			is_bni_member = 1
-			claimed_bni_member = 1
-			if bni_doc:
-				if not chapter_name and bni_doc.get("chapter_name"):
-					chapter_name = bni_doc.get("chapter_name")
-				if not region_name and bni_doc.get("region_name"):
-					region_name = bni_doc.get("region_name")
-	else:
-		# When stall_crn = 0 or no stall chosen yet, verify against ConnectFest BNI Member DocType:
-		is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
-		if is_bni:
-			is_bni_member = 1
-			claimed_bni_member = 1
-			if bni_doc:
-				if not chapter_name and bni_doc.get("chapter_name"):
-					chapter_name = bni_doc.get("chapter_name")
-				if not region_name and bni_doc.get("region_name"):
-					region_name = bni_doc.get("region_name")
-		else:
-			is_bni_member = 0
-			if not claimed_bni_member:
-				region_name = ""
-				chapter_name = ""
+	if is_crn_bni_restriction_enabled() and not is_admin:
+		if not is_cnr:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Registration is strictly restricted to verified CNR (Chennai North Region) members",
+			}
+	elif stall_crn == 1 and not is_admin:
+		# If specific corner stall selected, enforce CNR check
+		if not is_cnr:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Only CNR (Chennai North Region) members can book this stall",
+			}
+
+	if is_cnr and cnr_doc:
+		if not chapter_name and cnr_doc.get("chapter_name"):
+			chapter_name = cnr_doc.get("chapter_name")
+		if not region_name and cnr_doc.get("region_name"):
+			region_name = cnr_doc.get("region_name")
 
 	# 2. Strictly Validate Email OTP:
 	# Checks if the attendee verified their email with OTP (or verifies email_otp in request).
@@ -361,7 +397,7 @@ def register_stall(**kwargs):
 		"mobile_no": mobile_no,
 		"email": email,
 		"is_bni_member": is_bni_member,
-		"claimed_bni_member": claimed_bni_member,
+		"is_cnr_member": is_cnr_member,
 		"region_name": region_name,
 		"chapter_name": chapter_name,
 		"industry": industry,
@@ -462,67 +498,72 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
 
-	# Strict BNI check for CRN 1 stall when admin restriction is enabled
-	if cint(getattr(stall_doc, "crn", 0)) == 1 and not is_admin:
-		from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
-		if is_crn_bni_restriction_enabled():
-			# Check if registration is already verified/marked as BNI member in Desk
-			reg_bni = 0
-			if reg_id:
-				reg_bni = cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member")) or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
-			if not reg_bni and sess_user and sess_user != "Guest":
-				user_mobs = [sess_user]
-				u_mob_val = (frappe.db.get_value("User", sess_user, "mobile_no") or frappe.db.get_value("User", sess_user, "phone") or "").strip()
-				if u_mob_val:
-					user_mobs.append(u_mob_val)
-				mobs_tuple = tuple(set(user_mobs))
-				has_reg_bni = frappe.db.sql("""
+	# Strict CNR verification when restriction is enabled or for corner stalls
+	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
+	should_check_cnr = (is_crn_bni_restriction_enabled() or cint(getattr(stall_doc, "crn", 0)) == 1)
+	if should_check_cnr and not is_admin:
+		# Check if registration is already verified/marked as CNR member in Desk
+		reg_bni = 0
+		if reg_id:
+			reg_bni = (
+				cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_cnr_member"))
+				or cint(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "is_bni_member"))
+				or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_cnr_member"))
+				or cint(frappe.db.get_value("ConnectFest Registration", reg_id, "is_bni_member"))
+			)
+		if not reg_bni and sess_user and sess_user != "Guest":
+			user_mobs = [sess_user]
+			u_mob_val = (frappe.db.get_value("User", sess_user, "mobile_no") or frappe.db.get_value("User", sess_user, "phone") or "").strip()
+			if u_mob_val:
+				user_mobs.append(u_mob_val)
+			mobs_tuple = tuple(set(user_mobs))
+			has_reg_bni = frappe.db.sql("""
+				SELECT name FROM `tabConnectFest Registration`
+				WHERE (email = %(user)s OR mobile_no IN %(mobs)s)
+				  AND (is_cnr_member = 1 OR is_bni_member = 1)
+				LIMIT 1
+			""", {"user": sess_user, "mobs": mobs_tuple}, as_dict=True)
+			if has_reg_bni:
+				reg_bni = 1
+
+		if not reg_bni:
+			req_m = (data.get("mobile_no") or data.get("phone") or "").strip()
+			req_e = (data.get("email") or "").strip().lower()
+			if req_m or req_e:
+				has_data_bni = frappe.db.sql("""
 					SELECT name FROM `tabConnectFest Registration`
-					WHERE (email = %(user)s OR mobile_no IN %(mobs)s)
-					  AND is_bni_member = 1
+					WHERE (email = %(e)s OR (mobile_no = %(m)s AND %(m)s != ''))
+					  AND (is_cnr_member = 1 OR is_bni_member = 1)
 					LIMIT 1
-				""", {"user": sess_user, "mobs": mobs_tuple}, as_dict=True)
-				if has_reg_bni:
+				""", {"e": req_e, "m": req_m}, as_dict=True)
+				if has_data_bni:
 					reg_bni = 1
 
-			if not reg_bni:
-				req_m = (data.get("mobile_no") or data.get("phone") or "").strip()
-				req_e = (data.get("email") or "").strip().lower()
-				if req_m or req_e:
-					has_data_bni = frappe.db.sql("""
-						SELECT name FROM `tabConnectFest Registration`
-						WHERE (email = %(e)s OR (mobile_no = %(m)s AND %(m)s != ''))
-						  AND is_bni_member = 1
-						LIMIT 1
-					""", {"e": req_e, "m": req_m}, as_dict=True)
-					if has_data_bni:
-						reg_bni = 1
+		u_mob = (
+			(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
+			or (frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
+			or (frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "mobile_no") if sess_user and sess_user != "Guest" else None)
+			or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
+			or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
+			or data.get("mobile_no")
+			or data.get("phone")
+		)
+		u_email = (
+			(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
+			or (frappe.db.get_value("ConnectFest Registration", reg_id, "email") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
+			or (sess_user if sess_user and sess_user != "Guest" else None)
+			or data.get("email")
+		)
+		is_bni_valid, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+		if reg_bni == 1:
+			is_bni_valid = True
 
-			u_mob = (
-				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "mobile_no") if reg_id else None)
-				or (frappe.db.get_value("ConnectFest Registration", reg_id, "mobile_no") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
-				or (frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "mobile_no") if sess_user and sess_user != "Guest" else None)
-				or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else None)
-				or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else None)
-				or data.get("mobile_no")
-				or data.get("phone")
-			)
-			u_email = (
-				(frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") if reg_id else None)
-				or (frappe.db.get_value("ConnectFest Registration", reg_id, "email") if reg_id and frappe.db.exists("ConnectFest Registration", reg_id) else None)
-				or (sess_user if sess_user and sess_user != "Guest" else None)
-				or data.get("email")
-			)
-			is_bni_valid, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
-			if reg_bni == 1:
-				is_bni_valid = True
-
-			if not is_bni_valid:
-				frappe.local.response["http_status_code"] = 400
-				return {
-					"status": "error",
-					"message": "You are not a BNI member",
-				}
+		if not is_bni_valid:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Stall selection is strictly restricted to verified CNR (Chennai North Region) members",
+			}
 
 	# Prevent duplicate payment/selection for the same stall if already Paid & Confirmed by this user
 	if sess_user and sess_user != "Guest":

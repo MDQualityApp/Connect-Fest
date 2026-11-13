@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import cint, flt, cstr
 
 STALL_PRICING = {
 	"Regular": 25000.0,
@@ -19,23 +20,35 @@ class ConnectFestRegistration(Document):
 		self.set_pricing()
 
 	def validate(self):
-		# Authoritative dynamic verification against ConnectFest BNI Member
+		# Authoritative dynamic verification against ConnectFest CNR Member
 		if self.mobile_no or self.email:
 			try:
 				from connectfest.services.bni_members import is_valid_bni_member
-				is_bni, bni_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email)
-				if is_bni:
-					self.is_bni_member = 1
-					self.claimed_bni_member = 1
-					if bni_doc:
-						if not self.chapter_name and bni_doc.get("chapter_name"):
-							self.chapter_name = bni_doc.get("chapter_name")
-						if not self.region_name and bni_doc.get("region_name"):
-							self.region_name = bni_doc.get("region_name")
-				elif cint(self.is_bni_member) != 1:
-					self.is_bni_member = 0
+				is_cnr, cnr_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email)
+				if is_cnr:
+					self.is_cnr_member = 1
+					if cnr_doc:
+						if not self.chapter_name and cnr_doc.get("chapter_name"):
+							self.chapter_name = cnr_doc.get("chapter_name")
+						if not self.region_name and cnr_doc.get("region_name"):
+							self.region_name = cnr_doc.get("region_name")
+				else:
+					self.is_cnr_member = 0
 			except Exception:
 				pass
+
+		# BNI Member Yes/No Validation:
+		# If user claims to be a BNI member (Yes), Chapter Name & Region Name are mandatory!
+		# If No, they are optional.
+		is_bni_yes = cint(self.is_bni_member) == 1
+		if is_bni_yes:
+			self.is_bni_member = 1
+			if not (self.region_name and self.region_name.strip()):
+				frappe.throw("Region Name is mandatory when BNI Member is Yes", title="Validation Error")
+			if not (self.chapter_name and self.chapter_name.strip()):
+				frappe.throw("Chapter Name is mandatory when BNI Member is Yes", title="Validation Error")
+		else:
+			self.is_bni_member = 0
 
 		# Prevent cross-account conflict, but allow multiple stall bookings for the same user
 		if self.email or self.mobile_no:
@@ -99,12 +112,28 @@ class ConnectFestRegistration(Document):
 			ensure_frappe_user(self.email, self.full_name, self.mobile_no, role="Website User")
 
 	def set_pricing(self):
+		# Immutability Rule: If payment is already Confirmed/Paid, the transaction amount is strictly locked!
+		# Admin price changes or surcharge updates must NEVER retroactively alter paid bookings!
+		if self.payment_status == "Paid" and flt(self.amount) > 0:
+			return
+
+		# If amount has already been calculated (e.g. with dynamic non-CNR surcharge) and stall hasn't changed, preserve it!
+		doc_before = self.get_doc_before_save()
+		if doc_before and doc_before.stall_number == self.stall_number and flt(self.amount) > 0:
+			return
+
 		if self.stall_number and frappe.db.exists("ConnectFest Stall", self.stall_number):
 			stall_doc = frappe.get_doc("ConnectFest Stall", self.stall_number)
 			self.stall_category = stall_doc.tier
-			from connectfest.services.pricing import get_tier_pricing
-			dynamic_pricing = get_tier_pricing()
-			self.amount = dynamic_pricing.get(stall_doc.tier, stall_doc.price)
+			from connectfest.services.bni_members import calculate_stall_price_for_user
+			price_info = calculate_stall_price_for_user(
+				tier=stall_doc.tier,
+				user_mobile=self.mobile_no,
+				user_email=self.email,
+				is_bni_member=self.is_bni_member,
+				custom_base_price=stall_doc.price
+			)
+			self.amount = price_info.get("total_amount", stall_doc.price)
 			if not self.payment_status:
 				self.payment_status = "Pending"
 		elif self.stall_category and self.stall_category.strip():

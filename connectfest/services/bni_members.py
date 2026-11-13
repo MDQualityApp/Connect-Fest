@@ -39,7 +39,17 @@ def get_bni_verification_settings():
 	- crn_bni_only: Master toggle for CRN stall restriction (default True)
 	- check_mobile: Validate BNI membership by Mobile Number (default True)
 	- check_email: Validate BNI membership by Email Address (default True)
+	Uses Redis caching for microsecond response times.
 	"""
+	cache = frappe.cache()
+	cache_key = "connectfest:settings:bni_verification"
+	try:
+		cached = cache.get_value(cache_key)
+		if cached and isinstance(cached, dict):
+			return cached
+	except Exception:
+		pass
+
 	try:
 		doc = frappe.get_cached_doc("ConnectFest Settings")
 		raw_crn = getattr(doc, "crn_bni_only", 1)
@@ -50,11 +60,16 @@ def get_bni_verification_settings():
 		check_mob = True if (raw_mob is None or str(raw_mob).strip() == "") else bool(cint(raw_mob))
 		check_email = True if (raw_email is None or str(raw_email).strip() == "") else bool(cint(raw_email))
 
-		return {
+		res = {
 			"crn_bni_only": crn_only,
 			"check_mobile": check_mob,
 			"check_email": check_email,
 		}
+		try:
+			cache.set_value(cache_key, res, expires_in_sec=300)
+		except Exception:
+			pass
+		return res
 	except Exception:
 		return {
 			"crn_bni_only": True,
@@ -65,11 +80,13 @@ def get_bni_verification_settings():
 
 def clear_bni_member_cache():
 	"""
-	Clears the in-memory Redis cache for BNI member validation.
+	Clears the in-memory Redis cache for BNI member validation and verification settings.
 	Called whenever BNI members are added, updated, or deleted.
 	"""
 	try:
-		frappe.cache().delete_keys("bni_v2:*")
+		cache = frappe.cache()
+		cache.delete_keys("bni_v2:*")
+		cache.delete_value("connectfest:settings:bni_verification")
 	except Exception:
 		pass
 
@@ -117,7 +134,7 @@ def is_valid_bni_member(mobile_no=None, email=None):
 		if use_mob and use_email:
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest BNI Member`
+				FROM `tabConnectFest CNR Member`
 				WHERE (name IN %(candidates)s OR mobile_no IN %(candidates)s)
 				   OR email = %(email)s
 				LIMIT 1
@@ -125,14 +142,14 @@ def is_valid_bni_member(mobile_no=None, email=None):
 		elif use_mob:
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest BNI Member`
+				FROM `tabConnectFest CNR Member`
 				WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
 				LIMIT 1
 			""", {"candidates": mob_candidates}, as_dict=True)
 		elif use_email:
 			members = frappe.db.sql("""
 				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest BNI Member`
+				FROM `tabConnectFest CNR Member`
 				WHERE email = %(email)s
 				LIMIT 1
 			""", {"email": use_email}, as_dict=True)
@@ -143,7 +160,7 @@ def is_valid_bni_member(mobile_no=None, email=None):
 			return False, None
 		members = frappe.db.sql("""
 			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-			FROM `tabConnectFest BNI Member`
+			FROM `tabConnectFest CNR Member`
 			WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
 			LIMIT 1
 		""", {"candidates": mob_candidates}, as_dict=True)
@@ -153,7 +170,7 @@ def is_valid_bni_member(mobile_no=None, email=None):
 			return False, None
 		members = frappe.db.sql("""
 			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-			FROM `tabConnectFest BNI Member`
+			FROM `tabConnectFest CNR Member`
 			WHERE email = %(email)s
 			LIMIT 1
 		""", {"email": use_email}, as_dict=True)
@@ -331,18 +348,18 @@ def admin_create_bni_member(**kwargs):
 		em = item["email"]
 
 		# Strict duplicate check against DB (No overwrite allowed!)
-		existing_mob = frappe.db.get_value("ConnectFest BNI Member", {"mobile_no": mob}, "name")
+		existing_mob = frappe.db.get_value("ConnectFest CNR Member", {"mobile_no": mob}, "name")
 		if existing_mob:
 			duplicates.append({
 				"mobile_no": mob,
 				"email": em,
-				"reason": f"Mobile number '{mob}' is already registered as a BNI Member.",
+				"reason": f"Mobile number '{mob}' is already registered as a CNR Member.",
 			})
 			continue
 
 		if em:
 			existing_email = frappe.db.sql(
-				"SELECT name, mobile_no FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s LIMIT 1",
+				"SELECT name, mobile_no FROM `tabConnectFest CNR Member` WHERE LOWER(TRIM(email)) = %(em)s LIMIT 1",
 				{"em": em},
 				as_dict=True,
 			)
@@ -350,12 +367,12 @@ def admin_create_bni_member(**kwargs):
 				duplicates.append({
 					"mobile_no": mob,
 					"email": em,
-					"reason": f"Email '{em}' is already registered as a BNI Member.",
+					"reason": f"Email '{em}' is already registered as a CNR Member.",
 				})
 				continue
 
 		doc = frappe.get_doc({
-			"doctype": "ConnectFest BNI Member",
+			"doctype": "ConnectFest CNR Member",
 			"mobile_no": mob,
 			"first_name": item.get("first_name") or "",
 			"last_name": item.get("last_name") or "",
@@ -429,7 +446,7 @@ def admin_get_bni_members(**kwargs):
 	limit = cint(raw_limit) if raw_limit and str(raw_limit).lower() != "all" else 0
 
 	members = frappe.get_all(
-		"ConnectFest BNI Member",
+		"ConnectFest CNR Member",
 		fields=["name", "first_name", "last_name", "member_name", "mobile_no", "email", "company_name", "industry", "chapter_name", "creation", "modified"],
 		order_by="creation DESC",
 		limit=5000,
@@ -498,14 +515,14 @@ def admin_get_bni_member(mobile_no=None, **kwargs):
 	member = None
 	if clean_mob:
 		member = frappe.db.get_value(
-			"ConnectFest BNI Member",
+			"ConnectFest CNR Member",
 			{"mobile_no": clean_mob},
 			["name", "first_name", "last_name", "member_name", "mobile_no", "email", "company_name", "industry", "chapter_name", "creation", "modified"],
 			as_dict=True,
 		)
 	if not member and raw_mob:
-		if frappe.db.exists("ConnectFest BNI Member", str(raw_mob).strip()):
-			member = frappe.get_doc("ConnectFest BNI Member", str(raw_mob).strip()).as_dict()
+		if frappe.db.exists("ConnectFest CNR Member", str(raw_mob).strip()):
+			member = frappe.get_doc("ConnectFest CNR Member", str(raw_mob).strip()).as_dict()
 
 	if not member:
 		frappe.local.response["http_status_code"] = 404
@@ -535,9 +552,9 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 	clean_mob = normalize_phone_number(raw_mob)
 
 	doc_name = None
-	if clean_mob and frappe.db.exists("ConnectFest BNI Member", clean_mob):
+	if clean_mob and frappe.db.exists("ConnectFest CNR Member", clean_mob):
 		doc_name = clean_mob
-	elif raw_mob and frappe.db.exists("ConnectFest BNI Member", str(raw_mob).strip()):
+	elif raw_mob and frappe.db.exists("ConnectFest CNR Member", str(raw_mob).strip()):
 		doc_name = str(raw_mob).strip()
 
 	if not doc_name:
@@ -547,7 +564,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 			"message": f"BNI Member '{raw_mob}' not found",
 		}
 
-	doc = frappe.get_doc("ConnectFest BNI Member", doc_name)
+	doc = frappe.get_doc("ConnectFest CNR Member", doc_name)
 	if "first_name" in data:
 		doc.first_name = safe_str(data.get("first_name"))
 	if "last_name" in data:
@@ -565,7 +582,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {"status": "error", "message": "Valid Email Address (email) is required."}
 			dup_email = frappe.db.sql(
-				"SELECT name FROM `tabConnectFest BNI Member` WHERE LOWER(TRIM(email)) = %(em)s AND name != %(cur)s LIMIT 1",
+				"SELECT name FROM `tabConnectFest CNR Member` WHERE LOWER(TRIM(email)) = %(em)s AND name != %(cur)s LIMIT 1",
 				{"em": new_email, "cur": doc.name},
 				as_dict=True,
 			)
@@ -587,12 +604,12 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 	if new_mob_raw:
 		new_mob = normalize_phone_number(new_mob_raw)
 		if new_mob and len(new_mob) == 10 and new_mob != doc.mobile_no:
-			if frappe.db.exists("ConnectFest BNI Member", new_mob):
+			if frappe.db.exists("ConnectFest CNR Member", new_mob):
 				frappe.local.response["http_status_code"] = 409
 				return {"status": "error", "message": f"Mobile number '{new_mob}' is already assigned to another BNI Member"}
 			doc.save(ignore_permissions=True)
-			frappe.rename_doc("ConnectFest BNI Member", doc.name, new_mob, force=True)
-			doc = frappe.get_doc("ConnectFest BNI Member", new_mob)
+			frappe.rename_doc("ConnectFest CNR Member", doc.name, new_mob, force=True)
+			doc = frappe.get_doc("ConnectFest CNR Member", new_mob)
 
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -660,7 +677,7 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None
 				is_delete_all = True
 
 	if is_delete_all:
-		total_count = frappe.db.count("ConnectFest BNI Member")
+		total_count = frappe.db.count("ConnectFest CNR Member")
 		if total_count == 0:
 			return {
 				"status": "success",
@@ -671,10 +688,10 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None
 			}
 
 		# Ultra-fast, optimized complete deletion
-		frappe.db.sql("DELETE FROM `tabConnectFest BNI Member`")
+		frappe.db.sql("DELETE FROM `tabConnectFest CNR Member`")
 		frappe.db.sql("UPDATE `tabConnectFest Registration` SET is_bni_member = 0")
 		clear_bni_member_cache()
-		frappe.clear_cache(doctype="ConnectFest BNI Member")
+		frappe.clear_cache(doctype="ConnectFest CNR Member")
 		frappe.db.commit()
 
 		return {
@@ -734,15 +751,15 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None
 	not_found = []
 	for mob in target_numbers:
 		doc_name = None
-		if frappe.db.exists("ConnectFest BNI Member", mob):
+		if frappe.db.exists("ConnectFest CNR Member", mob):
 			doc_name = mob
 		else:
-			match = frappe.db.get_value("ConnectFest BNI Member", {"mobile_no": mob}, "name")
+			match = frappe.db.get_value("ConnectFest CNR Member", {"mobile_no": mob}, "name")
 			if match:
 				doc_name = match
 
 		if doc_name:
-			frappe.delete_doc("ConnectFest BNI Member", doc_name, ignore_permissions=True, force=True)
+			frappe.delete_doc("ConnectFest CNR Member", doc_name, ignore_permissions=True, force=True)
 			deleted.append(mob)
 		else:
 			not_found.append(mob)
@@ -790,7 +807,7 @@ def get_non_bni_extra_percentage():
 def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_bni_member=None, custom_base_price=None):
 	"""
 	Calculates the exact stall price and tax breakdown based on BNI membership status:
-	- If attendee mobile_no exists in 'ConnectFest BNI Member' (or is_bni_member is True):
+	- If attendee mobile_no exists in 'ConnectFest CNR Member' (or is_bni_member is True):
 	  Attendee pays the standard stall price (0% extra surcharge).
 	- If attendee is NOT a BNI member:
 	  Admin-configured extra percentage (non_bni_extra_percentage) is added to base price.
@@ -826,7 +843,7 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 		surcharge_amt = 0.0
 		final_base_price = original_price
 	else:
-		# Strictly verify against ConnectFest BNI Member DocType or existing registration flag!
+		# Strictly verify against ConnectFest CNR Member DocType or existing registration flag!
 		if is_bni_member is not None and cint(is_bni_member) == 1:
 			is_bni = True
 		elif clean_mob or user_email:
@@ -942,6 +959,7 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 
 	frappe.db.commit()
 	try:
+		clear_bni_member_cache()
 		frappe.clear_cache(doctype="ConnectFest Settings")
 	except Exception:
 		pass

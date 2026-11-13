@@ -57,12 +57,15 @@ from connectfest.services.auth import (
 	admin_get_scanner_users as _admin_get_scanner_users,
 	admin_revoke_scanner_access as _admin_revoke_scanner_access,
 	admin_toggle_scanner_access as _admin_toggle_scanner_access,
+	check_scanner_status as _check_scanner_status,
 )
 from connectfest.services.stalls import (
 	get_stalls as _get_stalls,
 	get_stall_detail as _get_stall_detail,
 	hold_stall as _hold_stall,
 	release_stall_hold as _release_stall_hold,
+	admin_set_stall_hold_duration as _admin_set_stall_hold_duration,
+	get_stall_hold_settings as _get_stall_hold_settings,
 	release_expired_holds as _release_expired_holds,
 	toggle_stall_block as _toggle_stall_block,
 	get_admin_dashboard_data as _get_admin_dashboard_data,
@@ -349,6 +352,18 @@ def hold_stall(stall_number=None, **kwargs):
 def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	"""Releases temporary stall hold."""
 	return _release_stall_hold(stall_number=stall_number, hold_token=hold_token, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_set_stall_hold_duration(duration_minutes=None, **kwargs):
+	"""Admin API: Update dynamic stall hold duration in minutes."""
+	return _admin_set_stall_hold_duration(duration_minutes=duration_minutes, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_stall_hold_settings(**kwargs):
+	"""Public API: Get current stall hold duration settings."""
+	return _get_stall_hold_settings(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1011,8 +1026,61 @@ seed_default_terms = setup_default_terms
 
 
 # ==============================================================================
-# BNI MEMBERS MANAGEMENT APIS
+# CNR & BNI MEMBERS MANAGEMENT APIS
 # ==============================================================================
+@frappe.whitelist(allow_guest=True)
+def admin_create_cnr_member(**kwargs):
+	"""Admin API: Add single or bulk CNR Member phone numbers with names."""
+	return _admin_create_bni_member(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_bulk_create_cnr_members(**kwargs):
+	"""Admin API: Dedicated endpoint to bulk create CNR members with mobile numbers and names."""
+	return _admin_bulk_create_bni_members(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_cnr_members(**kwargs):
+	"""Admin API: List all CNR Members with search, pagination, and status filters."""
+	return _admin_get_bni_members(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_cnr_member(mobile_no=None, **kwargs):
+	"""Admin API: Get single CNR member details by mobile number."""
+	return _admin_get_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_cnr_member(mobile_no=None, **kwargs):
+	"""Admin API: Update CNR member information."""
+	return _admin_update_bni_member(mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_delete_cnr_member(mobile_no=None, mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
+	"""Admin API: Delete single, multiple, or all CNR member records."""
+	return _admin_delete_bni_member(
+		mobile_no=mobile_no,
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_bulk_delete_cnr_members(mobile_numbers=None, select_all=None, delete_all=None, **kwargs):
+	"""Admin API: Bulk delete CNR members by list of mobile numbers or delete all."""
+	return _admin_bulk_delete_bni_members(
+		mobile_numbers=mobile_numbers,
+		select_all=select_all,
+		delete_all=delete_all,
+		**kwargs,
+	)
+
+
 @frappe.whitelist(allow_guest=True)
 def admin_create_bni_member(**kwargs):
 	"""Admin API: Add single or bulk BNI Member phone numbers with names."""
@@ -1354,6 +1422,27 @@ def admin_get_scanner_users(**kwargs):
 def get_scanner_users(**kwargs):
 	"""Alias for admin_get_scanner_users."""
 	return _admin_get_scanner_users(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def check_scanner_status(email=None, **kwargs):
+	"""
+	Public endpoint to check if an email has Gate Scanner or Administrator privileges.
+	Accessible to unauthenticated guests and logged-in users alike.
+	"""
+	return _check_scanner_status(email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def check_scanner(email=None, **kwargs):
+	"""Alias for check_scanner_status."""
+	return _check_scanner_status(email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def is_scanner(email=None, **kwargs):
+	"""Alias for check_scanner_status."""
+	return _check_scanner_status(email=email, **kwargs)
 
 
 

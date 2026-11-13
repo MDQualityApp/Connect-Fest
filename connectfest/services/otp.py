@@ -599,6 +599,7 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 
 	uid = (reg_info.get("user_id") if reg_info else None) or frappe.db.get_value("User", {"email": target_email}, "name") or target_email
 	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid)
+	is_scanner = bool(is_scanner_user(uid))
 
 	frappe.local.response["http_status_code"] = 200
 	return {
@@ -606,6 +607,7 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		"message": f"Email {target_email} verified successfully! You are logged in.",
 		"email": target_email,
 		"roles": roles_arr,
+		"is_scanner": is_scanner,
 	}
 
 

@@ -622,9 +622,9 @@ def download_stall_allocation_letter(**kwargs):
 	from connectfest.services.invoice import get_registration_allocation_data, generate_stall_allocation_pdf_bytes
 
 	data = extract_request_data(kwargs)
-	reg_id = (data.get("registration_id") or data.get("id") or "").strip()
-	mobile_no = (data.get("mobile_no") or "").strip()
-	email = (data.get("email") or "").strip().lower()
+	reg_id = (data.get("registration_id") or kwargs.get("registration_id") or data.get("id") or "").strip()
+	mobile_no = (data.get("mobile_no") or kwargs.get("mobile_no") or "").strip()
+	email = (data.get("email") or kwargs.get("email") or "").strip().lower()
 
 	alloc_data = get_registration_allocation_data(registration_id=reg_id, mobile_no=mobile_no, email=email)
 	if not alloc_data:
