@@ -28,15 +28,15 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 		}
 
 	# 1. Check CNR membership
+	from connectfest.services.bni_members import is_crn_bni_restriction_enabled
 	is_bni, bni_doc = is_valid_bni_member(mobile_no=mob, email=email)
-	if not is_bni:
+	if is_crn_bni_restriction_enabled() and not is_bni:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
 			"is_bni_member": False,
 			"is_cnr_member": False,
 			"message": "You are not a CNR member! Registration is strictly restricted to verified CNR members.",
-			"mobile_no": mob,
 		}
 
 	# 2. Check if already registered
@@ -52,7 +52,7 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 			"status": "already_registered",
 			"is_bni_member": True,
 			"already_registered": True,
-			"message": "This mobile number is already registered for the BNI Event! Please log in using Email OTP to access your pass.",
+			"message": "You are already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
 	frappe.local.response["http_status_code"] = 200
@@ -62,7 +62,6 @@ def check_bni_event_number(mobile_no=None, **kwargs):
 		"is_cnr_member": True,
 		"already_registered": False,
 		"message": "Verified CNR Member! You may proceed with registration.",
-		"mobile_no": mob,
 		"member_name": (bni_doc.get("member_name") if bni_doc else "") or "",
 		"chapter_name": (bni_doc.get("chapter_name") if bni_doc else "") or "",
 		"region_name": (bni_doc.get("region_name") if bni_doc else "") or "",
@@ -104,13 +103,13 @@ def register_bni_event(**kwargs):
 		}
 
 	# Verify mobile or email exists in ConnectFest CNR Member DocType
+	from connectfest.services.bni_members import is_crn_bni_restriction_enabled
 	is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email)
-	if not is_bni:
+	if is_crn_bni_restriction_enabled() and not is_bni:
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
 			"message": "You are not a CNR member! Registration is strictly restricted to verified CNR members.",
-			"mobile_no": mobile_no,
 		}
 
 	# Check if this mobile number is already registered for this BNI Event
@@ -126,7 +125,7 @@ def register_bni_event(**kwargs):
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"message": "This mobile number is already registered for this event! Please log in using Email OTP to access your pass.",
+			"message": "You are already registered for this event! Please log in using Email OTP to access your pass.",
 		}
 
 	# Auto-populate chapter / region / member name / email from BNI Member record if missing
@@ -173,8 +172,21 @@ def register_bni_event(**kwargs):
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "already_registered",
-			"message": "This email address is already registered for this event! Please log in using Email OTP to access your pass.",
+			"message": "You are already registered for this event! Please log in using Email OTP to access your pass.",
 		}
+
+	# Email verification check (Must be verified via OTP prior to registration)
+	from connectfest.services.otp import is_email_verified, verify_otp_inline
+	req_otp = data.get("otp") or kwargs.get("otp")
+	if not is_email_verified(email):
+		if req_otp and verify_otp_inline(email, req_otp):
+			pass
+		else:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Email verification is required before registration! Please verify your email using OTP."
+			}
 
 	# 4. Generate Pass Code & QR Code Payload
 	pass_random = frappe.generate_hash(length=8).upper()

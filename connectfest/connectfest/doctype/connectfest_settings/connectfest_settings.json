@@ -174,8 +174,8 @@
    "label": "OTP & Authentication Configuration"
   },
   {
-   "default": "120",
-   "description": "OTP validity duration in seconds (e.g. 120 for 2 minutes, 300 for 5 minutes). Defaults to 120.",
+   "default": "300",
+   "description": "OTP validity duration in seconds (e.g. 300 for 5 minutes, 600 for 10 minutes). Defaults to 300.",
    "fieldname": "otp_expiry_seconds",
    "fieldtype": "Int",
    "label": "OTP Expiry (Seconds)"
