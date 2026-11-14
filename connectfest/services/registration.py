@@ -23,10 +23,11 @@ from connectfest.services.auth import ensure_frappe_user
 from connectfest.services.queue import trigger_async_flush
 
 
-def validate_registration_email_otp(email, data):
+def validate_registration_email_otp(email, data, expected_type=None):
 	"""
 	Strictly enforces email OTP verification before registration:
-	1. If already verified via verify_email_otp (cached in Redis / DB), allows registration.
+	1. If already verified via verify_email_otp (cached in Redis / DB), ensures the verified type
+	   matches expected_type (e.g. 'stall', 'visitor', 'event').
 	2. If 'otp' or 'email_otp' is passed inline with registration data, validates inline.
 	3. Otherwise, returns HTTP 400 error requiring email OTP verification.
 	"""
@@ -37,10 +38,28 @@ def validate_registration_email_otp(email, data):
 	if not target_email or "@" not in target_email:
 		return {"status": "error", "message": "Valid email address is required"}
 
-	from connectfest.services.otp import is_email_verified, verify_otp_inline
+	from connectfest.services.otp import is_email_verified, verify_otp_inline, EMAIL_VERIFIED_CACHE_PREFIX
 
-	# Check if pre-verified
-	if is_email_verified(target_email):
+	type_labels = {"stall": "Stall Booking", "visitor": "Visitor Pass", "event": "Event Registration"}
+	exp_label = type_labels.get(expected_type, "registration")
+
+	# Check if pre-verified in Redis with role-scoped type check
+	cache = frappe.cache()
+	verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
+	cached_val = cache.get(verified_key)
+	if cached_val:
+		if isinstance(cached_val, bytes):
+			cached_val = cached_val.decode("utf-8")
+		stored_type = str(cached_val).strip().lower()
+		if expected_type and stored_type not in ("1", "any", "all", expected_type.lower()):
+			stored_label = type_labels.get(stored_type, stored_type.title())
+			return {
+				"status": "error",
+				"message": f"This verification code was issued for {stored_label}! Please verify your email specifically for {exp_label}."
+			}
+		return None
+
+	if is_email_verified(target_email, expected_type=expected_type):
 		return None
 
 	# Check if OTP passed inline
@@ -55,7 +74,7 @@ def validate_registration_email_otp(email, data):
 
 	return {
 		"status": "error",
-		"message": "Email verification is required before registration! Please verify your email using OTP."
+		"message": f"Email verification is required before {exp_label}! Please verify your email using OTP."
 	}
 
 
@@ -321,7 +340,7 @@ def register_stall(**kwargs):
 	# 2. Strictly Validate Email OTP:
 	# Checks if the attendee verified their email with OTP (or verifies email_otp in request).
 	# This runs strictly AFTER BNI member verification passes!
-	email_val_err = validate_registration_email_otp(email, data)
+	email_val_err = validate_registration_email_otp(email, data, expected_type="stall")
 	if email_val_err:
 		frappe.local.response["http_status_code"] = 400
 		return email_val_err
@@ -473,6 +492,34 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
 
+	# Check visitor / event restriction BEFORE anything else: visitors and event attendees cannot select stalls directly!
+	user_email = (data.get("email") or (sess_user if sess_user and sess_user != "Guest" else "")).strip().lower()
+	user_mobile = (data.get("mobile_no") or data.get("phone") or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else "") or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else "") or "").strip()
+
+	has_exhibitor = False
+	if reg_id and (frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Registration", reg_id)):
+		has_exhibitor = True
+	elif user_email and frappe.db.exists("ConnectFest Registration", {"email": user_email}):
+		has_exhibitor = True
+	elif user_mobile and frappe.db.exists("ConnectFest Registration", {"mobile_no": user_mobile}):
+		has_exhibitor = True
+
+	if not has_exhibitor and not is_admin:
+		is_vis_or_event = False
+		if (reg_id and str(reg_id).startswith("VIS-")) or (reg_id and frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id})):
+			is_vis_or_event = True
+		elif user_email and (frappe.db.exists("ConnectFest Visitor Registration", {"email": user_email}) or frappe.db.exists("ConnectFest BNI Event Registration", {"email": user_email})):
+			is_vis_or_event = True
+		elif user_mobile and (frappe.db.exists("ConnectFest Visitor Registration", {"mobile_no": user_mobile}) or frappe.db.exists("ConnectFest BNI Event Registration", {"mobile_no": user_mobile})):
+			is_vis_or_event = True
+
+		if is_vis_or_event:
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "You are currently registered as a Visitor/Event attendee. Direct stall selection is not allowed. Please register as an Exhibitor first to book a stall.",
+			}
+
 	# Strict CNR verification when restriction is enabled or for corner stalls
 	from connectfest.services.bni_members import is_valid_bni_member, is_crn_bni_restriction_enabled
 	should_check_cnr = (is_crn_bni_restriction_enabled() or cint(getattr(stall_doc, "crn", 0)) == 1)
@@ -593,32 +640,6 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				else:
 					record = r
 
-	# Check visitor restriction BEFORE creating or auto-resolving registrations
-	if (reg_id and str(reg_id).startswith("VIS-")) or (reg_id and (frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id))):
-		frappe.local.response["http_status_code"] = 403
-		return {
-			"status": "forbidden",
-			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
-		}
-
-	# Identify candidate email and mobile
-	user_email = (data.get("email") or (sess_user if sess_user and sess_user != "Guest" else "")).strip().lower()
-	user_mobile = (data.get("mobile_no") or data.get("phone") or (frappe.db.get_value("User", sess_user, "mobile_no") if sess_user and sess_user != "Guest" else "") or (frappe.db.get_value("User", sess_user, "phone") if sess_user and sess_user != "Guest" else "") or "").strip()
-
-	# If the user is registered as a visitor by email or mobile, forbid stall selection
-	if not reg_id:
-		is_vis = False
-		if user_email and frappe.db.exists("ConnectFest Visitor Registration", {"email": user_email}):
-			is_vis = True
-		elif user_mobile and frappe.db.exists("ConnectFest Visitor Registration", {"mobile_no": user_mobile}):
-			is_vis = True
-		if is_vis:
-			frappe.local.response["http_status_code"] = 403
-			return {
-				"status": "forbidden",
-				"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
-			}
-
 	# Auto-resolve or create registration for logged-in exhibitor or provided user details
 	if not reg_id and (user_email or user_mobile):
 		# Priority 1: Existing pending registration for this exact stall
@@ -681,17 +702,20 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				prev = prev_regs[0] if prev_regs else {}
 
 				if not prev_regs and (user_email or user_mobile):
-					# Event-only attendees cannot book or select stalls
-					bni_evt = frappe.db.sql("""
-						SELECT registration_id FROM `tabConnectFest BNI Event Registration`
+					# Visitor and Event attendees cannot select stalls directly without registering as an Exhibitor
+					vis_or_evt = frappe.db.sql("""
+						SELECT name FROM `tabConnectFest Visitor Registration`
+						WHERE (email = %s AND %s != '') OR (mobile_no = %s AND %s != '')
+						UNION
+						SELECT name FROM `tabConnectFest BNI Event Registration`
 						WHERE (email = %s AND %s != '') OR (mobile_no = %s AND %s != '')
 						LIMIT 1
-					""", (user_email or "", user_email or "", user_mobile or "", user_mobile or ""), as_dict=True)
-					if bni_evt:
+					""", (user_email or "", user_email or "", user_mobile or "", user_mobile or "", user_email or "", user_email or "", user_mobile or "", user_mobile or ""))
+					if vis_or_evt and not is_admin:
 						frappe.local.response["http_status_code"] = 403
 						return {
-							"status": "error",
-							"message": "Event attendees cannot book stalls. Stall booking is restricted to exhibitors only."
+							"status": "forbidden",
+							"message": "You are currently registered as a Visitor/Event attendee. Direct stall selection is not allowed. Please register as an Exhibitor first to book a stall."
 						}
 
 				cand_name_tmp = (data.get("full_name") or prev.get("full_name") or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else "") or "").strip()
@@ -965,7 +989,7 @@ def register_visitor(**kwargs):
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
 	# Validate Email OTP if provided or required
-	email_val_err = validate_registration_email_otp(email, data)
+	email_val_err = validate_registration_email_otp(email, data, expected_type="visitor")
 	if email_val_err:
 		frappe.local.response["http_status_code"] = 400
 		return email_val_err

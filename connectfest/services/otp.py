@@ -16,7 +16,7 @@ MAX_OTP_SEND_REQUESTS = 5
 OTP_BLOCK_DURATION_FIRST = 600    # 10 minutes (first block)
 OTP_BLOCK_DURATION_SECOND = 1800  # 30 minutes (second/repeat block)
 DEFAULT_OTP_EXPIRY_SECONDS = 120  # Default 2 minutes
-EMAIL_VERIFIED_EXPIRY_SECONDS = 1800  # 30 minutes validity once verified
+EMAIL_VERIFIED_EXPIRY_SECONDS = 600   # 10 minutes validity once verified
 
 from connectfest.services.auth import ensure_frappe_user, is_scanner_user
 
@@ -149,7 +149,7 @@ def get_otp_expiry_seconds():
 def get_email_verified_validity_seconds():
 	"""
 	Dynamically fetches how long a verified email remains valid for registration (in seconds).
-	Configurable via 'email_verified_validity_minutes' in ConnectFest Settings (defaults to 30 mins = 1800s).
+	Configurable via 'email_verified_validity_minutes' in ConnectFest Settings (defaults to 10 mins = 600s).
 	"""
 	try:
 		mins = frappe.db.get_value("Singles", {"doctype": "ConnectFest Settings", "field": "email_verified_validity_minutes"}, "value")
@@ -496,16 +496,57 @@ def send_email_otp(email=None, **kwargs):
 		}
 
 	# Disallow sending login OTP if user is already logged in
-	from connectfest.services.auth import get_authenticated_user, is_admin_user
-	auth_user = get_authenticated_user(data, **kwargs)
-	if auth_user and not is_admin_user(auth_user):
-		frappe.local.response["http_status_code"] = 400
-		return {
-			"status": "error",
-			"message": "You are already logged in! Please log out to request a login OTP.",
-		}
+	if purpose == "login":
+		from connectfest.services.auth import get_authenticated_user, is_admin_user
+		auth_user = get_authenticated_user(data, **kwargs)
+		if auth_user and not is_admin_user(auth_user):
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "You are already logged in! Please log out to request a login OTP.",
+			}
 
-	is_reg, reg_info = is_email_registered(target_email)
+	# Check registration status scoped to registration type if provided
+	reg_type = str(
+		data.get("registration_type")
+		or data.get("type")
+		or data.get("role")
+		or data.get("category")
+		or kwargs.get("registration_type")
+		or kwargs.get("type")
+		or kwargs.get("role")
+		or kwargs.get("category")
+		or ""
+	).strip().lower()
+
+	role_label = "with ConnectFest"
+	reg_info = None
+
+	if reg_type in ("visitor", "vis", "visitor_registration"):
+		is_reg = bool(frappe.db.exists("ConnectFest Visitor Registration", {"email": target_email}))
+		role_label = "as a Visitor"
+		if is_reg:
+			v_doc = frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, ["name", "full_name"], as_dict=True)
+			reg_info = {"type": "Visitor", "data": v_doc, "full_name": v_doc.get("full_name") if v_doc else ""}
+	elif reg_type in ("stall", "stalls", "exhibitor", "exhibitors", "stall_registration"):
+		is_reg = bool(frappe.db.exists("ConnectFest Registration", {"email": target_email}))
+		role_label = "as an Exhibitor"
+		if is_reg:
+			e_doc = frappe.db.get_value("ConnectFest Registration", {"email": target_email}, ["name", "full_name"], as_dict=True)
+			reg_info = {"type": "Exhibitor", "data": e_doc, "full_name": e_doc.get("full_name") if e_doc else ""}
+	elif reg_type in ("event", "events", "bni_event", "event_registration"):
+		evt_name = data.get("event_name") or data.get("event") or kwargs.get("event_name")
+		if evt_name:
+			is_reg = bool(frappe.db.exists("ConnectFest BNI Event Registration", {"email": target_email, "event_name": evt_name}))
+		else:
+			is_reg = bool(frappe.db.exists("ConnectFest BNI Event Registration", {"email": target_email}))
+		role_label = "for this event"
+		if is_reg:
+			evt_doc = frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, ["name", "full_name"], as_dict=True)
+			reg_info = {"type": "Event Attendee", "data": evt_doc, "full_name": evt_doc.get("full_name") if evt_doc else ""}
+	else:
+		is_reg, reg_info = is_email_registered(target_email)
+		role_label = "with ConnectFest"
 
 	if purpose == "login" and not is_reg:
 		frappe.local.response["http_status_code"] = 404
@@ -513,7 +554,7 @@ def send_email_otp(email=None, **kwargs):
 			"status": "error",
 			"error_code": "NOT_REGISTERED",
 			"is_registered": False,
-			"message": "This email address is not registered with ConnectFest! Please register as an Exhibitor or Visitor first.",
+			"message": f"This email address is not registered {role_label}! Please register first.",
 			"next_action": "register",
 		}
 
@@ -523,7 +564,7 @@ def send_email_otp(email=None, **kwargs):
 			"status": "error",
 			"error_code": "ALREADY_REGISTERED",
 			"already_registered": True,
-			"message": "This email address is already registered with ConnectFest! Please log in to access your account.",
+			"message": f"This email address is already registered {role_label}! Please log in to access your account.",
 			"next_action": "login",
 		}
 
@@ -604,6 +645,18 @@ def send_email_otp(email=None, **kwargs):
 	cache = frappe.cache()
 	cache_key = cache.make_key(f"{EMAIL_OTP_CACHE_PREFIX}{target_email}")
 	cache.setex(cache_key, otp_expiry, otp_code)
+
+	# Cache the requested registration role/type for strict matching in verify_email_otp
+	normalized_send_type = "any"
+	if reg_type in ("visitor", "vis", "visitor_registration"):
+		normalized_send_type = "visitor"
+	elif reg_type in ("stall", "stalls", "exhibitor", "exhibitors", "stall_registration"):
+		normalized_send_type = "stall"
+	elif reg_type in ("event", "events", "bni_event", "event_registration"):
+		normalized_send_type = "event"
+
+	type_cache_key = cache.make_key(f"connectfest:otp_type:{target_email}")
+	cache.setex(type_cache_key, otp_expiry, normalized_send_type)
 
 	# 3. Fast non-blocking background email dispatch (Sub-30ms HTTP response, zero server lag)
 	email_subject = f"{otp_code} is your ConnectFest verification code"
@@ -732,6 +785,52 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 			"remaining_attempts": remaining,
 		}
 
+	# Check for Type Mismatch between send_email_otp and verify_email_otp BEFORE consuming the OTP
+	type_cache_key = cache.make_key(f"connectfest:otp_type:{target_email}")
+	stored_send_type = cache.get(type_cache_key)
+	if isinstance(stored_send_type, bytes):
+		stored_send_type = stored_send_type.decode("utf-8")
+	stored_send_type = str(stored_send_type or "").strip().lower()
+
+	# Check whether user is registered for the specified type or in general
+	reg_type = str(
+		data.get("registration_type")
+		or data.get("type")
+		or data.get("role")
+		or data.get("category")
+		or kwargs.get("registration_type")
+		or kwargs.get("type")
+		or kwargs.get("role")
+		or kwargs.get("category")
+		or ""
+	).strip().lower()
+
+	# If verify did not pass type, inherit the type from send_email_otp
+	if not reg_type and stored_send_type and stored_send_type != "any":
+		reg_type = stored_send_type
+
+	# Normalize verified registration type
+	verified_type = "any"
+	if reg_type in ("visitor", "vis", "visitor_registration"):
+		verified_type = "visitor"
+	elif reg_type in ("stall", "stalls", "exhibitor", "exhibitors", "stall_registration"):
+		verified_type = "stall"
+	elif reg_type in ("event", "events", "bni_event", "event_registration"):
+		verified_type = "event"
+
+	# Strict Mismatch Check: If send was for 'stall' and verify is for 'visitor' (or vice-versa)
+	# DO NOT consume or expire the OTP so the user can immediately retry with the correct type!
+	if stored_send_type and stored_send_type != "any" and verified_type != "any" and verified_type != stored_send_type:
+		type_labels = {"stall": "Stall Booking", "visitor": "Visitor Pass", "event": "Event Registration"}
+		sent_label = type_labels.get(stored_send_type, stored_send_type.title())
+		verify_label = type_labels.get(verified_type, verified_type.title())
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"error_code": "TYPE_MISMATCH",
+			"message": f"This verification code was requested for {sent_label}! You cannot verify it for {verify_label}. Please use the matching type or request a new OTP."
+		}
+
 	# Clear failed attempts on successful verification
 	clear_failed_attempts(target_email)
 
@@ -754,24 +853,51 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	# Delete OTP from Redis cache after single use
 	try:
 		cache.delete(cache_key)
+		cache.delete(type_cache_key)
 	except Exception:
 		pass
 
-	# Mark email as verified in Redis cache
+	# Mark email as verified in Redis cache with specific registration type
 	verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
-	cache.setex(verified_key, get_email_verified_validity_seconds(), "1")
+	cache.setex(verified_key, get_email_verified_validity_seconds(), verified_type)
 
-	# Check whether user is registered
+	is_reg_for_type = None
+	if reg_type in ("visitor", "vis", "visitor_registration"):
+		is_reg_for_type = bool(frappe.db.exists("ConnectFest Visitor Registration", {"email": target_email}))
+	elif reg_type in ("stall", "stalls", "exhibitor", "exhibitors", "stall_registration"):
+		is_reg_for_type = bool(frappe.db.exists("ConnectFest Registration", {"email": target_email}))
+	elif reg_type in ("event", "events", "bni_event", "event_registration"):
+		evt_name = data.get("event_name") or data.get("event") or kwargs.get("event_name")
+		if evt_name:
+			is_reg_for_type = bool(frappe.db.exists("ConnectFest BNI Event Registration", {"email": target_email, "event_name": evt_name}))
+		else:
+			is_reg_for_type = bool(frappe.db.exists("ConnectFest BNI Event Registration", {"email": target_email}))
+
 	is_reg, reg_info = is_email_registered(target_email)
-	if not is_reg:
+
+	# Fetch existing roles for attendee if any
+	user_mob = (
+		frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "mobile_no")
+		or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, "mobile_no")
+		or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "mobile_no")
+		or frappe.db.get_value("User", target_email, "mobile_no")
+		or frappe.db.get_value("User", target_email, "phone")
+		or ""
+	)
+	uid = (reg_info.get("user_id") if reg_info else None) or frappe.db.get_value("User", {"email": target_email}, "name") or target_email
+	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid) if is_reg else []
+	is_scanner = bool(is_scanner_user(uid)) if is_reg else False
+
+	# If attendee is verifying for a registration type they have NOT completed yet:
+	if is_reg_for_type is False or not is_reg:
 		frappe.local.response["http_status_code"] = 200
 		return {
 			"status": "success",
 			"is_verified": True,
 			"is_registered": False,
 			"message": "Email address verified successfully! You may now proceed with registration.",
-			"roles": [],
-			"is_scanner": False,
+			"roles": roles_arr,
+			"is_scanner": is_scanner,
 		}
 
 	# -------------------------------------------------------------
@@ -783,14 +909,6 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "full_name")
 		or frappe.db.get_value("User", target_email, "full_name")
 		or target_email.split("@")[0].title()
-	)
-	user_mob = (
-		frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "mobile_no")
-		or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, "mobile_no")
-		or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "mobile_no")
-		or frappe.db.get_value("User", target_email, "mobile_no")
-		or frappe.db.get_value("User", target_email, "phone")
-		or ""
 	)
 
 	ensure_frappe_user(target_email, user_record_name, user_mob, role="Website User")
@@ -807,31 +925,35 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 			pass
 		frappe.set_user(target_email)
 
-	uid = (reg_info.get("user_id") if reg_info else None) or frappe.db.get_value("User", {"email": target_email}, "name") or target_email
-	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid)
-	is_scanner = bool(is_scanner_user(uid))
-
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
+		"is_verified": True,
+		"is_registered": True,
 		"message": "Email verification successful! You are logged in.",
 		"roles": roles_arr,
 		"is_scanner": is_scanner,
 	}
 
 
-def is_email_verified(email):
+def is_email_verified(email, expected_type=None):
 	"""
 	Checks whether the email has been verified via verify_email_otp.
+	If expected_type is provided ('stall', 'visitor', 'event'), verifies the OTP was issued for that specific type.
 	"""
 	if not email:
 		return False
 	target_email = str(email).strip().lower()
 	cache = frappe.cache()
 	verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
-	is_cached = cache.get(verified_key)
-	if is_cached:
-		return True
+	cached_val = cache.get(verified_key)
+	if cached_val:
+		if isinstance(cached_val, bytes):
+			cached_val = cached_val.decode("utf-8")
+		stored_type = str(cached_val).strip().lower()
+		if not expected_type or stored_type in ("1", "any", "all", expected_type.lower()):
+			return True
+		return False
 
 	validity_secs = get_email_verified_validity_seconds()
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-validity_secs)

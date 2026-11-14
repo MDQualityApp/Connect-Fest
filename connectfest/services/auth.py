@@ -766,7 +766,7 @@ def get_current_user_profile(**kwargs):
 		# Single Comprehensive Stall Booking Object & Multi-Stall Support
 		"has_stall_booking": bool(stalls),
 		"has_pending_selection": bool(pending_registrations and not stalls),
-		"can_book_stall": True,
+		"can_book_stall": True if is_admin else (False if ((visitor_passes or event_passes) and not stalls_raw) else True),
 		"total_stalls": len(stalls),
 		"stall_numbers": [s["stall_number"] for s in stalls if s.get("stall_number")],
 		"total_amount": total_amount,

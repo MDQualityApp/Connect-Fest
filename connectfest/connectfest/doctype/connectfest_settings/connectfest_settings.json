@@ -168,8 +168,8 @@
    "label": "OTP Expiry (Seconds)"
   },
   {
-   "default": "30",
-   "description": "How many minutes a verified email remains valid for registration before requiring re-verification. Defaults to 30 minutes.",
+   "default": "10",
+   "description": "How many minutes a verified email remains valid for registration before requiring re-verification. Defaults to 10 minutes.",
    "fieldname": "email_verified_validity_minutes",
    "fieldtype": "Int",
    "label": "Email Verified Registration Window (Minutes)"

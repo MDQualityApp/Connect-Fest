@@ -198,7 +198,7 @@ def register_bni_event(**kwargs):
 
 	# 3. Email verification check (Must be verified via OTP prior to registration)
 	from connectfest.services.registration import validate_registration_email_otp
-	email_val_err = validate_registration_email_otp(email, data)
+	email_val_err = validate_registration_email_otp(email, data, expected_type="event")
 	if email_val_err:
 		frappe.local.response["http_status_code"] = 400
 		return email_val_err
