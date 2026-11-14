@@ -284,8 +284,14 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 			or (sess_user if sess_user and sess_user != "Guest" else None)
 			or data.get("email")
 		)
+		u_name = (
+			record.get("full_name")
+			or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else None)
+			or data.get("full_name")
+			or data.get("name")
+		)
 		reg_bni = cint(record.get("is_cnr_member", 0)) or cint(record.get("is_bni_member", 0))
-		is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+		is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email, name=u_name)
 		if reg_bni == 1:
 			is_bni = True
 		target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")
@@ -889,8 +895,14 @@ def preview_payment(**kwargs):
 			or (sess_user if sess_user and sess_user != "Guest" else None)
 			or data.get("email")
 		)
+		u_name = (
+			record.get("full_name")
+			or (frappe.db.get_value("User", sess_user, "full_name") if sess_user and sess_user != "Guest" else None)
+			or data.get("full_name")
+			or data.get("name")
+		)
 		reg_bni = cint(record.get("is_cnr_member", 0)) or cint(record.get("is_bni_member", 0))
-		is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email)
+		is_bni, bni_doc = is_valid_bni_member(mobile_no=u_mob, email=u_email, name=u_name)
 		if reg_bni == 1:
 			is_bni = True
 		target_reg = record.get("name") or locals().get("docname") or locals().get("reg_id")

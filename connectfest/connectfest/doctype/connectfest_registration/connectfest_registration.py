@@ -24,7 +24,7 @@ class ConnectFestRegistration(Document):
 		if self.mobile_no or self.email:
 			try:
 				from connectfest.services.bni_members import is_valid_bni_member
-				is_cnr, cnr_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email)
+				is_cnr, cnr_doc = is_valid_bni_member(mobile_no=self.mobile_no, email=self.email, name=self.full_name)
 				if is_cnr:
 					self.is_cnr_member = 1
 					if cnr_doc:
@@ -67,11 +67,11 @@ class ConnectFestRegistration(Document):
 
 					# Conflict A: Mobile already used by another email
 					if req_mob and ex_mob == req_mob and ex_email != req_email:
-						frappe.throw(frappe._("Mobile number '{0}' is already registered with another account! Each mobile number can only be used once.").format(req_mob))
+						frappe.throw(frappe._("Mobile number is already registered with another account! Each mobile number can only be used once."))
 
 					# Conflict B: Email already used by another mobile
 					if req_email and ex_email == req_email and req_mob and ex_mob != req_mob:
-						frappe.throw(frappe._("Email address '{0}' is already registered with a different mobile number! Please use your registered mobile number.").format(req_email))
+						frappe.throw(frappe._("Email address is already registered with a different mobile number! Please use your registered mobile number."))
 
 					# If same stall already booked and paid by this user
 					if self.stall_number and ex.get("stall_number") == self.stall_number and ex.get("payment_status") == "Paid":

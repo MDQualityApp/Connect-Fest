@@ -1244,24 +1244,24 @@ from connectfest.services.bni_events import (
 
 
 @frappe.whitelist(allow_guest=True)
-def check_bni_event_number(mobile_no=None, **kwargs):
+def check_bni_event_number(mobile_no=None, email=None, name=None, full_name=None, **kwargs):
 	"""
-	Pre-registration check API: Validates mobile number against BNI Member database
+	Pre-registration check API: Validates Name, Mobile number, and Email against CNR Member database
 	and checks if already registered before requesting OTP.
 	"""
-	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
+	return _check_bni_event_number(mobile_no=mobile_no, email=email, name=name or full_name, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
-def check_bni_number(mobile_no=None, **kwargs):
+def check_bni_number(mobile_no=None, email=None, name=None, full_name=None, **kwargs):
 	"""Alias for check_bni_event_number."""
-	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
+	return _check_bni_event_number(mobile_no=mobile_no, email=email, name=name or full_name, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
-def check_event_number(mobile_no=None, **kwargs):
+def check_event_number(mobile_no=None, email=None, name=None, full_name=None, **kwargs):
 	"""Alias for check_bni_event_number."""
-	return _check_bni_event_number(mobile_no=mobile_no, **kwargs)
+	return _check_bni_event_number(mobile_no=mobile_no, email=email, name=name or full_name, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

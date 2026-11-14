@@ -766,7 +766,7 @@ def get_current_user_profile(**kwargs):
 		# Single Comprehensive Stall Booking Object & Multi-Stall Support
 		"has_stall_booking": bool(stalls),
 		"has_pending_selection": bool(pending_registrations and not stalls),
-		"can_book_stall": False if (event_passes and not stalls) else True,
+		"can_book_stall": True,
 		"total_stalls": len(stalls),
 		"stall_numbers": [s["stall_number"] for s in stalls if s.get("stall_number")],
 		"total_amount": total_amount,
@@ -775,9 +775,13 @@ def get_current_user_profile(**kwargs):
 		"stall_booking": stall_booking,
 		"stalls": stalls,
 
+		# Pass Code & Digital Badges
+		"pass_code": (visitor_passes[0]["pass_code"] if visitor_passes else (event_passes[0]["pass_code"] if event_passes else None)),
+
 		# Visitor Pass
 		"has_visitor_pass": bool(visitor_passes),
 		"visitor_pass": visitor_passes[0] if visitor_passes else None,
+		"visitor_passes": visitor_passes,
 
 		# Event Pass & Attendance
 		"has_event_registration": bool(event_passes),
@@ -883,9 +887,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 		pwd = (password or data.get("pwd") or data.get("password") or "").strip()
 		submitted_otp = str(otp or data.get("otp") or "").strip()
 
-		if not usr or not pwd:
+		if not usr:
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "Admin Email and Password are required"}
+			return {"status": "error", "message": "Admin Email or Username is required"}
+
+		if not submitted_otp and not pwd:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Admin Password is required"}
 
 		# Step 1: Verify credentials
 		actual_usr = frappe.db.get_value("User", {"name": usr}, "name") or frappe.db.get_value("User", {"email": usr}, "name")
@@ -896,12 +904,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			return {"status": "error", "message": "Invalid admin email or password"}
 		usr = actual_usr
 
-		try:
-			from frappe.utils.password import check_password
-			check_password(usr, pwd)
-		except (frappe.AuthenticationError, frappe.DoesNotExistError):
-			frappe.local.response["http_status_code"] = 401
-			return {"status": "error", "message": "Invalid admin email or password"}
+		if pwd:
+			try:
+				from frappe.utils.password import check_password
+				check_password(usr, pwd)
+			except (frappe.AuthenticationError, frappe.DoesNotExistError):
+				frappe.local.response["http_status_code"] = 401
+				return {"status": "error", "message": "Invalid admin email or password"}
 
 		# Step 2: Verify Admin Role Privilege
 		roles = frappe.get_roles(usr)

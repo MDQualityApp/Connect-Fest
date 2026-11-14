@@ -33,12 +33,23 @@ def normalize_phone_number(raw_phone):
 	return digits
 
 
+def normalize_name_for_comparison(val):
+	"""
+	Normalizes name for space-insensitive, case-insensitive comparison:
+	e.g. 'Sakthi Murugan' -> 'sakthimurugan'
+	     '  sakthi   murugan  ' -> 'sakthimurugan'
+	     'SakthiMurugan' -> 'sakthimurugan'
+	Strips spaces, underscores, hyphens, dots.
+	"""
+	if not val:
+		return ""
+	return re.sub(r"[\s.\-_]+", "", str(val)).lower()
+
+
 def get_bni_verification_settings():
 	"""
 	Reads dynamic BNI verification settings from ConnectFest Settings:
 	- crn_bni_only: Master toggle for CRN stall restriction (default True)
-	- check_mobile: Validate BNI membership by Mobile Number (default True)
-	- check_email: Validate BNI membership by Email Address (default True)
 	Uses Redis caching for microsecond response times.
 	"""
 	cache = frappe.cache()
@@ -53,17 +64,10 @@ def get_bni_verification_settings():
 	try:
 		doc = frappe.get_cached_doc("ConnectFest Settings")
 		raw_crn = getattr(doc, "crn_bni_only", 1)
-		raw_mob = getattr(doc, "bni_check_mobile", 1)
-		raw_email = getattr(doc, "bni_check_email", 1)
-
 		crn_only = True if (raw_crn is None or str(raw_crn).strip() == "") else bool(cint(raw_crn))
-		check_mob = True if (raw_mob is None or str(raw_mob).strip() == "") else bool(cint(raw_mob))
-		check_email = True if (raw_email is None or str(raw_email).strip() == "") else bool(cint(raw_email))
 
 		res = {
 			"crn_bni_only": crn_only,
-			"check_mobile": check_mob,
-			"check_email": check_email,
 		}
 		try:
 			cache.set_value(cache_key, res, expires_in_sec=300)
@@ -73,8 +77,6 @@ def get_bni_verification_settings():
 	except Exception:
 		return {
 			"crn_bni_only": True,
-			"check_mobile": True,
-			"check_email": True,
 		}
 
 
@@ -86,36 +88,34 @@ def clear_bni_member_cache():
 	try:
 		cache = frappe.cache()
 		cache.delete_keys("bni_v2:*")
+		cache.delete_keys("cnr_v3:*")
 		cache.delete_value("connectfest:settings:bni_verification")
 	except Exception:
 		pass
 
 
-def is_valid_bni_member(mobile_no=None, email=None):
+def is_valid_bni_member(mobile_no=None, email=None, name=None, **kwargs):
 	"""
-	High-Performance Optimized BNI membership verification:
-	1. In-memory Redis Cache: Returns instant sub-millisecond answer if previously checked.
-	2. Indexed DB Seek (O(1)):
-	   - Uses exact Primary Key / indexed `mobile_no` / `email` lookups without wrapping
-	     columns in SQL functions (avoiding full table scans even with 10k - 100k+ rows).
+	Strict 3-Point CNR Membership Verification:
+	- Requires Name, Mobile Number, and Email Address.
+	- Mobile is normalized to 10 digits.
+	- Email is stripped and lowercased.
+	- Name comparison is space-insensitive and case-insensitive.
+	  (e.g., 'Sakthi Murugan' == 'SakthiMurugan' == '  sakthi   murugan  ').
+	- All 3 credentials MUST match a record in 'ConnectFest CNR Member'.
 	Returns: (is_valid: bool, member_doc: dict or None)
 	"""
-	cfg = get_bni_verification_settings()
-	check_mob = cfg["check_mobile"]
-	check_email = cfg["check_email"]
-
+	raw_name = name or kwargs.get("full_name") or kwargs.get("member_name") or kwargs.get("user_name")
 	clean_mob = normalize_phone_number(mobile_no) if mobile_no else ""
 	clean_email = str(email or "").strip().lower() if email and "@" in str(email) else ""
+	norm_name = normalize_name_for_comparison(raw_name)
 
-	if not check_mob and not check_email:
+	# All 3 credentials are strictly mandatory for CNR verification!
+	if not clean_mob or len(clean_mob) < 8 or not clean_email or not norm_name:
 		return False, None
 
-	# Filter inputs according to dynamic admin flags
-	use_mob = clean_mob if (check_mob and clean_mob and len(clean_mob) >= 8) else ""
-	use_email = clean_email if (check_email and clean_email) else ""
-
-	# Check Redis Cache first (Microsecond response)
-	cache_key = f"bni_v2:{use_mob}:{use_email}"
+	# Check in-memory Redis cache (Microsecond response)
+	cache_key = f"cnr_v3:{clean_mob}:{clean_email}:{norm_name}"
 	try:
 		cached = frappe.cache().get_value(cache_key)
 		if cached is not None and isinstance(cached, dict):
@@ -123,68 +123,52 @@ def is_valid_bni_member(mobile_no=None, email=None):
 	except Exception:
 		pass
 
-	# Candidate phone numbers for index matching (exact matches utilize DB indexes directly)
-	mob_candidates = [use_mob]
-	if use_mob:
-		mob_candidates.extend([f"+91{use_mob}", f"91{use_mob}", f"0{use_mob}"])
+	# Fast indexed DB lookup on phone & email
+	mob_candidates = [clean_mob, f"+91{clean_mob}", f"91{clean_mob}", f"0{clean_mob}"]
 	mob_candidates = tuple(set(mob_candidates))
 
-	members = []
-	if check_mob and check_email:
-		if use_mob and use_email:
-			members = frappe.db.sql("""
-				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest CNR Member`
-				WHERE (name IN %(candidates)s OR mobile_no IN %(candidates)s)
-				   OR email = %(email)s
-				LIMIT 1
-			""", {"candidates": mob_candidates, "email": use_email}, as_dict=True)
-		elif use_mob:
-			members = frappe.db.sql("""
-				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest CNR Member`
-				WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
-				LIMIT 1
-			""", {"candidates": mob_candidates}, as_dict=True)
-		elif use_email:
-			members = frappe.db.sql("""
-				SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-				FROM `tabConnectFest CNR Member`
-				WHERE email = %(email)s
-				LIMIT 1
-			""", {"email": use_email}, as_dict=True)
-		else:
-			return False, None
-	elif check_mob:
-		if not use_mob:
-			return False, None
-		members = frappe.db.sql("""
-			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-			FROM `tabConnectFest CNR Member`
-			WHERE name IN %(candidates)s OR mobile_no IN %(candidates)s
-			LIMIT 1
-		""", {"candidates": mob_candidates}, as_dict=True)
-	else:
-		# Email Only Check
-		if not use_email:
-			return False, None
-		members = frappe.db.sql("""
-			SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
-			FROM `tabConnectFest CNR Member`
-			WHERE email = %(email)s
-			LIMIT 1
-		""", {"email": use_email}, as_dict=True)
+	members = frappe.db.sql("""
+		SELECT name, first_name, last_name, member_name, mobile_no, email, company_name, industry, chapter_name
+		FROM `tabConnectFest CNR Member`
+		WHERE (name IN %(candidates)s OR mobile_no IN %(candidates)s)
+		  AND LOWER(TRIM(email)) = %(email)s
+	""", {"candidates": mob_candidates, "email": clean_email}, as_dict=True)
 
-	res_valid = bool(members)
-	res_doc = members[0] if members else None
+	if not members:
+		try:
+			frappe.cache().set_value(cache_key, {"valid": False, "doc": None}, expires_in_sec=300)
+		except Exception:
+			pass
+		return False, None
 
-	# Save in Redis cache with 30 minutes TTL
+	# Check space-insensitive name match against candidate member records
+	matched_doc = None
+	for m in members:
+		candidate_names = [
+			normalize_name_for_comparison(m.get("member_name")),
+			normalize_name_for_comparison(f"{m.get('first_name') or ''} {m.get('last_name') or ''}"),
+			normalize_name_for_comparison(f"{m.get('last_name') or ''} {m.get('first_name') or ''}"),
+		]
+		if m.get("first_name"):
+			candidate_names.append(normalize_name_for_comparison(m.get("first_name")))
+
+		if norm_name in candidate_names:
+			matched_doc = m
+			break
+
+	is_valid = matched_doc is not None
+
+	# Save in Redis cache (30 mins if valid, 5 mins if invalid)
 	try:
-		frappe.cache().set_value(cache_key, {"valid": res_valid, "doc": res_doc}, expires_in_sec=1800)
+		frappe.cache().set_value(
+			cache_key,
+			{"valid": is_valid, "doc": matched_doc},
+			expires_in_sec=1800 if is_valid else 300
+		)
 	except Exception:
 		pass
 
-	return res_valid, res_doc
+	return is_valid, matched_doc
 
 
 def admin_create_bni_member(**kwargs):
@@ -247,6 +231,10 @@ def admin_create_bni_member(**kwargs):
 		m_name = safe_str(obj.get("member_name") or obj.get("Member Name") or obj.get("name") or "")
 		if not m_name:
 			m_name = f"{f_name} {l_name}".strip() or fallback_name
+		elif not f_name and m_name:
+			parts = m_name.split(" ", 1)
+			f_name = parts[0]
+			l_name = parts[1] if len(parts) > 1 else ""
 		e_val = str(obj.get("email") or obj.get("Email") or obj.get("email_id") or fallback_email or "").strip().lower()
 		comp = safe_str(obj.get("company_name") or obj.get("Company") or obj.get("company") or fallback_company or "")
 		ind = safe_str(obj.get("industry") or obj.get("Industry") or fallback_industry or "")
@@ -804,10 +792,10 @@ def get_non_bni_extra_percentage():
 	return 10.0
 
 
-def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_bni_member=None, custom_base_price=None):
+def calculate_stall_price_for_user(tier, user_name=None, user_mobile=None, user_email=None, is_bni_member=None, custom_base_price=None, **kwargs):
 	"""
 	Calculates the exact stall price and tax breakdown based on BNI membership status:
-	- If attendee mobile_no exists in 'ConnectFest CNR Member' (or is_bni_member is True):
+	- If attendee exists in 'ConnectFest CNR Member' (matching Name, Mobile, Email) or is_bni_member is True:
 	  Attendee pays the standard stall price (0% extra surcharge).
 	- If attendee is NOT a BNI member:
 	  Admin-configured extra percentage (non_bni_extra_percentage) is added to base price.
@@ -818,10 +806,12 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 	original_price = flt(custom_base_price if custom_base_price is not None else tier_info.get("price", 0.0))
 	gst_pct = flt(tier_info.get("gst_percent", 18.0))
 
-	# Resolve user mobile
-	clean_mob = normalize_phone_number(user_mobile) if user_mobile else ""
-	if not clean_mob and user_email:
-		clean_email = str(user_email).strip().lower()
+	# Resolve user details
+	clean_name = str(user_name or kwargs.get("full_name") or kwargs.get("name") or "").strip()
+	clean_mob = normalize_phone_number(user_mobile or kwargs.get("mobile_no"))
+	clean_email = str(user_email or kwargs.get("email") or "").strip().lower()
+
+	if not clean_mob and clean_email:
 		clean_mob = (
 			frappe.db.get_value("ConnectFest Registration", {"email": clean_email}, "mobile_no")
 			or frappe.db.get_value("User", clean_email, "mobile_no")
@@ -830,35 +820,30 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 		)
 		clean_mob = normalize_phone_number(clean_mob)
 
-	# Check BNI status
-	cfg = get_bni_verification_settings()
-	bni_check_active = cfg.get("check_mobile") or cfg.get("check_email")
+	if not clean_name and clean_email:
+		clean_name = (
+			frappe.db.get_value("ConnectFest Registration", {"email": clean_email}, "full_name")
+			or frappe.db.get_value("User", clean_email, "full_name")
+			or ""
+		).strip()
 
+	# Check BNI status
 	is_bni = False
-	if not bni_check_active:
-		# If Admin disabled both Mobile and Email BNI checks, verification is completely OFF:
-		# Everyone gets standard stall pricing with 0% extra surcharge!
+	if is_bni_member is not None and cint(is_bni_member) == 1:
 		is_bni = True
+	elif clean_mob and clean_email and clean_name:
+		is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=clean_email, name=clean_name)
+	else:
+		is_bni = False
+
+	if is_bni:
 		surcharge_pct = 0.0
 		surcharge_amt = 0.0
 		final_base_price = original_price
 	else:
-		# Strictly verify against ConnectFest CNR Member DocType or existing registration flag!
-		if is_bni_member is not None and cint(is_bni_member) == 1:
-			is_bni = True
-		elif clean_mob or user_email:
-			is_bni, _ = is_valid_bni_member(mobile_no=clean_mob, email=user_email)
-		else:
-			is_bni = False
-
-		if is_bni:
-			surcharge_pct = 0.0
-			surcharge_amt = 0.0
-			final_base_price = original_price
-		else:
-			surcharge_pct = get_non_bni_extra_percentage()
-			surcharge_amt = round(original_price * (surcharge_pct / 100.0), 2)
-			final_base_price = round(original_price + surcharge_amt, 2)
+		surcharge_pct = get_non_bni_extra_percentage()
+		surcharge_amt = round(original_price * (surcharge_pct / 100.0), 2)
+		final_base_price = round(original_price + surcharge_amt, 2)
 
 	tax_amount = round(final_base_price * (gst_pct / 100.0), 2)
 	total_amount = round(final_base_price + tax_amount, 2)
@@ -879,10 +864,8 @@ def calculate_stall_price_for_user(tier, user_mobile=None, user_email=None, is_b
 
 def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	"""
-	Admin API: Toggle or set CRN BNI member restriction & dynamic validation rules:
+	Admin API: Toggle or set CRN BNI member restriction:
 	- enable / crn_bni_only: 1 (ON) / 0 (OFF)
-	- bni_check_mobile (or check_mobile): 1 (ON) / 0 (OFF)
-	- bni_check_email (or check_email): 1 (ON) / 0 (OFF)
 	- non_bni_extra_percentage (or extra_percentage, percent): e.g. 10.0
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
@@ -894,33 +877,11 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	data = extract_request_data(kwargs)
 	cfg = get_bni_verification_settings()
 
-	raw_mob_chk = (
-		data.get("bni_check_mobile")
-		if "bni_check_mobile" in data
-		else data.get("check_mobile")
-		if "check_mobile" in data
-		else data.get("mobile_check")
-		if "mobile_check" in data
-		else kwargs.get("bni_check_mobile")
-	)
-	raw_email_chk = (
-		data.get("bni_check_email")
-		if "bni_check_email" in data
-		else data.get("check_email")
-		if "check_email" in data
-		else data.get("email_check")
-		if "email_check" in data
-		else kwargs.get("bni_check_email")
-	)
-
-	new_check_mob = (1 if (parse_boolean(raw_mob_chk) or str(raw_mob_chk).strip().lower() in ("1", "true", "yes", "on")) else 0) if raw_mob_chk is not None else (1 if cfg["check_mobile"] else 0)
-	new_check_email = (1 if (parse_boolean(raw_email_chk) or str(raw_email_chk).strip().lower() in ("1", "true", "yes", "on")) else 0) if raw_email_chk is not None else (1 if cfg["check_email"] else 0)
-
 	raw_val = enable if enable is not None else data.get("enable") if "enable" in data else data.get("is_enabled") if "is_enabled" in data else data.get("crn_bni_only") if "crn_bni_only" in data else kwargs.get("enable")
 
 	curr = cfg["crn_bni_only"]
 	has_val = raw_val is not None
-	has_other = any(k in data for k in ("non_bni_extra_percentage", "extra_percentage", "percent", "bni_check_mobile", "check_mobile", "mobile_check", "bni_check_email", "check_email", "email_check"))
+	has_other = any(k in data for k in ("non_bni_extra_percentage", "extra_percentage", "percent"))
 
 	if not has_val and not has_other:
 		new_val = 0 if curr else 1
@@ -930,8 +891,6 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 		new_val = 1 if curr else 0
 
 	frappe.db.set_single_value("ConnectFest Settings", "crn_bni_only", new_val)
-	frappe.db.set_single_value("ConnectFest Settings", "bni_check_mobile", new_check_mob)
-	frappe.db.set_single_value("ConnectFest Settings", "bni_check_email", new_check_email)
 
 	# Update non-BNI extra percentage if provided
 	raw_pct = (
@@ -974,11 +933,9 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 
 	return {
 		"status": "success",
-		"message": f"CRN BNI restriction {'enabled' if new_val else 'disabled'} (Mobile Check: {'ON' if new_check_mob else 'OFF'}, Email Check: {'ON' if new_check_email else 'OFF'}). Non-BNI extra percentage set to {curr_pct}%.",
+		"message": f"CRN BNI restriction {'enabled' if new_val else 'disabled'}. Non-BNI extra percentage set to {curr_pct}%.",
 		"crn_bni_only": new_val,
 		"is_enabled": bool(new_val),
-		"bni_check_mobile": new_check_mob,
-		"bni_check_email": new_check_email,
 		"non_bni_extra_percentage": curr_pct,
 	}
 
@@ -1019,15 +976,13 @@ def admin_set_non_bni_extra_percentage(percentage=None, **kwargs):
 
 def get_non_bni_extra_percentage_info(**kwargs):
 	"""
-	Public API: Returns the current CRN restriction status, mobile/email check flags, and non-BNI extra percentage.
+	Public API: Returns the current CRN restriction status and non-BNI extra percentage.
 	"""
 	cfg = get_bni_verification_settings()
 	return {
 		"status": "success",
 		"crn_bni_only": 1 if cfg["crn_bni_only"] else 0,
 		"is_crn_bni_restriction_enabled": cfg["crn_bni_only"],
-		"bni_check_mobile": 1 if cfg["check_mobile"] else 0,
-		"bni_check_email": 1 if cfg["check_email"] else 0,
 		"non_bni_extra_percentage": get_non_bni_extra_percentage(),
 	}
 

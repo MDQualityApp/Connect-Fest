@@ -93,16 +93,6 @@ def register_bni_event(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
-	# Disallow registration if user is already logged in
-	from connectfest.services.auth import get_authenticated_user, is_admin_user
-	auth_user = get_authenticated_user(data, **kwargs)
-	if auth_user and not is_admin_user(auth_user):
-		frappe.local.response["http_status_code"] = 400
-		return {
-			"status": "error",
-			"message": "You are already logged in! Please log out before creating a new event registration.",
-		}
-
 	mobile_no = normalize_phone_number(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
 	email = safe_str(data.get("email")).strip().lower()
 	full_name = safe_str(data.get("full_name") or data.get("name"))
@@ -207,17 +197,11 @@ def register_bni_event(**kwargs):
 		}
 
 	# 3. Email verification check (Must be verified via OTP prior to registration)
-	from connectfest.services.otp import is_email_verified, verify_otp_inline
-	req_otp = data.get("otp") or kwargs.get("otp") or data.get("email_otp")
-	if not getattr(frappe.flags, "in_test", False) and not is_email_verified(email):
-		if req_otp and verify_otp_inline(email, req_otp):
-			pass
-		else:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "Email verification is required before registration! Please verify your email using OTP."
-			}
+	from connectfest.services.registration import validate_registration_email_otp
+	email_val_err = validate_registration_email_otp(email, data)
+	if email_val_err:
+		frappe.local.response["http_status_code"] = 400
+		return email_val_err
 
 	# 4. Generate Pass Code & QR Code Payload
 	pass_random = frappe.generate_hash(length=8).upper()
