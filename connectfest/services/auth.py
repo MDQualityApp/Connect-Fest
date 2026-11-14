@@ -5,25 +5,6 @@ from frappe.utils import flt, cint
 from connectfest.services.common import extract_request_data, handle_api_errors
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
-TEST_MASTER_OTPS = ["123456", "999999"]
-
-
-def is_otp_test_mode():
-	"""
-	Checks if ConnectFest is running with Razorpay test keys (starts with rzp_test_).
-	Allows test master OTPs (123456, 999999) for testing while on test credentials.
-	"""
-	try:
-		key_id = None
-		if frappe.db.exists("DocType", "ConnectFest Settings"):
-			key_id = frappe.db.get_single_value("ConnectFest Settings", "razorpay_key_id")
-		if not key_id:
-			key_id = frappe.conf.get("razorpay_key_id")
-		if not key_id or str(key_id).startswith("rzp_test_"):
-			return True
-	except Exception:
-		pass
-	return False
 
 
 def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
@@ -582,7 +563,7 @@ def get_current_user_profile(**kwargs):
 	from connectfest.services.bni_members import is_valid_bni_member, get_non_bni_extra_percentage
 	user_is_bni = False
 	if user_mobile or target_user:
-		user_is_bni, _ = is_valid_bni_member(mobile_no=user_mobile, email=target_user)
+		user_is_bni, _ = is_valid_bni_member(mobile_no=user_mobile, email=target_user, name=user_full_name)
 	if not user_is_bni and primary_reg and cint(primary_reg.get("is_bni_member")):
 		user_is_bni = True
 	is_bni_member = 1 if user_is_bni else 0
@@ -807,7 +788,7 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 				frappe.local.response["http_status_code"] = 403
 				return {
 					"status": "disabled",
-					"message": f"Account '{target_check_email}' has been disabled by the Administrator. Access denied.",
+					"message": "This account has been disabled by the Administrator. Access denied.",
 				}
 
 		otp = str(data.get("otp") or data.get("code") or "").strip()
@@ -848,10 +829,6 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 	Dedicated Secure Admin Login with Two-Factor Authentication (Password + 2FA OTP).
 	Strictly restricted to users with 'System Manager' or 'Administrator' roles.
 	"""
-	try:
-		from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
-	except Exception:
-		pass
 	import random
 	try:
 		data = extract_request_data(kwargs)
@@ -890,7 +867,6 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 
 		cache = frappe.cache()
 		cache_key = cache.make_key(f"{OTP_CACHE_PREFIX}admin:{usr}")
-		test_mode = is_otp_test_mode()
 
 		# Step 3: Check 2FA OTP
 		if not submitted_otp:
@@ -900,17 +876,25 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 
 			frappe.logger("connectfest").info(f"[ConnectFest Admin 2FA] OTP {otp_code} for admin {usr}")
 
+			# Send OTP directly to Admin Email
+			admin_email = frappe.db.get_value("User", usr, "email") or (usr if "@" in usr else None)
+			if admin_email:
+				try:
+					frappe.sendmail(
+						recipients=[admin_email],
+						subject="ConnectFest Admin 2FA Verification Code",
+						message=f"<p>Hello Administrator,</p><p>Your 2FA verification code for ConnectFest Admin Login is: <strong>{otp_code}</strong></p><p>This code is valid for 2 minutes.</p>",
+						now=True
+					)
+				except Exception:
+					pass
+
 			return {
 				"status": "otp_required",
-				"message": "Admin credentials verified! 2FA OTP sent for security verification. Valid for 2 minutes.",
+				"message": "Admin credentials verified! 2FA OTP sent to registered admin email. Valid for 2 minutes.",
 				"admin_user": usr,
 				"expires_in": "2 minutes",
 				"expires_in_seconds": 120,
-				"test_credentials": {
-					"mock_otp": "123456",
-					"generated_otp": otp_code,
-					"info": "Razorpay-style Test Mode active: enter OTP '123456' or the generated OTP to complete 2FA login."
-				}
 			}
 
 		# Verify OTP
@@ -918,17 +902,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 		if isinstance(stored_otp, bytes):
 			stored_otp = stored_otp.decode("utf-8")
 
-		is_valid = False
-		if stored_otp and stored_otp == submitted_otp:
-			is_valid = True
-		elif test_mode and submitted_otp in TEST_MASTER_OTPS:
-			is_valid = True
+		is_valid = bool(stored_otp and stored_otp == submitted_otp)
 
 		if not is_valid:
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": "Invalid or expired Admin 2FA OTP. Please use '123456' in test mode or request a new OTP."
+				"message": "Invalid or expired Admin 2FA OTP. Please request a new OTP."
 			}
 
 		try:
@@ -1756,12 +1736,6 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 			"new_email": new_em or None,
 			"expires_in": "2 minutes",
 			"expires_in_seconds": 120,
-			"otp": otp_code,
-			"test_credentials": {
-				"mock_otp": "123456",
-				"generated_otp": otp_code,
-				"info": "Razorpay-style Test Mode active: enter OTP '123456' or the generated OTP to verify and update contact."
-			}
 		}
 	except Exception as e:
 		frappe.log_error("ConnectFest Contact Update Error", frappe.get_traceback())
@@ -1772,10 +1746,6 @@ def verify_and_update_contact(otp=None, **kwargs):
 	"""
 	Verifies the OTP and updates mobile number and/or email in Frappe User and Registration records.
 	"""
-	try:
-		from connectfest.services.otp import OTP_CACHE_PREFIX, TEST_MASTER_OTPS, is_otp_test_mode
-	except Exception:
-		pass
 	import json
 	try:
 		sess_user = getattr(frappe.session, "user", None)
@@ -1803,17 +1773,12 @@ def verify_and_update_contact(otp=None, **kwargs):
 
 		cached_data = json.loads(cached_raw)
 		stored_otp = cached_data.get("otp")
-		test_mode = is_otp_test_mode()
 
-		is_valid = False
-		if stored_otp and stored_otp == submitted_otp:
-			is_valid = True
-		elif test_mode and submitted_otp in TEST_MASTER_OTPS:
-			is_valid = True
+		is_valid = bool(stored_otp and stored_otp == submitted_otp)
 
 		if not is_valid:
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "Invalid OTP. Please check the code or use test OTP '123456'."}
+			return {"status": "error", "message": "Invalid OTP. Please check the code sent to your email/mobile."}
 
 		try:
 			cache.delete(cache_key)
@@ -2027,7 +1992,12 @@ def update_profile(**kwargs):
 
 			from connectfest.services.bni_members import is_valid_bni_member
 			chk_mob = current_mob or frappe.db.get_value("ConnectFest Registration", {"email": target_user}, "mobile_no")
-			is_bni, _ = is_valid_bni_member(mobile_no=chk_mob, email=target_user)
+			chk_name = (
+				clean_name
+				if "clean_name" in locals() and clean_name
+				else (frappe.db.get_value("User", target_user, "full_name") or frappe.db.get_value("ConnectFest Registration", {"email": target_user}, "full_name"))
+			)
+			is_bni, _ = is_valid_bni_member(mobile_no=chk_mob, email=target_user, name=chk_name)
 			bni_val = 1 if is_bni else 0
 			updates_exhibitor["is_bni_member"] = bni_val
 			updated_fields["is_bni_member"] = bool(bni_val)
@@ -2165,6 +2135,28 @@ def update_profile(**kwargs):
 				v_cached = get_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{v_id}") or {}
 				v_cached.update(updates_visitor)
 				set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{v_id}", v_cached)
+
+		# 8b. Apply Updates to ConnectFest BNI Event Registration(s)
+		evt_regs = frappe.db.sql("""
+			SELECT name FROM `tabConnectFest BNI Event Registration`
+			WHERE (email = %s OR (mobile_no = %s AND %s != ''))
+		""", (target_user, current_mob, current_mob), as_dict=True)
+		if evt_regs and ("full_name" in updated_fields or "company_name" in updated_fields):
+			evt_names = [e["name"] for e in evt_regs]
+			evt_clauses = []
+			evt_params = {"names": tuple(evt_names)}
+			if "full_name" in updated_fields:
+				evt_clauses.append("`full_name` = %(fn)s")
+				evt_params["fn"] = updated_fields["full_name"]
+			if "company_name" in updated_fields:
+				evt_clauses.append("`company_name` = %(cn)s")
+				evt_params["cn"] = updated_fields["company_name"]
+			if evt_clauses:
+				frappe.db.sql(f"""
+					UPDATE `tabConnectFest BNI Event Registration`
+					SET {', '.join(evt_clauses)}
+					WHERE name IN %(names)s
+				""", evt_params)
 
 		frappe.db.commit()
 
