@@ -3,35 +3,133 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import frappe
 from connectfest.services.common import extract_request_data, check_rate_limit, parse_boolean
-from connectfest.services.auth import ensure_frappe_user, is_scanner_user
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
 EMAIL_OTP_CACHE_PREFIX = "connectfest:otp:email:"
 EMAIL_VERIFIED_CACHE_PREFIX = "connectfest:email_verified:"
+OTP_ATTEMPTS_PREFIX = "connectfest:otp_attempts:"
+OTP_SEND_COUNT_PREFIX = "connectfest:otp_send_count:"
+OTP_BLOCK_PREFIX = "connectfest:otp_block:"
+OTP_BLOCK_COUNT_PREFIX = "connectfest:otp_block_count:"
+MAX_OTP_ATTEMPTS = 5
+MAX_OTP_SEND_REQUESTS = 5
+OTP_BLOCK_DURATION_FIRST = 600    # 10 minutes (first block)
+OTP_BLOCK_DURATION_SECOND = 1800  # 30 minutes (second/repeat block)
 DEFAULT_OTP_EXPIRY_SECONDS = 120  # Default 2 minutes
 EMAIL_VERIFIED_EXPIRY_SECONDS = 1800  # 30 minutes validity once verified
-TEST_MASTER_OTPS = ["123456", "999999"]
 
-
-def is_otp_test_mode():
-	"""
-	Checks if ConnectFest is running with Razorpay test keys (starts with rzp_test_).
-	Allows test master OTPs (123456, 999999) for testing while on test credentials.
-	"""
-	try:
-		key_id = None
-		if frappe.db.exists("DocType", "ConnectFest Settings"):
-			key_id = frappe.db.get_single_value("ConnectFest Settings", "razorpay_key_id")
-		if not key_id:
-			key_id = frappe.conf.get("razorpay_key_id")
-		if not key_id or str(key_id).startswith("rzp_test_"):
-			return True
-	except Exception:
-		pass
-	return False
+from connectfest.services.auth import ensure_frappe_user, is_scanner_user
 
 # High-concurrency background email thread pool for zero-lag, instant OTP delivery (1000+ users)
 _email_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="email_otp_worker")
+
+
+def get_failed_attempts(email):
+	if not email:
+		return 0
+	cache = frappe.cache()
+	key = cache.make_key(f"{OTP_ATTEMPTS_PREFIX}{email}")
+	val = cache.get(key)
+	if val:
+		try:
+			return int(val.decode("utf-8") if isinstance(val, bytes) else val)
+		except Exception:
+			return 0
+	return 0
+
+
+def increment_failed_attempts(email):
+	if not email:
+		return 1
+	cache = frappe.cache()
+	key = cache.make_key(f"{OTP_ATTEMPTS_PREFIX}{email}")
+	try:
+		attempts = cache.incr(key)
+	except Exception:
+		current = get_failed_attempts(email)
+		attempts = current + 1
+		cache.set(key, str(attempts))
+	cache.expire(key, OTP_BLOCK_DURATION_FIRST)
+	return int(attempts)
+
+
+def get_otp_send_count(email):
+	if not email:
+		return 0
+	cache = frappe.cache()
+	key = cache.make_key(f"{OTP_SEND_COUNT_PREFIX}{email}")
+	val = cache.get(key)
+	if val:
+		try:
+			return int(val.decode("utf-8") if isinstance(val, bytes) else val)
+		except Exception:
+			return 0
+	return 0
+
+
+def increment_otp_send_count(email):
+	if not email:
+		return 1
+	cache = frappe.cache()
+	key = cache.make_key(f"{OTP_SEND_COUNT_PREFIX}{email}")
+	try:
+		count = cache.incr(key)
+	except Exception:
+		current = get_otp_send_count(email)
+		count = current + 1
+		cache.set(key, str(count))
+	cache.expire(key, 600)  # 10 minutes window
+	return int(count)
+
+
+def trigger_block(email):
+	"""
+	Sets temporary progressive block for an email:
+	1st lockout: 10 minutes (600s)
+	2nd or subsequent lockout: 30 minutes (1800s)
+	"""
+	if not email:
+		return 10
+	cache = frappe.cache()
+	count_key = cache.make_key(f"{OTP_BLOCK_COUNT_PREFIX}{email}")
+	try:
+		block_count = cache.incr(count_key)
+	except Exception:
+		val = cache.get(count_key)
+		block_count = int(val) + 1 if val else 1
+		cache.set(count_key, str(block_count))
+	cache.expire(count_key, 86400)  # Remember repeat offender within 24 hours
+
+	duration_secs = OTP_BLOCK_DURATION_FIRST if block_count <= 1 else OTP_BLOCK_DURATION_SECOND
+	duration_mins = duration_secs // 60
+
+	block_key = cache.make_key(f"{OTP_BLOCK_PREFIX}{email}")
+	cache.setex(block_key, duration_secs, str(duration_mins))
+	cache.delete(cache.make_key(f"{OTP_ATTEMPTS_PREFIX}{email}"))
+	cache.delete(cache.make_key(f"{OTP_SEND_COUNT_PREFIX}{email}"))
+	return duration_mins
+
+
+def clear_failed_attempts(email):
+	if not email:
+		return
+	cache = frappe.cache()
+	cache.delete(cache.make_key(f"{OTP_ATTEMPTS_PREFIX}{email}"))
+	cache.delete(cache.make_key(f"{OTP_SEND_COUNT_PREFIX}{email}"))
+	cache.delete(cache.make_key(f"{OTP_BLOCK_PREFIX}{email}"))
+
+
+def is_otp_blocked(email):
+	if not email:
+		return False, 0
+	cache = frappe.cache()
+	key = cache.make_key(f"{OTP_BLOCK_PREFIX}{email}")
+	val = cache.get(key)
+	if not val:
+		return False, 0
+	ttl = cache.ttl(key)
+	mins = max(1, (ttl // 60) + (1 if ttl % 60 else 0)) if (ttl and ttl > 0) else 10
+	return True, mins
 
 
 def get_otp_expiry_seconds():
@@ -46,6 +144,22 @@ def get_otp_expiry_seconds():
 	except Exception:
 		pass
 	return DEFAULT_OTP_EXPIRY_SECONDS
+
+
+def get_email_verified_validity_seconds():
+	"""
+	Dynamically fetches how long a verified email remains valid for registration (in seconds).
+	Configurable via 'email_verified_validity_minutes' in ConnectFest Settings (defaults to 30 mins = 1800s).
+	"""
+	try:
+		mins = frappe.db.get_value("Singles", {"doctype": "ConnectFest Settings", "field": "email_verified_validity_minutes"}, "value")
+		if not mins:
+			mins = frappe.db.get_single_value("ConnectFest Settings", "email_verified_validity_minutes")
+		if mins and int(mins) > 0:
+			return int(mins) * 60
+	except Exception:
+		pass
+	return EMAIL_VERIFIED_EXPIRY_SECONDS
 
 
 def format_expiry_text(seconds):
@@ -143,8 +257,7 @@ def send_otp(mobile_no=None, **kwargs):
 				"status": "error",
 				"error_code": "NOT_REGISTERED",
 				"is_registered": False,
-				"message": f"Mobile number '{mob}' is not registered with ConnectFest! Please register first.",
-				"mobile_no": mob,
+				"message": "Mobile number is not registered with ConnectFest! Please register first.",
 				"next_action": "register",
 			}
 
@@ -186,8 +299,7 @@ def verify_otp(mobile_no=None, otp=None, **kwargs):
 				"status": "error",
 				"error_code": "NOT_REGISTERED",
 				"is_registered": False,
-				"message": f"Mobile number '{mob}' is not registered with ConnectFest! Please register first.",
-				"mobile_no": mob,
+				"message": "Mobile number is not registered with ConnectFest! Please register first.",
 				"next_action": "register",
 			}
 
@@ -374,26 +486,74 @@ def send_email_otp(email=None, **kwargs):
 			"message": "A valid email address is required to receive OTP.",
 		}
 
-	# Check whether user is already registered (OTP is strictly for login)
+	# Validate purpose: MUST BE STRICTLY MANDATORY ('register' or 'login')
+	purpose = str(data.get("purpose") or kwargs.get("purpose") or "").strip().lower()
+	if not purpose or purpose not in ("register", "registration", "login"):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "Valid purpose ('register' or 'login') is required to send verification code.",
+		}
+
+	# Disallow sending login OTP if user is already logged in
+	from connectfest.services.auth import get_authenticated_user, is_admin_user
+	auth_user = get_authenticated_user(data, **kwargs)
+	if auth_user and not is_admin_user(auth_user):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "You are already logged in! Please log out to request a login OTP.",
+		}
+
 	is_reg, reg_info = is_email_registered(target_email)
-	if not is_reg:
+
+	if purpose == "login" and not is_reg:
 		frappe.local.response["http_status_code"] = 404
 		return {
 			"status": "error",
 			"error_code": "NOT_REGISTERED",
 			"is_registered": False,
-			"message": "This email is not registered with ConnectFest! Please register as an Exhibitor or Visitor first.",
-			"email": target_email,
+			"message": "This email address is not registered with ConnectFest! Please register as an Exhibitor or Visitor first.",
 			"next_action": "register",
 		}
 
-	# Rate limit OTP sending: max 6 requests per 10 minutes per email
-	if not check_rate_limit(f"send_email_otp:{target_email}", limit=6, window_secs=600):
+	if purpose in ("register", "registration") and is_reg:
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"error_code": "ALREADY_REGISTERED",
+			"already_registered": True,
+			"message": "This email address is already registered with ConnectFest! Please log in to access your account.",
+			"next_action": "login",
+		}
+
+	# Check if account is temporarily locked
+	blocked, mins_left = is_otp_blocked(target_email)
+	if blocked:
+		frappe.local.response["http_status_code"] = 429
+		unit = "minute" if mins_left == 1 else "minutes"
+		return {
+			"status": "error",
+			"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+			"is_blocked": True,
+			"message": f"Too many OTP requests. Please try again after {mins_left} {unit}.",
+			"remaining_requests": 0,
+		}
+
+	# Check OTP send count: max 5 requests per 10 minutes
+	send_count = increment_otp_send_count(target_email)
+	if send_count > MAX_OTP_SEND_REQUESTS:
+		duration_mins = trigger_block(target_email)
 		frappe.local.response["http_status_code"] = 429
 		return {
 			"status": "error",
-			"message": "Too many OTP requests for this email address. Please wait a few minutes before trying again.",
+			"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+			"is_blocked": True,
+			"message": f"Too many OTP requests. Your account is temporarily locked for {duration_mins} minutes.",
+			"remaining_requests": 0,
 		}
+
+	remaining_sends = MAX_OTP_SEND_REQUESTS - send_count
 
 	# Dynamic OTP validity from ConnectFest Settings
 	otp_expiry = get_otp_expiry_seconds()
@@ -418,12 +578,12 @@ def send_email_otp(email=None, **kwargs):
 	# 1. Store in Frappe DocType 'ConnectFest OTP' (Persistent in MariaDB for Admin visibility)
 	expires_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=otp_expiry)
 	try:
-		# Expire previous pending OTPs for this email
+		# Expire previous pending OTPs that have genuinely reached their expiry
 		frappe.db.sql("""
 			UPDATE `tabConnectFest OTP`
 			SET status = 'Expired'
-			WHERE email = %s AND status = 'Pending'
-		""", (target_email,))
+			WHERE email = %s AND status = 'Pending' AND expires_at < %s
+		""", (target_email, frappe.utils.now_datetime()))
 
 		otp_doc = frappe.get_doc({
 			"doctype": "ConnectFest OTP",
@@ -476,10 +636,10 @@ def send_email_otp(email=None, **kwargs):
 
 	return {
 		"status": "success",
-		"message": f"Verification code sent successfully to {target_email}. Please check your email inbox (valid for {exp_text}).",
-		"email": target_email,
+		"message": f"Verification code sent successfully to your email address. Please check your inbox (valid for {exp_text}).",
 		"expires_in_seconds": otp_expiry,
 		"expires_in": exp_text,
+		"remaining_requests": remaining_sends,
 		"is_scanner": is_scanner,
 	}
 
@@ -502,27 +662,37 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "OTP is required"}
 
-	# Check OTP from Frappe DocType 'ConnectFest OTP'
+	# Check if account is temporarily locked due to failed attempts
+	blocked, mins_left = is_otp_blocked(target_email)
+	if blocked:
+		frappe.local.response["http_status_code"] = 429
+		unit = "minute" if mins_left == 1 else "minutes"
+		return {
+			"status": "error",
+			"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+			"is_blocked": True,
+			"message": f"Too many incorrect attempts. Please try again after {mins_left} {unit}.",
+			"remaining_attempts": 0,
+		}
+
+	# Check OTP from Frappe DocType 'ConnectFest OTP' (check all active pending OTPs for this email)
 	now_dt = frappe.utils.now_datetime()
-	db_otp = frappe.db.sql("""
+	db_otps = frappe.db.sql("""
 		SELECT name, otp, expires_at, status
 		FROM `tabConnectFest OTP`
-		WHERE email = %s AND status = 'Pending'
-		ORDER BY creation DESC LIMIT 1
-	""", (target_email,), as_dict=True)
+		WHERE email = %s AND status = 'Pending' AND expires_at >= %s
+		ORDER BY creation DESC
+	""", (target_email, now_dt), as_dict=True)
 
 	is_valid = False
 	matched_record_name = None
 
-	if db_otp:
-		rec = db_otp[0]
-		exp_dt = frappe.utils.get_datetime(rec.expires_at) if rec.expires_at else None
-		if exp_dt and now_dt > exp_dt:
-			frappe.db.set_value("ConnectFest OTP", rec.name, "status", "Expired")
-			frappe.db.commit()
-		elif rec.otp == submitted_otp:
-			is_valid = True
-			matched_record_name = rec.name
+	if db_otps:
+		for rec in db_otps:
+			if str(rec.otp).strip() == submitted_otp:
+				is_valid = True
+				matched_record_name = rec.name
+				break
 
 	# Also check Redis cache
 	cache = frappe.cache()
@@ -531,34 +701,55 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	if isinstance(stored_otp, bytes):
 		stored_otp = stored_otp.decode("utf-8")
 
-	if not is_valid:
-		if stored_otp and stored_otp == submitted_otp:
-			is_valid = True
+	if not is_valid and stored_otp and str(stored_otp).strip() == submitted_otp:
+		is_valid = True
 
 	if not is_valid:
-		frappe.local.response["http_status_code"] = 400
-		if not stored_otp and not db_otp:
-			otp_expiry = get_otp_expiry_seconds()
-			exp_text = format_expiry_text(otp_expiry)
+		attempts = increment_failed_attempts(target_email)
+		remaining = MAX_OTP_ATTEMPTS - attempts
+
+		if remaining <= 0:
+			duration_mins = trigger_block(target_email)
+			frappe.local.response["http_status_code"] = 429
 			return {
 				"status": "error",
-				"message": f"OTP has expired! The OTP is only valid for {exp_text}. Please request a new OTP.",
+				"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+				"is_blocked": True,
+				"message": f"Too many incorrect attempts. Your account is temporarily locked for {duration_mins} minutes.",
+				"remaining_attempts": 0,
 			}
+
+		frappe.local.response["http_status_code"] = 400
+		if remaining == 1:
+			msg = "Invalid verification code. You have 1 attempt remaining before your account is temporarily locked."
+		else:
+			msg = f"Invalid verification code. You have {remaining} attempts remaining."
+
 		return {
 			"status": "error",
-			"message": "Invalid email OTP. Please check the 6-digit code sent to your email inbox.",
+			"error_code": "INVALID_OTP",
+			"message": msg,
+			"remaining_attempts": remaining,
 		}
 
-	# Mark OTP record as Verified in Frappe DocType
-	if matched_record_name:
-		try:
+	# Clear failed attempts on successful verification
+	clear_failed_attempts(target_email)
+
+	# Mark OTP record as Verified in Frappe DocType and expire any other pending OTPs for this email
+	try:
+		if matched_record_name:
 			frappe.db.set_value("ConnectFest OTP", matched_record_name, {
 				"status": "Verified",
 				"verified_at": now_dt
 			})
-			frappe.db.commit()
-		except Exception:
-			pass
+		frappe.db.sql("""
+			UPDATE `tabConnectFest OTP`
+			SET status = 'Expired'
+			WHERE email = %s AND status = 'Pending'
+		""", (target_email,))
+		frappe.db.commit()
+	except Exception:
+		pass
 
 	# Delete OTP from Redis cache after single use
 	try:
@@ -568,19 +759,19 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 
 	# Mark email as verified in Redis cache
 	verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
-	cache.setex(verified_key, EMAIL_VERIFIED_EXPIRY_SECONDS, "1")
+	cache.setex(verified_key, get_email_verified_validity_seconds(), "1")
 
 	# Check whether user is registered
 	is_reg, reg_info = is_email_registered(target_email)
 	if not is_reg:
-		frappe.local.response["http_status_code"] = 404
+		frappe.local.response["http_status_code"] = 200
 		return {
-			"status": "error",
-			"error_code": "NOT_REGISTERED",
+			"status": "success",
+			"is_verified": True,
 			"is_registered": False,
-			"message": "This email is not registered with ConnectFest! Please register as an Exhibitor or Visitor first.",
-			"email": target_email,
-			"next_action": "register",
+			"message": "Email address verified successfully! You may now proceed with registration.",
+			"roles": [],
+			"is_scanner": False,
 		}
 
 	# -------------------------------------------------------------
@@ -623,8 +814,7 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
-		"message": f"Email {target_email} verified successfully! You are logged in.",
-		"email": target_email,
+		"message": "Email verification successful! You are logged in.",
 		"roles": roles_arr,
 		"is_scanner": is_scanner,
 	}
@@ -643,10 +833,71 @@ def is_email_verified(email):
 	if is_cached:
 		return True
 
-	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-EMAIL_VERIFIED_EXPIRY_SECONDS)
+	validity_secs = get_email_verified_validity_seconds()
+	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-validity_secs)
 	db_verified = frappe.db.sql("""
 		SELECT name FROM `tabConnectFest OTP`
 		WHERE email = %s AND status = 'Verified' AND verified_at >= %s
 		LIMIT 1
 	""", (target_email, cutoff))
 	return bool(db_verified)
+
+
+def verify_otp_inline(email, submitted_otp):
+	"""
+	Validates submitted OTP for an email directly during registration if provided inline.
+	Returns True if valid, False otherwise.
+	Marks email as verified in cache and DocType on success.
+	"""
+	if not email or not submitted_otp:
+		return False
+	target_email = str(email).strip().lower()
+	submitted_otp = str(submitted_otp).strip()
+
+	cache = frappe.cache()
+	cache_key = cache.make_key(f"{EMAIL_OTP_CACHE_PREFIX}{target_email}")
+	stored_otp = cache.get(cache_key)
+	if isinstance(stored_otp, bytes):
+		stored_otp = stored_otp.decode("utf-8")
+
+	validity_secs = get_email_verified_validity_seconds()
+
+	if stored_otp and str(stored_otp).strip() == submitted_otp:
+		cache.delete(cache_key)
+		verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
+		cache.setex(verified_key, validity_secs, "1")
+		rec = frappe.db.sql("""
+			SELECT name FROM `tabConnectFest OTP`
+			WHERE email = %s AND status = 'Pending' ORDER BY creation DESC LIMIT 1
+		""", (target_email,), as_dict=True)
+		if rec:
+			frappe.db.set_value("ConnectFest OTP", rec[0]["name"], {
+				"status": "Verified",
+				"verified_at": frappe.utils.now_datetime()
+			})
+			frappe.db.commit()
+		return True
+
+	now_dt = frappe.utils.now_datetime()
+	db_otps = frappe.db.sql("""
+		SELECT name, otp, expires_at FROM `tabConnectFest OTP`
+		WHERE email = %s AND status = 'Pending' AND expires_at >= %s ORDER BY creation DESC
+	""", (target_email, now_dt), as_dict=True)
+
+	for r in db_otps:
+		if str(r.get("otp")).strip() == submitted_otp:
+			frappe.db.set_value("ConnectFest OTP", r["name"], {
+				"status": "Verified",
+				"verified_at": now_dt
+			})
+			frappe.db.commit()
+			try:
+				cache.delete(cache_key)
+			except Exception:
+				pass
+			verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
+			cache.setex(verified_key, validity_secs, "1")
+			clear_failed_attempts(target_email)
+			return True
+
+	return False

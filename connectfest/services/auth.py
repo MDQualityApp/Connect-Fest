@@ -353,6 +353,53 @@ def logout():
 	}
 
 
+def get_authenticated_user(data=None, **kwargs):
+	"""
+	Returns the authenticated user email if an active session exists (from session, cookie, sid, or Bearer token).
+	Returns None if Guest or unauthenticated.
+	"""
+	sess_user = getattr(frappe.session, "user", None)
+	if sess_user and sess_user != "Guest":
+		return sess_user
+
+	# Session resolution fallback for API clients / cross-origin requests (e.g. Hoppscotch / Mobile App)
+	req_sid = None
+	if data and isinstance(data, dict):
+		req_sid = data.get("sid") or data.get("token")
+	if not req_sid:
+		req_sid = kwargs.get("sid") or kwargs.get("token")
+	if not req_sid and hasattr(frappe, "local") and hasattr(frappe.local, "form_dict"):
+		req_sid = frappe.local.form_dict.get("sid") or frappe.local.form_dict.get("token")
+	if not req_sid and hasattr(frappe, "request") and frappe.request:
+		req_sid = (
+			frappe.get_request_header("sid")
+			or frappe.get_request_header("X-Frappe-Session-Id")
+			or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") else None)
+		)
+		if not req_sid:
+			auth_hdr = frappe.get_request_header("Authorization", "")
+			if auth_hdr.startswith("Bearer "):
+				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+
+	if req_sid and req_sid != "Guest":
+		try:
+			res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s AND status = 'Active' LIMIT 1", (req_sid,))
+			if res and res[0][0] and res[0][0] != "Guest":
+				return res[0][0]
+		except Exception:
+			pass
+		try:
+			session_cache = frappe.cache().hget("session", req_sid)
+			if session_cache and isinstance(session_cache, dict):
+				user_from_sid = session_cache.get("user")
+				if user_from_sid and user_from_sid != "Guest":
+					return user_from_sid
+		except Exception:
+			pass
+
+	return None
+
+
 @handle_api_errors("ConnectFest Profile Fetch Error")
 def get_current_user_profile(**kwargs):
 	"""
@@ -865,8 +912,24 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				"message": "Access Denied: This administrative portal is strictly restricted to System Administrators!"
 			}
 
+		from connectfest.services.otp import is_otp_blocked, increment_failed_attempts, clear_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
+
+		# Check if account is temporarily locked
+		blocked, mins_left = is_otp_blocked(usr)
+		if blocked:
+			frappe.local.response["http_status_code"] = 429
+			unit = "minute" if mins_left == 1 else "minutes"
+			return {
+				"status": "error",
+				"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+				"is_blocked": True,
+				"message": f"Too many incorrect 2FA attempts. Admin portal is temporarily locked for {mins_left} {unit}.",
+				"remaining_attempts": 0,
+			}
+
 		cache = frappe.cache()
 		cache_key = cache.make_key(f"{OTP_CACHE_PREFIX}admin:{usr}")
+		admin_email = frappe.db.get_value("User", usr, "email") or (usr if "@" in usr else None)
 
 		# Step 3: Check 2FA OTP
 		if not submitted_otp:
@@ -876,8 +939,25 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 
 			frappe.logger("connectfest").info(f"[ConnectFest Admin 2FA] OTP {otp_code} for admin {usr}")
 
+			# Store in DocType ConnectFest OTP for MariaDB audit logging
+			if admin_email:
+				try:
+					expires_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=120)
+					otp_doc = frappe.get_doc({
+						"doctype": "ConnectFest OTP",
+						"email": admin_email,
+						"registered_user": usr,
+						"otp": otp_code,
+						"status": "Pending",
+						"expires_at": expires_at,
+					})
+					otp_doc.flags.ignore_permissions = True
+					otp_doc.insert()
+					frappe.db.commit()
+				except Exception:
+					pass
+
 			# Send OTP directly to Admin Email
-			admin_email = frappe.db.get_value("User", usr, "email") or (usr if "@" in usr else None)
 			if admin_email:
 				try:
 					frappe.sendmail(
@@ -904,13 +984,50 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 
 		is_valid = bool(stored_otp and stored_otp == submitted_otp)
 
+		# Also check DB if cache miss
+		if not is_valid and admin_email:
+			db_rec = frappe.db.sql("""
+				SELECT name, otp, expires_at FROM `tabConnectFest OTP`
+				WHERE email = %s AND status = 'Pending' AND expires_at >= %s
+				ORDER BY creation DESC LIMIT 1
+			""", (admin_email, frappe.utils.now_datetime()), as_dict=True)
+			if db_rec and str(db_rec[0].get("otp")).strip() == submitted_otp:
+				is_valid = True
+				try:
+					frappe.db.set_value("ConnectFest OTP", db_rec[0]["name"], {
+						"status": "Verified",
+						"verified_at": frappe.utils.now_datetime()
+					})
+					frappe.db.commit()
+				except Exception:
+					pass
+
 		if not is_valid:
+			attempts = increment_failed_attempts(usr)
+			remaining = MAX_OTP_ATTEMPTS - attempts
+			if remaining <= 0:
+				duration_mins = trigger_block(usr)
+				frappe.local.response["http_status_code"] = 429
+				return {
+					"status": "error",
+					"error_code": "ACCOUNT_TEMPORARILY_BLOCKED",
+					"is_blocked": True,
+					"message": f"Too many incorrect 2FA attempts. Admin portal is temporarily locked for {duration_mins} minutes.",
+					"remaining_attempts": 0,
+				}
 			frappe.local.response["http_status_code"] = 400
+			if remaining == 1:
+				msg = "Invalid or expired Admin 2FA OTP. You have 1 attempt remaining before your account is temporarily locked."
+			else:
+				msg = f"Invalid or expired Admin 2FA OTP. You have {remaining} attempts remaining."
 			return {
 				"status": "error",
-				"message": "Invalid or expired Admin 2FA OTP. Please request a new OTP."
+				"error_code": "INVALID_OTP",
+				"message": msg,
+				"remaining_attempts": remaining,
 			}
 
+		clear_failed_attempts(usr)
 		try:
 			cache.delete(cache_key)
 		except Exception:

@@ -93,6 +93,16 @@ def register_bni_event(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
+	# Disallow registration if user is already logged in
+	from connectfest.services.auth import get_authenticated_user, is_admin_user
+	auth_user = get_authenticated_user(data, **kwargs)
+	if auth_user and not is_admin_user(auth_user):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "You are already logged in! Please log out before creating a new event registration.",
+		}
+
 	mobile_no = normalize_phone_number(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
 	email = safe_str(data.get("email")).strip().lower()
 	full_name = safe_str(data.get("full_name") or data.get("name"))
