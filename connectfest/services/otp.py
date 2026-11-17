@@ -506,6 +506,14 @@ def send_email_otp(email=None, **kwargs):
 				"message": "You are already logged in! Please log out to request a login OTP.",
 			}
 
+		# Admin login strictly requires password via Admin Portal
+		if is_admin_user(target_email):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "forbidden",
+				"message": "Administrator login strictly requires password authentication. Please use the Admin Login portal.",
+			}
+
 	# Check registration status scoped to registration type if provided
 	reg_type = str(
 		data.get("registration_type")
@@ -898,6 +906,15 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 			"message": "Email address verified successfully! You may now proceed with registration.",
 			"roles": roles_arr,
 			"is_scanner": is_scanner,
+		}
+
+	# Admin login strictly requires password via Admin Portal
+	from connectfest.services.auth import is_admin_user
+	if is_admin_user(target_email) or is_admin_user(uid):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": "Administrator login strictly requires password authentication. Please use the Admin Login portal.",
 		}
 
 	# -------------------------------------------------------------
