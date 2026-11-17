@@ -112,6 +112,10 @@ from connectfest.services.passes import (
 	get_scanned_users as _get_scanned_users,
 	admin_get_scanned_users as _admin_get_scanned_users,
 )
+from connectfest.services.settings import (
+	admin_get_settings as _admin_get_settings,
+	admin_update_settings as _admin_update_settings,
+)
 from connectfest.services.queue import (
 	trigger_async_flush,
 	flush_registration_queue,
@@ -1456,6 +1460,60 @@ def check_scanner(email=None, **kwargs):
 def is_scanner(email=None, **kwargs):
 	"""Alias for check_scanner_status."""
 	return _check_scanner_status(email=email, **kwargs)
+
+
+# ============================================================================
+# ConnectFest Settings Admin APIs
+# Scope: Stall Tier Pricing, Event Configuration, OTP Expiry (Seconds)
+# Strictly restricted to Administrator / System Manager
+# ============================================================================
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_settings(**kwargs):
+	"""
+	Admin API (GET): Fetch ConnectFest Settings for:
+	- Stall Tier Pricing
+	- Event Configuration (excluding dashboard url)
+	- OTP Expiry (Seconds) (excluding email verified validity)
+	"""
+	return _admin_get_settings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_admin_settings(**kwargs):
+	"""Alias for admin_get_settings."""
+	return _admin_get_settings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_settings(**kwargs):
+	"""
+	Admin API (POST): Update ConnectFest Settings for:
+	- Stall Tier Pricing
+	- Event Configuration (excluding dashboard url)
+	- OTP Expiry (Seconds) (excluding email verified validity)
+	"""
+	return _admin_update_settings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_admin_settings(**kwargs):
+	"""Alias for admin_update_settings."""
+	return _admin_update_settings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_settings(**kwargs):
+	"""
+	Unified Admin Settings API:
+	- Handles GET requests by fetching settings.
+	- Handles POST / PUT requests by updating settings.
+	"""
+	req_method = getattr(frappe.request, "method", "GET").upper() if hasattr(frappe, "request") and frappe.request else "GET"
+	if req_method in ["POST", "PUT", "PATCH"]:
+		return _admin_update_settings(**kwargs)
+	return _admin_get_settings(**kwargs)
+
 
 
 

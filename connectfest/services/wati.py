@@ -53,6 +53,9 @@ def get_wati_config():
 			or DEFAULT_WATI_HOST
 		).rstrip("/")
 
+	if host and "/api" in host:
+		host = host.split("/api")[0].rstrip("/")
+
 	if not token:
 		token = (
 			frappe.conf.get("wati_api_token")
