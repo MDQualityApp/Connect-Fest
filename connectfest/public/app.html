@@ -1241,7 +1241,10 @@
         <div class="stat-card">
           <div class="stat-label">Total Revenue</div>
           <div class="stat-value" id="stat-revenue" style="color: #34d399;">₹0</div>
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Verified Payments</div>
+          <div style="font-size: 12px; margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">
+            <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 7px; border-radius: 6px; font-weight: 600;" id="stat-revenue-online">Online: ₹0</span>
+            <span style="background: rgba(251, 191, 36, 0.15); color: #fbbf24; padding: 2px 7px; border-radius: 6px; font-weight: 600;" id="stat-revenue-cash">Cash: ₹0</span>
+          </div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Registered Visitors</div>
@@ -2069,7 +2072,13 @@
 
           document.getElementById('stat-stalls-booked').innerText = `${st.booked} / ${st.total}`;
           document.getElementById('stat-stalls-available').innerText = `${st.available} Available &bull; ${st.held} in Hold &bull; ${st.blocked} Blocked`;
-          document.getElementById('stat-revenue').innerText = `₹${st.total_revenue.toLocaleString()}`;
+          document.getElementById('stat-revenue').innerText = `₹${(st.total_revenue || 0).toLocaleString()}`;
+          if (document.getElementById('stat-revenue-online')) {
+            document.getElementById('stat-revenue-online').innerText = `Online: ₹${(st.online_revenue || 0).toLocaleString()}`;
+          }
+          if (document.getElementById('stat-revenue-cash')) {
+            document.getElementById('stat-revenue-cash').innerText = `Cash: ₹${(st.cash_revenue || 0).toLocaleString()}`;
+          }
           document.getElementById('stat-visitors').innerText = vis.total_registered;
           document.getElementById('stat-days-breakdown').innerText = `Both Days: ${vis.days_breakdown['Both days']} &bull; D1: ${vis.days_breakdown['Day 1']} &bull; D2: ${vis.days_breakdown['Day 2']}`;
           document.getElementById('stat-checked-in').innerText = vis.checked_in;

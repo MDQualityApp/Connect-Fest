@@ -1065,10 +1065,44 @@ def get_admin_dashboard_data(**kwargs):
 	available_stalls = total_stalls - booked_stalls - blocked_stalls - held_stalls
 
 	pricing = get_tier_pricing()
-	total_revenue = 0.0
+	paid_regs = frappe.get_all(
+		"ConnectFest Registration",
+		filters={"payment_status": "Paid"},
+		fields=["name", "amount", "payment_mode", "razorpay_payment_id", "stall_number"]
+	)
+	reg_by_stall = {r.stall_number: r for r in paid_regs if r.stall_number}
+	reg_by_id = {r.name: r for r in paid_regs}
+
+	cash_revenue = 0.0
+	online_revenue = 0.0
+	accounted_regs = set()
+
 	for s in stalls:
 		if s.status == "Booked":
-			total_revenue += flt(pricing.get(s.tier, s.price))
+			reg = reg_by_stall.get(s.stall_number) or (reg_by_id.get(s.booked_by_registration) if s.booked_by_registration else None)
+			if reg:
+				amt = flt(reg.amount) or flt(pricing.get(s.tier, s.price))
+				accounted_regs.add(reg.name)
+				pmode = (reg.payment_mode or "").strip().lower()
+				pay_id = (reg.razorpay_payment_id or "").strip()
+				if pmode in ("cash", "offline") or pay_id.startswith("CASH"):
+					cash_revenue += amt
+				else:
+					online_revenue += amt
+			else:
+				online_revenue += flt(pricing.get(s.tier, s.price))
+
+	for r in paid_regs:
+		if r.name not in accounted_regs:
+			amt = flt(r.amount)
+			pmode = (r.payment_mode or "").strip().lower()
+			pay_id = (r.razorpay_payment_id or "").strip()
+			if pmode in ("cash", "offline") or pay_id.startswith("CASH"):
+				cash_revenue += amt
+			else:
+				online_revenue += amt
+
+	total_revenue = cash_revenue + online_revenue
 
 	visitors_total = frappe.db.count("ConnectFest Visitor Registration")
 	visitors_checked_in = frappe.db.count("ConnectFest Visitor Registration", filters={"checked_in": 1})
@@ -1090,6 +1124,8 @@ def get_admin_dashboard_data(**kwargs):
 			"blocked": blocked_stalls,
 			"held": held_stalls,
 			"total_revenue": total_revenue,
+			"cash_revenue": cash_revenue,
+			"online_revenue": online_revenue,
 			"occupancy_rate": f"{(booked_stalls / total_stalls * 100):.1f}%" if total_stalls else "0%",
 		},
 		"visitor_stats": {
@@ -1177,7 +1213,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 		reg_list = frappe.get_all(
 			"ConnectFest Registration",
 			filters={"registration_id": ["in", booked_regs]},
-			fields=["registration_id", "payment_status", "payment_date", "amount", "razorpay_payment_id", "razorpay_order_id", "industry", "segment"],
+			fields=["registration_id", "payment_status", "payment_date", "payment_mode", "amount", "razorpay_payment_id", "razorpay_order_id", "industry", "segment"],
 		)
 		for r in reg_list:
 			reg_details[r.registration_id] = r
@@ -1188,6 +1224,8 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	total_blocked = 0
 	total_hold = 0
 	total_revenue = 0.0
+	cash_revenue = 0.0
+	online_revenue = 0.0
 
 	from connectfest.services.bni_members import get_non_bni_extra_percentage, is_crn_bni_restriction_enabled
 	non_bni_extra_percentage = get_non_bni_extra_percentage()
@@ -1212,7 +1250,15 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			total_blocked += 1
 		elif s.status == "Booked":
 			total_booked += 1
-			total_revenue += flt(s.price)
+			r_item = reg_details.get(s.booked_by_registration) if s.booked_by_registration else None
+			amt = flt(r_item.get("amount") if r_item else s.price) or flt(s.price)
+			total_revenue += amt
+			pmode = ((r_item.get("payment_mode") or "") if r_item else "").strip().lower()
+			pay_id = ((r_item.get("razorpay_payment_id") or "") if r_item else "").strip()
+			if pmode in ("cash", "offline") or pay_id.startswith("CASH"):
+				cash_revenue += amt
+			else:
+				online_revenue += amt
 		elif s.status == "Hold":
 			total_hold += 1
 		else:
@@ -1280,6 +1326,8 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"blocked": total_blocked,
 			"hold": total_hold,
 			"total_revenue": total_revenue,
+			"cash_revenue": cash_revenue,
+			"online_revenue": online_revenue,
 			"matching_stalls": filtered_count,
 			"non_bni_extra_percentage": non_bni_extra_percentage,
 			"is_crn_bni_restriction_enabled": crn_bni_restriction,
