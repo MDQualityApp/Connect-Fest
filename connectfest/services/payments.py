@@ -3,6 +3,7 @@ import hashlib
 import json
 import time
 import uuid
+import concurrent.futures
 from datetime import timedelta
 try:
 	import razorpay
@@ -22,6 +23,35 @@ from connectfest.services.common import (
 	handle_api_errors,
 )
 from connectfest.services.pricing import get_tier_pricing
+
+_notification_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+
+def _dispatch_confirmation_notifications(site_name, registration_id, stall_numbers, payment_mode, razorpay_payment_id, payment_date):
+	"""Asynchronously dispatches WhatsApp & email confirmation with PDF without blocking web HTTP thread."""
+	try:
+		if site_name:
+			frappe.init(site=site_name)
+			frappe.connect()
+		from connectfest.services.notifications import send_booking_confirmation_email
+		send_booking_confirmation_email(
+			registration_id=registration_id,
+			stall_numbers=stall_numbers,
+			payment_mode=payment_mode,
+			razorpay_payment_id=razorpay_payment_id,
+			payment_date=payment_date,
+		)
+	except Exception as e:
+		try:
+			frappe.logger("connectfest").warning(f"[Async Booking Notification Error] {str(e)}")
+		except Exception:
+			pass
+	finally:
+		try:
+			frappe.destroy()
+		except Exception:
+			pass
+
 
 
 def get_razorpay_config():
@@ -918,18 +948,30 @@ def verify_razorpay_payment(**kwargs):
 		except Exception:
 			pass
 
-	# Trigger Booking Confirmation Email to Attendee
+	# Trigger Booking Confirmation Email & WhatsApp asynchronously
+	site_name = getattr(getattr(frappe, "local", None), "site", "connectfest.localhost") or "connectfest.localhost"
 	try:
-		from connectfest.services.notifications import send_booking_confirmation_email
-		send_booking_confirmation_email(
-			registration_id=reg_id,
-			stall_numbers=stall_num,
-			payment_mode="Online",
-			razorpay_payment_id=payment_id,
-			payment_date=now_str
+		_notification_executor.submit(
+			_dispatch_confirmation_notifications,
+			site_name,
+			reg_id,
+			stall_num,
+			"Online",
+			payment_id,
+			now_str,
 		)
 	except Exception:
-		pass
+		try:
+			from connectfest.services.notifications import send_booking_confirmation_email
+			send_booking_confirmation_email(
+				registration_id=reg_id,
+				stall_numbers=stall_num,
+				payment_mode="Online",
+				razorpay_payment_id=payment_id,
+				payment_date=now_str
+			)
+		except Exception:
+			pass
 
 	if hasattr(frappe.local, "message_log"):
 		frappe.local.message_log = [m for m in getattr(frappe.local, "message_log", []) if "Email Account" not in str(m)]
@@ -1812,18 +1854,30 @@ def admin_confirm_payment(**kwargs):
 	except Exception:
 		pass
 
-	# Send Confirmation Email
+	# Send Confirmation Email & WhatsApp asynchronously (sub-30ms HTTP response)
+	site_name = getattr(getattr(frappe, "local", None), "site", "connectfest.localhost") or "connectfest.localhost"
 	try:
-		from connectfest.services.notifications import send_booking_confirmation_email
-		send_booking_confirmation_email(
-			registration_id=actual_reg_id,
-			stall_numbers=chosen_stall,
-			payment_mode=payment_mode,
-			razorpay_payment_id=ref_id,
-			payment_date=now_str
+		_notification_executor.submit(
+			_dispatch_confirmation_notifications,
+			site_name,
+			actual_reg_id,
+			chosen_stall,
+			payment_mode,
+			ref_id,
+			now_str,
 		)
 	except Exception:
-		pass
+		try:
+			from connectfest.services.notifications import send_booking_confirmation_email
+			send_booking_confirmation_email(
+				registration_id=actual_reg_id,
+				stall_numbers=chosen_stall,
+				payment_mode=payment_mode,
+				razorpay_payment_id=ref_id,
+				payment_date=now_str
+			)
+		except Exception:
+			pass
 
 	if hasattr(frappe.local, "message_log"):
 		frappe.local.message_log = [m for m in getattr(frappe.local, "message_log", []) if "Email Account" not in str(m)]

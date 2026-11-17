@@ -338,23 +338,41 @@ def send_booking_confirmation_whatsapp(registration_id=None, mobile_no=None, **k
 		receipt_id = reg_data.get("razorpay_payment_id") or reg_data.get("receipt_id") or "N/A"
 		payment_date = reg_data.get("payment_date") or now_datetime().strftime("%d %b %Y, %I:%M %p")
 
+		# Fetch dynamic event details from ConnectFest Settings
+		event_name = "ConnectFest 2027"
+		event_dates = "20 & 21 Feb 2027"
+		event_venue = "Chennai Trade Centre, Nandambakkam"
+		try:
+			settings = frappe.get_single("ConnectFest Settings")
+			event_name = settings.get("event_name") or event_name
+			event_dates = settings.get("event_dates") or event_dates
+			event_venue = settings.get("event_venue") or event_venue
+		except Exception:
+			pass
+
 		# Prepare rich parameter list covering both named & indexed placeholders
 		custom_params = [
 			{"name": "name", "value": full_name},
 			{"name": "full_name", "value": full_name},
 			{"name": "company_name", "value": company_name},
+			{"name": "event_name", "value": event_name},
 			{"name": "stall_number", "value": str(stall_numbers)},
 			{"name": "stall_numbers", "value": str(stall_numbers)},
 			{"name": "amount", "value": f"₹{amount:,.2f}"},
-			{"name": "registration_id", "value": str(reg_id)},
 			{"name": "receipt_id", "value": str(receipt_id)},
+			{"name": "event_dates", "value": str(event_dates)},
+			{"name": "venue", "value": str(event_venue)},
 			{"name": "payment_date", "value": str(payment_date)},
-			# Positional variables for Meta templates ({{1}}, {{2}}, {{3}}, ...)
+			# Positional variables for New v2 Template:
+			# {{1}} = Exhibitor Name, {{2}} = Event Name, {{3}} = Stall Number,
+			# {{4}} = Amount Paid, {{5}} = Receipt / Ref ID, {{6}} = Event Dates, {{7}} = Venue
 			{"name": "1", "value": full_name},
-			{"name": "2", "value": str(stall_numbers)},
-			{"name": "3", "value": f"₹{amount:,.2f}"},
-			{"name": "4", "value": str(reg_id)},
+			{"name": "2", "value": event_name},
+			{"name": "3", "value": str(stall_numbers)},
+			{"name": "4", "value": f"₹{amount:,.2f}"},
 			{"name": "5", "value": str(receipt_id)},
+			{"name": "6", "value": str(event_dates)},
+			{"name": "7", "value": str(event_venue)},
 		]
 
 		result = send_wati_template_message(

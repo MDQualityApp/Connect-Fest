@@ -23,6 +23,7 @@
   "event_name",
   "event_dates",
   "event_venue",
+  "event_timings",
   "frontend_dashboard_url",
   "crn_bni_only",
   "non_bni_extra_percentage",
@@ -135,6 +136,12 @@
    "fieldname": "event_venue",
    "fieldtype": "Data",
    "label": "Venue"
+  },
+  {
+   "default": "9:00 AM - 7:00 PM",
+   "fieldname": "event_timings",
+   "fieldtype": "Data",
+   "label": "Event Timings"
   },
   {
    "description": "Custom URL for 'View Attendee Dashboard' button in confirmation emails (e.g. https://connectfest.in/dashboard or /dashboard). Defaults to site home page if left blank.",

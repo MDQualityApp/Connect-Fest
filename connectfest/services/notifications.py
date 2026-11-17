@@ -92,14 +92,28 @@ def build_confirmation_html(data):
 	payment_id = data.get("razorpay_payment_id") or data.get("receipt_id") or "N/A"
 	payment_date = data.get("payment_date") or now_datetime().strftime("%d %b %Y, %I:%M %p")
 
+	# Fetch dynamic event details from ConnectFest Settings
+	event_name = "ConnectFest 2027"
+	event_dates = "20 & 21 Feb 2027"
+	event_venue = "Chennai Trade Centre, Nandambakkam"
+	event_timings = "9:00 AM - 7:00 PM"
+	try:
+		settings = frappe.get_single("ConnectFest Settings")
+		event_name = settings.get("event_name") or event_name
+		event_dates = settings.get("event_dates") or event_dates
+		event_venue = settings.get("event_venue") or event_venue
+		event_timings = settings.get("event_timings") or event_timings
+	except Exception:
+		pass
+
 	base_url = get_base_url()
 	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
 	dashboard_url = get_attendee_dashboard_url()
 
 	return f"""
 	<div style="{get_email_header_style()}">
-		<div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 32px 24px; text-align: center; color: #ffffff;">
-			<div style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #c7d2fe; margin-bottom: 8px;">ConnectFest 2027</div>
+		<div style="background-color: #4f46e5; background-image: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 32px 24px; text-align: center; color: #ffffff; border-radius: 12px 12px 0 0;">
+			<div style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #c7d2fe; margin-bottom: 8px;">{event_name}</div>
 			<h1 style="margin: 0; font-size: 26px; font-weight: 800; color: #ffffff;">Booking Confirmed! 🎉</h1>
 			<p style="margin: 8px 0 0; font-size: 15px; color: #e0e7ff;">Your exhibitor stall is reserved & ready</p>
 		</div>
@@ -109,17 +123,13 @@ def build_confirmation_html(data):
 				Dear <strong>{full_name}</strong>{company_str},
 			</p>
 			<p style="font-size: 15px; margin: 0 0 24px; color: #475569;">
-				Thank you! Your payment has been received successfully and your stall booking for <strong>ConnectFest 2027</strong> is officially confirmed.
+				Congratulations! Your payment has been received successfully and your stall booking for <strong>{event_name}</strong> is officially confirmed.
 			</p>
 
 			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
 				<h3 style="margin: 0 0 16px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700;">Booking & Payment Receipt</h3>
 				<table style="width: 100%; border-collapse: collapse; font-size: 14px;">
 					<tr>
-						<td style="padding: 8px 0; color: #64748b;">Registration ID:</td>
-						<td style="padding: 8px 0; font-weight: 600; color: #0f172a; text-align: right;">{reg_id}</td>
-					</tr>
-					<tr style="border-top: 1px solid #f1f5f9;">
 						<td style="padding: 8px 0; color: #64748b;">Stall Number(s):</td>
 						<td style="padding: 8px 0; font-weight: 700; color: #4f46e5; text-align: right; font-size: 16px;">{stall_numbers}</td>
 					</tr>
@@ -152,10 +162,10 @@ def build_confirmation_html(data):
 
 			<div style="background: #eef2ff; border-left: 4px solid #4f46e5; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
 				<h4 style="margin: 0 0 6px; color: #3730a3; font-size: 14px; font-weight: 700;">Event Venue & Schedule</h4>
-				<p style="margin: 0; font-size: 13px; color: #4338ca;">
-					📅 <strong>Dates:</strong> 20 & 21 February 2027<br>
-					📍 <strong>Venue:</strong> Chennai Trade Centre, Nandambakkam, Chennai, Tamil Nadu<br>
-					⏰ <strong>Exhibitor Entry:</strong> 08:30 AM onwards
+				<p style="margin: 0; font-size: 13px; color: #4338ca; line-height: 1.6;">
+					📅 <strong>Dates:</strong> {event_dates}<br>
+					📍 <strong>Venue:</strong> {event_venue}<br>
+					⏰ <strong>Timings:</strong> {event_timings}
 				</p>
 			</div>
 
@@ -170,7 +180,7 @@ def build_confirmation_html(data):
 		</div>
 
 		<div style="background: #f1f5f9; padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-			<p style="margin: 0;">ConnectFest 2027 • The Premier Business & Innovation Expo</p>
+			<p style="margin: 0;">{event_name} • The Premier Business & Innovation Expo</p>
 		</div>
 	</div>
 	"""
@@ -185,7 +195,7 @@ def build_failure_html(data):
 
 	return f"""
 	<div style="{get_email_header_style()}">
-		<div style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 32px 24px; text-align: center; color: #ffffff;">
+		<div style="background-color: #dc2626; background-image: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 32px 24px; text-align: center; color: #ffffff; border-radius: 12px 12px 0 0;">
 			<div style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #fecaca; margin-bottom: 8px;">ConnectFest 2027</div>
 			<h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff;">Payment Failed ⚠️</h1>
 			<p style="margin: 8px 0 0; font-size: 15px; color: #fee2e2;">Your stall booking could not be confirmed</p>
