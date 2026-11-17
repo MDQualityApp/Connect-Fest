@@ -98,6 +98,7 @@ from connectfest.services.payments import (
 	get_razorpay_config,
 	create_razorpay_order as _create_razorpay_order,
 	verify_razorpay_payment as _verify_razorpay_payment,
+	handle_razorpay_webhook as _handle_razorpay_webhook,
 	preview_payment as _preview_payment,
 	checkout as _checkout,
 	finalize_payment as _finalize_payment,
@@ -312,6 +313,18 @@ def finalize_payment(**kwargs):
 def verify_razorpay_payment(**kwargs):
 	"""Signature verification core for attendee online payments."""
 	return _verify_razorpay_payment(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def razorpay_webhook(**kwargs):
+	"""Public Webhook endpoint for Razorpay payment and order events."""
+	return _handle_razorpay_webhook(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def handle_razorpay_webhook(**kwargs):
+	"""Alias for razorpay_webhook."""
+	return _handle_razorpay_webhook(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

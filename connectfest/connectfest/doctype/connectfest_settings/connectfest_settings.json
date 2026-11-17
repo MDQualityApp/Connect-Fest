@@ -7,6 +7,7 @@
  "field_order": [
   "razorpay_section",
   "razorpay_key_id",
+  "razorpay_merchant_id",
   "razorpay_key_secret",
   "column_break_rzp",
   "razorpay_webhook_secret",
@@ -46,6 +47,11 @@
    "fieldname": "razorpay_key_id",
    "fieldtype": "Data",
    "label": "Razorpay Key ID"
+  },
+  {
+   "fieldname": "razorpay_merchant_id",
+   "fieldtype": "Data",
+   "label": "Razorpay Merchant ID"
   },
   {
    "fieldname": "razorpay_key_secret",

@@ -685,7 +685,6 @@ def get_current_user_profile(**kwargs):
 			"razorpay_order_id": sb.razorpay_order_id,
 			"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
 			"booking_status": status_desc,
-			"badge_qr_payload": f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_paid else None,
 			"created_at": str(sb.creation),
 		})
 
@@ -702,7 +701,6 @@ def get_current_user_profile(**kwargs):
 			"status": v.status or "Registered",
 			"checked_in": int(v.checked_in or 0),
 			"checked_in_at": str(v.checked_in_at or ""),
-			"qr_payload": v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}",
 			"created_at": str(v.creation),
 		})
 
@@ -726,7 +724,6 @@ def get_current_user_profile(**kwargs):
 			"attended": chk_in,
 			"checked_in_at": str(e.checked_in_at or "") if chk_in else None,
 			"attended_at": str(e.checked_in_at or "") if chk_in else None,
-			"qr_payload": e.qr_payload or f"BNIEVENT:{e.pass_code}:{e.email}",
 			"created_at": str(e.creation),
 		})
 
