@@ -8,6 +8,8 @@ from frappe.model.document import Document
 class ConnectFestSettings(Document):
 	def on_update(self):
 		try:
+			from connectfest.services.settings import _sync_pricing_to_stalls_and_tiers
+			_sync_pricing_to_stalls_and_tiers(self)
 			from connectfest.services.stalls import invalidate_stalls_cache
 			from connectfest.services.pricing import invalidate_pricing_cache
 			from connectfest.services.bni_members import clear_bni_member_cache

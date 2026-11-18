@@ -1878,6 +1878,69 @@
           sponsor_ids: ["SPON-00127"]
         }, null, 2)
       },
+      become_a_sponsor: {
+        id: "become_a_sponsor",
+        cat: "sponsor",
+        title: "9.9 Public: Become a Sponsor Registration Form (with IP Protection)",
+        label: "Become a Sponsor (Public)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.become_a_sponsor`,
+        hasBody: true,
+        body: JSON.stringify({
+          company_name: "FinTech Global Solutions",
+          name: "Suresh Raman",
+          mobile: "9876543210",
+          email: "suresh@fintechglobal.com",
+          logo: "/files/fintech_logo.png",
+          website_url: "https://fintechglobal.example.com",
+          sponsor_category: "Associate Sponsor",
+          sponsored_for: "Official Payment Gateway & Fintech Partner"
+        }, null, 2)
+      },
+      admin_get_sponsor_registrations: {
+        id: "admin_get_sponsor_registrations",
+        cat: "sponsor",
+        title: "9.10 Admin: List Sponsor Registration Applications (Pending, Accepted, Rejected, Blocked)",
+        label: "Get Sponsor Applications",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_sponsor_registrations?status=All&page=1&limit=50`,
+        hasBody: false
+      },
+      admin_action_sponsor_registration: {
+        id: "admin_action_sponsor_registration",
+        cat: "sponsor",
+        title: "9.11 Admin: Process Sponsor Application (Accept, Reject, or Block IP)",
+        label: "Review Application (Accept/Reject/Block)",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_action_sponsor_registration`,
+        hasBody: true,
+        body: JSON.stringify({
+          registration_id: "SPON-REG-00001",
+          action: "accept",
+          is_featured: 0
+        }, null, 2)
+      },
+      admin_get_blocked_ips: {
+        id: "admin_get_blocked_ips",
+        cat: "sponsor",
+        title: "9.12 Admin: List All Blocked IP Addresses",
+        label: "Get Blocked IPs",
+        method: "GET",
+        url: `${HOST}/api/method/connectfest.api.admin_get_blocked_ips`,
+        hasBody: false
+      },
+      admin_unblock_ip: {
+        id: "admin_unblock_ip",
+        cat: "sponsor",
+        title: "9.13 Admin: Unblock an IP Address",
+        label: "Unblock IP Address",
+        method: "POST",
+        url: `${HOST}/api/method/connectfest.api.admin_unblock_ip`,
+        hasBody: true,
+        body: JSON.stringify({
+          ip_address: "192.0.2.77"
+        }, null, 2)
+      },
 
       // ==========================================
       // 10. REPORTS & EXPORTS (CSV & PDF DOWNLOADS)

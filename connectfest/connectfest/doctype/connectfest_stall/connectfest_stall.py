@@ -96,6 +96,8 @@ class ConnectFestStall(Document):
 
 	def on_update(self):
 		try:
+			from connectfest.services.stalls import invalidate_stalls_cache
+			invalidate_stalls_cache()
 			from connectfest.services.realtime import broadcast_stall_update
 			broadcast_stall_update(
 				self.stall_number or self.name,

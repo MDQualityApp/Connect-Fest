@@ -1,0 +1,165 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:SPON-REG-{#####}",
+ "creation": "2026-11-18 12:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "registration_id",
+  "company_name",
+  "contact_person",
+  "email",
+  "mobile_no",
+  "logo",
+  "website_url",
+  "sponsor_category",
+  "sponsored_for",
+  "review_section",
+  "status",
+  "ip_address",
+  "action_by",
+  "action_at",
+  "created_sponsor"
+ ],
+ "fields": [
+  {
+   "fieldname": "registration_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Registration ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company Name",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "contact_person",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Contact Person / Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email Address",
+   "options": "Email",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "mobile_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Mobile Number",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "logo",
+   "fieldtype": "Attach Image",
+   "in_list_view": 1,
+   "label": "Company Logo"
+  },
+  {
+   "fieldname": "website_url",
+   "fieldtype": "Data",
+   "label": "Company Website URL"
+  },
+  {
+   "default": "Associate Sponsor",
+   "fieldname": "sponsor_category",
+   "fieldtype": "Data",
+   "label": "Preferred Tier / Category"
+  },
+  {
+   "default": "Event Sponsor",
+   "fieldname": "sponsored_for",
+   "fieldtype": "Data",
+   "label": "Sponsored For / Purpose"
+  },
+  {
+   "fieldname": "review_section",
+   "fieldtype": "Section Break",
+   "label": "Admin Review & Status"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nAccepted\nRejected\nBlocked",
+   "search_index": 1
+  },
+  {
+   "fieldname": "ip_address",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Client IP Address",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "action_by",
+   "fieldtype": "Data",
+   "label": "Action Taken By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "action_at",
+   "fieldtype": "Datetime",
+   "label": "Action Taken At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created_sponsor",
+   "fieldtype": "Link",
+   "label": "Created Sponsor",
+   "options": "ConnectFest Sponsor",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-18 12:30:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest Sponsor Registration",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "company_name",
+ "search_fields": "company_name,contact_person,email,mobile_no,ip_address",
+ "track_changes": 1
+}

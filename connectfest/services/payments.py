@@ -528,12 +528,18 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	user_email = record.get("email") or sess_user
 	is_bni_flag = record.get("is_bni_member")
 
+	# Stall-specific custom price override:
+	# If an individual stall has a custom price on its record that differs from the default tier price, respect the stall's custom price!
+	stall_price_val = flt(stall_doc.price) if stall_doc.price is not None else 0
+	tier_price_val = flt(tier_info["price"])
+	effective_base_price = stall_price_val if (stall_price_val > 0 and stall_price_val != tier_price_val) else tier_price_val
+
 	pricing = calculate_stall_price_for_user(
 		tier=stall_doc.tier,
 		user_mobile=user_mob,
 		user_email=user_email,
 		is_bni_member=is_bni_flag,
-		custom_base_price=tier_info["price"]
+		custom_base_price=effective_base_price
 	)
 	base_amount = pricing["base_amount"]
 	gst_pct = pricing["gst_percent"]

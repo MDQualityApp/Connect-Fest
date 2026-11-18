@@ -149,6 +149,17 @@ from connectfest.services.sponsors import (
 	admin_toggle_sponsor_status as _admin_toggle_sponsor_status,
 	setup_default_sponsors as _setup_default_sponsors,
 	seed_default_sponsors as _seed_default_sponsors,
+	register_sponsor_request as _register_sponsor_request,
+	become_a_sponsor as _become_a_sponsor,
+	admin_action_sponsor_registration as _admin_action_sponsor_registration,
+	admin_accept_sponsor_registration as _admin_accept_sponsor_registration,
+	admin_reject_sponsor_registration as _admin_reject_sponsor_registration,
+	admin_block_sponsor_registration as _admin_block_sponsor_registration,
+	admin_get_sponsor_registrations as _admin_get_sponsor_registrations,
+	admin_get_sponsor_registration_details as _admin_get_sponsor_registration_details,
+	admin_get_blocked_ips as _admin_get_blocked_ips,
+	admin_block_ip as _admin_block_ip,
+	admin_unblock_ip as _admin_unblock_ip,
 )
 from connectfest.services.notifications import (
 	send_booking_confirmation_email as _send_booking_confirmation_email,
@@ -884,6 +895,70 @@ def setup_default_sponsors():
 	return _setup_default_sponsors()
 
 seed_default_sponsors = setup_default_sponsors
+
+
+# --- Become a Sponsor & Sponsor Registration Workflow ---
+@frappe.whitelist(allow_guest=True)
+def register_sponsor_request(**kwargs):
+	"""Public API: Form submission to register for Become a Sponsor (with IP block check)."""
+	return _register_sponsor_request(**kwargs)
+
+
+become_a_sponsor = register_sponsor_request
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_action_sponsor_registration(registration_id=None, action=None, **kwargs):
+	"""Admin API: Accept, Reject, or Block a sponsor registration application."""
+	return _admin_action_sponsor_registration(registration_id=registration_id, action=action, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_accept_sponsor_registration(registration_id=None, **kwargs):
+	"""Admin API: Accept sponsor application and create ConnectFest Sponsor record."""
+	return _admin_accept_sponsor_registration(registration_id=registration_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_reject_sponsor_registration(registration_id=None, **kwargs):
+	"""Admin API: Reject sponsor application (does not create sponsor)."""
+	return _admin_reject_sponsor_registration(registration_id=registration_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_block_sponsor_registration(registration_id=None, **kwargs):
+	"""Admin API: Block sponsor application and permanently block client IP."""
+	return _admin_block_sponsor_registration(registration_id=registration_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_sponsor_registrations(**kwargs):
+	"""Admin API: List and filter sponsor registrations with summary counts."""
+	return _admin_get_sponsor_registrations(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_sponsor_registration_details(registration_id=None, **kwargs):
+	"""Admin API: Get single sponsor registration details."""
+	return _admin_get_sponsor_registration_details(registration_id=registration_id, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_blocked_ips(**kwargs):
+	"""Admin API: View all blocked IP addresses."""
+	return _admin_get_blocked_ips(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_unblock_ip(ip_address=None, **kwargs):
+	"""Admin API: Unblock an IP address so it can submit requests again."""
+	return _admin_unblock_ip(ip_address=ip_address, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_block_ip(ip_address=None, **kwargs):
+	"""Admin API: Manually block an IP address."""
+	return _admin_block_ip(ip_address=ip_address, **kwargs)
 
 
 # ==============================================================================

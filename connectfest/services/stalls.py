@@ -364,7 +364,13 @@ def get_stalls(**kwargs):
 				tier_summary[t] = {"total": 0, "available": 0, "booked": 0, "price": flt(pricing.get(t, stall.price))}
 
 			tier_price = pricing.get(t, stall.price)
-			stall["price"] = tier_price
+			# Stall-specific custom price override:
+			# If an individual stall has a custom price configured by admin that differs from the default tier price, respect the stall's price!
+			stall_custom_price = flt(stall.get("price", 0))
+			if stall_custom_price > 0 and stall_custom_price != flt(tier_price):
+				stall["price"] = stall_custom_price
+			else:
+				stall["price"] = tier_price
 			stall["crn"] = cint(stall.get("crn", 0))
 
 			# Release expired hold
@@ -755,7 +761,9 @@ def hold_stall(stall_number=None, **kwargs):
 		invalidate_stalls_cache()
 
 		dynamic_prices = get_tier_pricing()
-		current_price = dynamic_prices.get(stall.tier, stall.price)
+		tier_p = dynamic_prices.get(stall.tier, stall.price)
+		stall_custom_p = flt(stall.price) if stall.price is not None else 0
+		current_price = stall_custom_p if (stall_custom_p > 0 and stall_custom_p != flt(tier_p)) else tier_p
 
 		# Broadcast Real-Time WebSocket event to all connected floor maps
 		try:

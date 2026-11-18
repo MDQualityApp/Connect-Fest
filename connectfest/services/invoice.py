@@ -2,7 +2,10 @@ import os
 import base64
 import frappe
 from frappe.utils import now_datetime, formatdate, flt
-import weasyprint
+try:
+	import weasyprint
+except (ImportError, OSError):
+	weasyprint = None
 
 # Preload template images as data URIs for fast, reliable PDF compilation
 _TEMPLATES_DIR = os.path.join(
@@ -380,9 +383,25 @@ def generate_stall_allocation_html(data):
 
 
 def generate_stall_allocation_pdf_bytes(data):
-	"""Compiles high-resolution PDF bytes using WeasyPrint."""
+	"""Compiles high-resolution PDF bytes using WeasyPrint with graceful fallback."""
 	html_content = generate_stall_allocation_html(data)
-	return weasyprint.HTML(string=html_content).write_pdf()
+	if weasyprint:
+		try:
+			return weasyprint.HTML(string=html_content).write_pdf()
+		except Exception as e:
+			try:
+				frappe.logger("connectfest").warning(f"[WeasyPrint PDF Warning] {str(e)}")
+			except Exception:
+				pass
+
+	try:
+		from frappe.utils.pdf import get_pdf
+		return get_pdf(html_content)
+	except Exception as e:
+		frappe.throw(
+			"PDF compilation failed: The server is missing required PDF rendering libraries ('libpango-1.0-0' / WeasyPrint). "
+			"Please run 'sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libharfbuzz0b' on the server."
+		)
 
 
 def get_registration_allocation_data(registration_id=None, mobile_no=None, email=None):

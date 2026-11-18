@@ -1,7 +1,7 @@
 import json
 import uuid
 import frappe
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, now_datetime, validate_email_address
 from connectfest.services.common import (
 	extract_request_data,
 	parse_boolean,
@@ -61,7 +61,7 @@ def _format_sponsor_doc(doc_or_dict):
 		is_active = cint(doc_or_dict.is_active)
 		is_featured = cint(doc_or_dict.is_featured)
 		display_order = cint(doc_or_dict.display_order)
-		description = doc_or_dict.description or ""
+		description = doc_or_dict.get("description") or ""
 		contact_person = doc_or_dict.contact_person or ""
 		email = doc_or_dict.email or ""
 		phone = doc_or_dict.phone or ""
@@ -101,6 +101,173 @@ def invalidate_sponsors_cache():
 		cache.delete(cache.make_key(SPONSORS_CACHE_KEY))
 	except Exception:
 		pass
+
+
+BLOCKED_IPS_CACHE_KEY = "connectfest:blocked_ips_set"
+
+
+def invalidate_blocked_ips_cache():
+	"""Invalidates Redis cache for blocked IPs."""
+	try:
+		cache = frappe.cache()
+		cache.delete(cache.make_key(BLOCKED_IPS_CACHE_KEY))
+	except Exception:
+		pass
+
+
+def get_client_ip(override_ip=None):
+	"""Extracts client IP safely, prioritizing override (for tests) or request headers."""
+	if override_ip and str(override_ip).strip():
+		return str(override_ip).strip()
+	ip = None
+	if getattr(frappe, "request", None):
+		x_forwarded = frappe.request.headers.get("X-Forwarded-For")
+		if x_forwarded:
+			ip = str(x_forwarded).split(",")[0].strip()
+		elif hasattr(frappe.request, "remote_addr") and frappe.request.remote_addr:
+			ip = str(frappe.request.remote_addr).strip()
+	if not ip and getattr(frappe, "local", None) and getattr(frappe.local, "request_ip", None):
+		ip = str(frappe.local.request_ip).strip()
+	return ip or "127.0.0.1"
+
+
+def is_ip_blocked(ip):
+	"""Checks whether an IP is currently blocked."""
+	if not ip:
+		return False
+	ip = str(ip).strip()
+
+	try:
+		cache = frappe.cache()
+		cached = cache.get(cache.make_key(BLOCKED_IPS_CACHE_KEY))
+		if cached:
+			if isinstance(cached, bytes):
+				cached = cached.decode("utf-8")
+			b_set = set(json.loads(cached) if isinstance(cached, str) else cached)
+			return ip in b_set
+	except Exception:
+		pass
+
+	try:
+		blocked_ips = frappe.db.sql_list("SELECT ip_address FROM `tabConnectFest Blocked IP` WHERE is_active = 1")
+		try:
+			cache = frappe.cache()
+			cache.setex(cache.make_key(BLOCKED_IPS_CACHE_KEY), 300, json.dumps(blocked_ips))
+		except Exception:
+			pass
+		return ip in blocked_ips
+	except Exception:
+		return False
+
+
+def block_ip_address(ip, reason="Blocked by Administrator", blocked_from=None, blocked_by=None):
+	"""Adds or activates an IP in the blocked list."""
+	if not ip:
+		return None
+	ip = str(ip).strip()
+	existing_name = frappe.db.get_value("ConnectFest Blocked IP", {"ip_address": ip}, "name")
+	if existing_name:
+		doc = frappe.get_doc("ConnectFest Blocked IP", existing_name)
+		doc.is_active = 1
+		doc.reason = reason or doc.reason
+		doc.blocked_from = blocked_from or doc.blocked_from
+		doc.blocked_by = blocked_by or frappe.session.user or "Administrator"
+		doc.blocked_at = frappe.utils.now_datetime()
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc({
+			"doctype": "ConnectFest Blocked IP",
+			"ip_address": ip,
+			"is_active": 1,
+			"reason": reason,
+			"blocked_from": blocked_from,
+			"blocked_by": blocked_by or frappe.session.user or "Administrator",
+			"blocked_at": frappe.utils.now_datetime(),
+		})
+		doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	invalidate_blocked_ips_cache()
+	return doc
+
+
+def unblock_ip_address(ip):
+	"""Unblocks an IP address."""
+	if not ip:
+		return False
+	ip = str(ip).strip()
+	frappe.db.sql(
+		"UPDATE `tabConnectFest Blocked IP` SET is_active = 0 WHERE ip_address = %s",
+		(ip,)
+	)
+	frappe.db.commit()
+	invalidate_blocked_ips_cache()
+	return True
+
+
+def _format_sponsor_registration(doc_or_dict):
+	"""Standardizes sponsor registration output dictionary for API and frontend JSON consumption."""
+	if isinstance(doc_or_dict, dict):
+		name = doc_or_dict.get("name")
+		reg_id = doc_or_dict.get("registration_id") or name
+		company_name = doc_or_dict.get("company_name") or ""
+		contact_person = doc_or_dict.get("contact_person") or ""
+		email = doc_or_dict.get("email") or ""
+		mobile_no = doc_or_dict.get("mobile_no") or ""
+		logo = doc_or_dict.get("logo") or ""
+		website_url = doc_or_dict.get("website_url") or ""
+		sponsor_category = doc_or_dict.get("sponsor_category") or "Associate Sponsor"
+		sponsored_for = doc_or_dict.get("sponsored_for") or "Event Sponsor"
+		status = doc_or_dict.get("status") or "Pending"
+		ip_address = doc_or_dict.get("ip_address") or ""
+		action_by = doc_or_dict.get("action_by") or ""
+		action_at = str(doc_or_dict.get("action_at") or "")
+		created_sponsor = doc_or_dict.get("created_sponsor") or ""
+		creation = str(doc_or_dict.get("creation") or "")
+		modified = str(doc_or_dict.get("modified") or "")
+	else:
+		name = doc_or_dict.name
+		reg_id = getattr(doc_or_dict, "registration_id", None) or name
+		company_name = getattr(doc_or_dict, "company_name", "") or ""
+		contact_person = getattr(doc_or_dict, "contact_person", "") or ""
+		email = getattr(doc_or_dict, "email", "") or ""
+		mobile_no = getattr(doc_or_dict, "mobile_no", "") or ""
+		logo = getattr(doc_or_dict, "logo", "") or ""
+		website_url = getattr(doc_or_dict, "website_url", "") or ""
+		sponsor_category = getattr(doc_or_dict, "sponsor_category", "") or "Associate Sponsor"
+		sponsored_for = getattr(doc_or_dict, "sponsored_for", "") or "Event Sponsor"
+		status = getattr(doc_or_dict, "status", "") or "Pending"
+		ip_address = getattr(doc_or_dict, "ip_address", "") or ""
+		action_by = getattr(doc_or_dict, "action_by", "") or ""
+		action_at = str(getattr(doc_or_dict, "action_at", "") or "")
+		created_sponsor = getattr(doc_or_dict, "created_sponsor", "") or ""
+		creation = str(getattr(doc_or_dict, "creation", "") or "")
+		modified = str(getattr(doc_or_dict, "modified", "") or "")
+
+	is_blocked = 1 if (status == "Blocked" or is_ip_blocked(ip_address)) else 0
+
+	return {
+		"id": name,
+		"name": name,
+		"registration_id": reg_id,
+		"company_name": company_name,
+		"contact_person": contact_person,
+		"email": email,
+		"mobile": mobile_no,
+		"mobile_no": mobile_no,
+		"logo": logo,
+		"website_url": website_url,
+		"sponsor_category": sponsor_category,
+		"sponsored_for": sponsored_for,
+		"status": status,
+		"ip_address": ip_address,
+		"block": is_blocked,
+		"is_blocked": is_blocked,
+		"action_by": action_by or None,
+		"action_at": action_at or None,
+		"created_sponsor": created_sponsor or None,
+		"created_at": creation,
+		"updated_at": modified,
+	}
 
 
 # ==============================================================================
@@ -272,9 +439,13 @@ def admin_create_sponsor(sponsor_name=None, sponsor_category=None, sponsored_for
 	raw_order = (
 		data.get("display_order")
 		if "display_order" in data
-		else (data.get("order") if "order" in data else (display_order if display_order is not None else 0))
+		else (data.get("order") if "order" in data else (display_order if display_order is not None else None))
 	)
-	s_order = cint(raw_order)
+	if raw_order is not None and str(raw_order).strip() != "":
+		s_order = cint(raw_order)
+	else:
+		max_order = frappe.db.sql("SELECT COALESCE(MAX(display_order), 0) FROM `tabConnectFest Sponsor`")[0][0]
+		s_order = max_order + 1
 
 	if not s_name:
 		frappe.local.response["http_status_code"] = 400
@@ -289,6 +460,10 @@ def admin_create_sponsor(sponsor_name=None, sponsor_category=None, sponsored_for
 	saved_logo = ""
 	if raw_logo:
 		saved_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"sponsor_{uuid.uuid4().hex[:6]}")
+
+	# Ensure Top Banner uniqueness: exactly 1 top banner sponsor allowed (no duplicates)
+	if s_featured:
+		frappe.db.sql("UPDATE `tabConnectFest Sponsor` SET is_featured = 0 WHERE is_featured = 1")
 
 	doc = frappe.get_doc({
 		"doctype": "ConnectFest Sponsor",
@@ -431,7 +606,7 @@ def admin_update_sponsor(sponsor_id=None, name=None, sponsor_name=None, sponsor_
 	if stall_number is not None or "stall_number" in data:
 		st = (stall_number or data.get("stall_number") or "").strip()
 		doc.stall_number = st if st and frappe.db.exists("ConnectFest Stall", st) else None
-	if description is not None or "description" in data:
+	if hasattr(doc, "description") and (description is not None or "description" in data):
 		doc.description = (description or data.get("description") or "").strip()
 	if contact_person is not None or "contact_person" in data:
 		doc.contact_person = (contact_person or data.get("contact_person") or "").strip()
@@ -698,3 +873,556 @@ def setup_default_sponsors():
 
 # Backward-compatibility alias
 seed_default_sponsors = setup_default_sponsors
+
+
+# ==============================================================================
+# 3. BECOME A SPONSOR PUBLIC REGISTRATION & ADMIN REVIEW WORKFLOW
+# ==============================================================================
+
+@handle_api_errors("ConnectFest Become A Sponsor Registration Error")
+def register_sponsor_request(
+	name=None,
+	company_name=None,
+	sponsor_name=None,
+	contact_person=None,
+	mobile=None,
+	mobile_no=None,
+	phone=None,
+	email=None,
+	logo=None,
+	company_logo=None,
+	website_url=None,
+	company_url=None,
+	website=None,
+	sponsor_category=None,
+	category=None,
+	tier=None,
+	sponsored_for=None,
+	purpose=None,
+	notes=None,
+	message=None,
+	ip_address=None,
+	client_ip=None,
+	**kwargs
+):
+	"""
+	Public API: Form submission for 'Become a Sponsor'.
+	- Whitelisted for Guests (Public).
+	- Fields collected:
+	  * Name / Contact Person
+	  * Company Name
+	  * Mobile Number
+	  * Email Address
+	  * Company Logo (file upload, base64 data URL, or public file URL)
+	  * Company URL (website)
+	  * (Optional) Sponsor Category / Tier, Sponsored For / Purpose, Notes
+	- IP Protection:
+	  * Checks caller's IP against Blocked IPs list. If blocked:
+	    Returns HTTP 403: 'Requests from your IP address have been blocked by administrator.'
+	- Creates a record in 'ConnectFest Sponsor Registration' with status 'Pending'.
+	"""
+	data = extract_request_data(kwargs)
+
+	# 1. IP Blocking Check
+	client_ip_val = get_client_ip(
+		ip_address or client_ip or data.get("ip_address") or data.get("client_ip")
+	)
+
+	if is_ip_blocked(client_ip_val):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "error",
+			"blocked": True,
+			"ip_address": client_ip_val,
+			"message": "Requests from your IP address have been blocked by administrator.",
+		}
+
+	# 2. Extract inputs
+	c_name = (company_name or sponsor_name or data.get("company_name") or data.get("sponsor_name") or "").strip()
+	person_name = (name or contact_person or data.get("name") or data.get("contact_person") or "").strip()
+	c_email = (email or data.get("email") or "").strip().lower()
+	c_mobile = (mobile or mobile_no or phone or data.get("mobile") or data.get("mobile_no") or data.get("phone") or "").strip()
+	c_url = (website_url or company_url or website or data.get("website_url") or data.get("company_url") or data.get("website") or "").strip()
+	c_category = (sponsor_category or category or tier or data.get("sponsor_category") or data.get("category") or data.get("tier") or "Associate Sponsor").strip()
+	c_for = (sponsored_for or purpose or data.get("sponsored_for") or data.get("purpose") or "Event Sponsor").strip()
+	c_notes = (notes or message or data.get("notes") or data.get("message") or "").strip()
+
+	# 3. Validations
+	if not c_name:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Company Name is required"}
+
+	if not person_name:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Contact Person / Name is required"}
+
+	if not c_email:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Email address is required"}
+
+	if not validate_email_address(c_email, throw=False):
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": f"'{c_email}' is not a valid email address"}
+
+	if not c_mobile:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Mobile number is required"}
+
+	clean_mobile = "".join(filter(str.isdigit, c_mobile))
+	if len(clean_mobile) == 12 and clean_mobile.startswith("91"):
+		clean_mobile = clean_mobile[2:]
+	if len(clean_mobile) != 10:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Please provide a valid 10-digit mobile number"}
+
+	# 4. Handle Logo file / Base64 upload
+	raw_logo = logo or company_logo or data.get("logo") or data.get("company_logo") or data.get("image")
+	saved_logo = ""
+	if raw_logo:
+		saved_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"sponsor_app_{uuid.uuid4().hex[:6]}")
+
+	# 5. Create Registration Document
+	doc = frappe.get_doc({
+		"doctype": "ConnectFest Sponsor Registration",
+		"company_name": c_name,
+		"contact_person": person_name,
+		"email": c_email,
+		"mobile_no": clean_mobile,
+		"logo": saved_logo or (raw_logo if isinstance(raw_logo, str) and raw_logo.startswith("/files/") else ""),
+		"website_url": c_url,
+		"sponsor_category": c_category,
+		"sponsored_for": c_for,
+		"status": "Pending",
+		"ip_address": client_ip_val,
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	frappe.db.commit()
+
+	return {
+		"status": "success",
+		"message": f"Thank you for registering to Become a Sponsor! Your application for '{doc.company_name}' has been received and is pending admin review.",
+		"registration": _format_sponsor_registration(doc),
+	}
+
+
+# Alias for become_a_sponsor
+become_a_sponsor = register_sponsor_request
+
+
+@handle_api_errors("ConnectFest Admin Action Sponsor Registration Error")
+def admin_action_sponsor_registration(
+	registration_id=None,
+	name=None,
+	action=None,
+	status=None,
+	notes=None,
+	reason=None,
+	sponsor_category=None,
+	category=None,
+	tier=None,
+	sponsored_for=None,
+	purpose=None,
+	stall_number=None,
+	is_featured=None,
+	featured=None,
+	display_order=None,
+	**kwargs
+):
+	"""
+	Admin API to review and process a Sponsor Registration:
+	- Actions:
+	  * 'accept': Marks application as 'Accepted', adds new 'ConnectFest Sponsor' record.
+	    Ensures only 1 Top Banner exists (no duplicate top banners).
+	  * 'reject': Marks application as 'Rejected'. Does not create sponsor.
+	  * 'block': Marks application as 'Blocked' and permanently blocks client's IP from submitting requests.
+	"""
+	err = check_admin_permission("sponsor registration management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	docname = (registration_id or name or data.get("registration_id") or data.get("name") or data.get("id") or "").strip()
+	chosen_action = (action or status or data.get("action") or data.get("status") or "").strip().lower()
+	action_notes = (notes or reason or data.get("notes") or data.get("reason") or "").strip()
+
+	if not docname:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "registration_id is required"}
+
+	if not chosen_action:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "action is required ('accept', 'reject', or 'block')"}
+
+	if chosen_action not in ("accept", "accepted", "approve", "approved", "reject", "rejected", "block", "blocked"):
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": f"Invalid action '{chosen_action}'. Allowed: 'accept', 'reject', 'block'"}
+
+	if not frappe.db.exists("ConnectFest Sponsor Registration", docname):
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "error", "message": f"Sponsor registration '{docname}' not found"}
+
+	reg = frappe.get_doc("ConnectFest Sponsor Registration", docname)
+
+	if chosen_action in ("accept", "accepted", "approve", "approved"):
+		action_type = "accept"
+	elif chosen_action in ("reject", "rejected"):
+		action_type = "reject"
+	else:
+		action_type = "block"
+
+	if action_type == "accept":
+		# State Rule: Cannot accept an application that is Blocked or from a blocked IP
+		if reg.status == "Blocked" or (reg.ip_address and is_ip_blocked(reg.ip_address)):
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Cannot accept application '{reg.name}': It is currently blocked. Blocked applications cannot be accepted.",
+			}
+
+		# State Rule: Cannot accept an application that has been Rejected
+		if reg.status == "Rejected":
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Cannot accept application '{reg.name}': It has already been rejected. Rejected applications cannot be accepted.",
+			}
+
+		if reg.status == "Accepted" and reg.created_sponsor and frappe.db.exists("ConnectFest Sponsor", reg.created_sponsor):
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"This registration is already accepted as sponsor '{reg.created_sponsor}'",
+				"sponsor_id": reg.created_sponsor,
+			}
+
+		cat = (sponsor_category or category or tier or data.get("sponsor_category") or data.get("category") or data.get("tier") or reg.sponsor_category or "Associate Sponsor").strip()
+		sp_for = (sponsored_for or purpose or data.get("sponsored_for") or data.get("purpose") or reg.sponsored_for or "Event Sponsor").strip()
+		st_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
+		raw_feat = is_featured if is_featured is not None else (featured if featured is not None else data.get("is_featured"))
+		s_featured = parse_boolean(raw_feat)
+
+		raw_order = display_order if display_order is not None else data.get("display_order")
+		if raw_order is not None and str(raw_order).strip() != "":
+			s_order = cint(raw_order)
+		else:
+			max_order = frappe.db.sql("SELECT COALESCE(MAX(display_order), 0) FROM `tabConnectFest Sponsor`")[0][0]
+			s_order = max_order + 1
+
+		# Ensure Top Banner uniqueness: exactly 1 top banner sponsor allowed (no duplicates)
+		if s_featured:
+			frappe.db.sql("UPDATE `tabConnectFest Sponsor` SET is_featured = 0 WHERE is_featured = 1")
+
+		sponsor_doc = frappe.get_doc({
+			"doctype": "ConnectFest Sponsor",
+			"sponsor_name": reg.company_name,
+			"contact_person": reg.contact_person,
+			"email": reg.email,
+			"phone": reg.mobile_no,
+			"logo": reg.logo,
+			"website_url": reg.website_url,
+			"sponsor_category": cat,
+			"sponsored_for": sp_for,
+			"stall_number": st_num if st_num and frappe.db.exists("ConnectFest Stall", st_num) else None,
+			"is_active": 1,
+			"is_featured": 1 if s_featured else 0,
+			"display_order": s_order,
+		})
+		sponsor_doc.flags.ignore_permissions = True
+		sponsor_doc.insert()
+
+		reg.status = "Accepted"
+		reg.created_sponsor = sponsor_doc.name
+		reg.action_by = frappe.session.user or "Administrator"
+		reg.action_at = frappe.utils.now_datetime()
+		reg.flags.ignore_permissions = True
+		reg.save()
+		frappe.db.commit()
+
+		invalidate_sponsors_cache()
+
+		return {
+			"status": "success",
+			"message": f"Sponsor '{reg.company_name}' accepted successfully and added as official sponsor '{sponsor_doc.name}'" + (" (⭐ Featured Top Banner)" if sponsor_doc.is_featured else ""),
+			"sponsor": _format_sponsor_doc(sponsor_doc),
+			"registration": _format_sponsor_registration(reg),
+		}
+
+	elif action_type == "reject":
+		# State Rule: Cannot reject an application that is already Blocked
+		if reg.status == "Blocked":
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Cannot reject application '{reg.name}': It has already been Blocked.",
+			}
+
+		if reg.status == "Accepted":
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Cannot reject application '{reg.name}': It has already been Accepted as official sponsor '{reg.created_sponsor}'.",
+			}
+
+		reg.status = "Rejected"
+		reg.action_by = frappe.session.user or "Administrator"
+		reg.action_at = frappe.utils.now_datetime()
+		reg.flags.ignore_permissions = True
+		reg.save()
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"message": f"Sponsor application for '{reg.company_name}' ({reg.name}) has been rejected.",
+			"registration": _format_sponsor_registration(reg),
+		}
+
+	else:
+		reg.status = "Blocked"
+		reg.action_by = frappe.session.user or "Administrator"
+		reg.action_at = frappe.utils.now_datetime()
+		reg.flags.ignore_permissions = True
+		reg.save()
+
+		blocked_ip_doc = None
+		if reg.ip_address:
+			blocked_ip_doc = block_ip_address(
+				ip=reg.ip_address,
+				reason=f"Blocked via sponsor application {reg.name} ({reg.company_name})",
+				blocked_from=reg.name,
+				blocked_by=frappe.session.user or "Administrator",
+			)
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"message": f"Sponsor application '{reg.name}' ({reg.company_name}) blocked. IP '{reg.ip_address}' is now blocked from submitting further requests.",
+			"blocked_ip": reg.ip_address,
+			"registration": _format_sponsor_registration(reg),
+		}
+
+
+def admin_accept_sponsor_registration(registration_id=None, **kwargs):
+	"""Convenience wrapper for admin accept."""
+	return admin_action_sponsor_registration(registration_id=registration_id, action="accept", **kwargs)
+
+
+def admin_reject_sponsor_registration(registration_id=None, **kwargs):
+	"""Convenience wrapper for admin reject."""
+	return admin_action_sponsor_registration(registration_id=registration_id, action="reject", **kwargs)
+
+
+def admin_block_sponsor_registration(registration_id=None, **kwargs):
+	"""Convenience wrapper for admin block."""
+	return admin_action_sponsor_registration(registration_id=registration_id, action="block", **kwargs)
+
+
+@handle_api_errors("ConnectFest Admin Get Sponsor Registrations Error")
+def admin_get_sponsor_registrations(status=None, search=None, page=1, limit=50, **kwargs):
+	"""
+	Admin API to view and filter all 'Become a Sponsor' registrations.
+	"""
+	err = check_admin_permission("sponsor registration management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	status_filter = (status or data.get("status") or "").strip()
+	search_q = (search or data.get("search") or data.get("query") or "").strip().lower()
+
+	raw_page = data.get("page") or page
+	raw_limit = data.get("limit") or data.get("page_size") or limit or 50
+	page_val = max(1, cint(raw_page))
+	limit_val = min(200, max(1, cint(raw_limit)))
+	offset_val = (page_val - 1) * limit_val
+
+	conditions = ["1=1"]
+	params = {}
+
+	if status_filter and status_filter.lower() != "all":
+		conditions.append("LOWER(status) = %(st)s")
+		params["st"] = status_filter.lower()
+
+	raw_block = data.get("block") if "block" in data else data.get("is_blocked")
+	if raw_block is not None and str(raw_block).strip() != "":
+		b_val = 1 if parse_boolean(raw_block) else 0
+		if b_val == 1:
+			conditions.append("(status = 'Blocked' OR ip_address IN (SELECT ip_address FROM `tabConnectFest Blocked IP` WHERE is_active = 1))")
+		else:
+			conditions.append("(status != 'Blocked' AND (ip_address IS NULL OR ip_address NOT IN (SELECT ip_address FROM `tabConnectFest Blocked IP` WHERE is_active = 1)))")
+
+	if search_q:
+		conditions.append("(LOWER(company_name) LIKE %(q)s OR LOWER(contact_person) LIKE %(q)s OR LOWER(email) LIKE %(q)s OR mobile_no LIKE %(q)s OR ip_address LIKE %(q)s)")
+		params["q"] = f"%{search_q}%"
+
+	where_clause = " AND ".join(conditions)
+
+	total_filtered = frappe.db.sql(f"SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration` WHERE {where_clause}", params)[0][0]
+	total_all = frappe.db.sql("SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration`")[0][0]
+	pending_count = frappe.db.sql("SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration` WHERE status = 'Pending'")[0][0]
+	accepted_count = frappe.db.sql("SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration` WHERE status = 'Accepted'")[0][0]
+	rejected_count = frappe.db.sql("SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration` WHERE status = 'Rejected'")[0][0]
+	blocked_count = frappe.db.sql("SELECT COUNT(*) FROM `tabConnectFest Sponsor Registration` WHERE status = 'Blocked'")[0][0]
+
+	rows = frappe.db.sql(f"""
+		SELECT name, registration_id, company_name, contact_person, email, mobile_no,
+		       logo, website_url, sponsor_category, sponsored_for, status,
+		       ip_address, action_by, action_at, created_sponsor, creation, modified
+		FROM `tabConnectFest Sponsor Registration`
+		WHERE {where_clause}
+		ORDER BY creation DESC
+		LIMIT %(limit)s OFFSET %(offset)s
+	""", {**params, "limit": limit_val, "offset": offset_val}, as_dict=True)
+
+	formatted_list = [_format_sponsor_registration(r) for r in rows]
+
+	return {
+		"status": "success",
+		"total_registrations": total_filtered,
+		"summary": {
+			"total": total_all,
+			"pending": pending_count,
+			"accepted": accepted_count,
+			"rejected": rejected_count,
+			"blocked": blocked_count,
+		},
+		"pagination": {
+			"current_page": page_val,
+			"page_size": limit_val,
+			"total_items": total_filtered,
+			"total_pages": (total_filtered + limit_val - 1) // limit_val if limit_val else 1,
+			"has_next": (offset_val + limit_val) < total_filtered,
+			"has_prev": page_val > 1,
+		},
+		"registrations": formatted_list,
+	}
+
+
+@handle_api_errors("ConnectFest Admin Get Sponsor Registration Details Error")
+def admin_get_sponsor_registration_details(registration_id=None, name=None, **kwargs):
+	"""
+	Admin API to get details of a single sponsor application.
+	"""
+	err = check_admin_permission("sponsor registration management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	docname = (registration_id or name or data.get("registration_id") or data.get("name") or data.get("id") or "").strip()
+
+	if not docname:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "registration_id is required"}
+
+	if not frappe.db.exists("ConnectFest Sponsor Registration", docname):
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "error", "message": f"Sponsor registration '{docname}' not found"}
+
+	doc = frappe.get_doc("ConnectFest Sponsor Registration", docname)
+	return {
+		"status": "success",
+		"registration": _format_sponsor_registration(doc),
+	}
+
+
+@handle_api_errors("ConnectFest Admin Get Blocked IPs Error")
+def admin_get_blocked_ips(search=None, page=1, limit=50, **kwargs):
+	"""
+	Admin API to list all blocked IP addresses.
+	"""
+	err = check_admin_permission("blocked ip management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	search_q = (search or data.get("search") or data.get("query") or "").strip()
+	raw_page = data.get("page") or page
+	raw_limit = data.get("limit") or data.get("page_size") or limit or 50
+	page_val = max(1, cint(raw_page))
+	limit_val = min(200, max(1, cint(raw_limit)))
+	offset_val = (page_val - 1) * limit_val
+
+	conditions = ["is_active = 1"]
+	params = {}
+
+	if search_q:
+		conditions.append("(ip_address LIKE %(q)s OR reason LIKE %(q)s OR blocked_from LIKE %(q)s)")
+		params["q"] = f"%{search_q}%"
+
+	where_clause = " AND ".join(conditions)
+	total_count = frappe.db.sql(f"SELECT COUNT(*) FROM `tabConnectFest Blocked IP` WHERE {where_clause}", params)[0][0]
+
+	rows = frappe.db.sql(f"""
+		SELECT name, ip_address, is_active, reason, blocked_from, blocked_by, blocked_at, creation
+		FROM `tabConnectFest Blocked IP`
+		WHERE {where_clause}
+		ORDER BY blocked_at DESC
+		LIMIT %(limit)s OFFSET %(offset)s
+	""", {**params, "limit": limit_val, "offset": offset_val}, as_dict=True)
+
+	return {
+		"status": "success",
+		"total_blocked_ips": total_count,
+		"blocked_ips": [
+			{
+				"id": r.name,
+				"ip_address": r.ip_address,
+				"reason": r.reason or "",
+				"blocked_from": r.blocked_from or "",
+				"blocked_by": r.blocked_by or "",
+				"blocked_at": str(r.blocked_at or r.creation or ""),
+			}
+			for r in rows
+		],
+	}
+
+
+@handle_api_errors("ConnectFest Admin Unblock IP Error")
+def admin_unblock_ip(ip_address=None, ip=None, **kwargs):
+	"""
+	Admin API to unblock an IP address so it can submit requests again.
+	"""
+	err = check_admin_permission("blocked ip management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	target_ip = (ip_address or ip or data.get("ip_address") or data.get("ip") or "").strip()
+
+	if not target_ip:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "ip_address is required"}
+
+	unblock_ip_address(target_ip)
+
+	return {
+		"status": "success",
+		"message": f"IP address '{target_ip}' has been successfully unblocked.",
+		"unblocked_ip": target_ip,
+	}
+
+
+@handle_api_errors("ConnectFest Admin Block IP Error")
+def admin_block_ip(ip_address=None, ip=None, reason=None, **kwargs):
+	"""
+	Admin API to manually block an IP address.
+	"""
+	err = check_admin_permission("blocked ip management")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+	target_ip = (ip_address or ip or data.get("ip_address") or data.get("ip") or "").strip()
+	reason_val = (reason or data.get("reason") or "Manually blocked by Admin").strip()
+
+	if not target_ip:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "ip_address is required"}
+
+	block_ip_address(target_ip, reason=reason_val, blocked_by=frappe.session.user or "Administrator")
+
+	return {
+		"status": "success",
+		"message": f"IP address '{target_ip}' has been successfully blocked.",
+		"blocked_ip": target_ip,
+	}

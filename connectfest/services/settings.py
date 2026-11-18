@@ -216,6 +216,7 @@ def admin_update_settings(**kwargs):
 def _sync_pricing_to_stalls_and_tiers(settings_doc):
 	"""Syncs updated settings pricing to ConnectFest Tier Pricing and available stalls."""
 	tier_map = {
+		"Title Sponsor": flt(settings_doc.get("price_title_sponsor")),
 		"Silver": flt(settings_doc.get("price_silver")),
 		"Premium": flt(settings_doc.get("price_premium")),
 		"Standard": flt(settings_doc.get("price_standard")),
