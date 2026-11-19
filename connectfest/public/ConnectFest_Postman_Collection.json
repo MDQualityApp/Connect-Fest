@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "connectfest-2027-api-collection-v3",
-    "name": "ConnectFest 2027 Complete APIs (Stalls, Theatre Lock, Razorpay, Passes & Admin)",
-    "description": "Production APIs for ConnectFest 2027 Grand Expo (20 & 21 Feb 2027, Chennai Trade Centre):\n- 220 Stalls Inventory (Silver, Premium, Standard, Regular)\n- Theatre-style Seat/Stall Locking (10-min Redis Atomic Lock, 10,000+ RPS)\n- ConnectFest 3-Step Razorpay Checkout (Preview -> Checkout -> Finalize)\n- 1 User = 1 Stall Booking Rule\n- Free Visitor Pass with QR Code & Strict Email/Mobile Uniqueness\n- Gate QR Scanner & Duplicate Check-in Prevention\n- Admin Controls (1-Click Stall Block/Unblock, Real-time Dashboard)",
+    "_postman_id": "66f8b21e-22ab-4c6c-a8c3-7214a87f4e7f",
+    "name": "Connect-Fest",
+    "description": "ConnectFest Complete API Collection (Converted from Hoppscotch with full payloads and endpoints)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,531 +10,2199 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "type": "string"
-    },
-    {
-      "key": "stallNumber",
-      "value": "SL-01",
-      "type": "string"
-    },
-    {
-      "key": "holdToken",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "registrationId",
-      "value": "CF-2610-000001",
-      "type": "string"
-    },
-    {
-      "key": "orderId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "passCode",
-      "value": "CF27-000001",
-      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "1. Stall Inventory & Theatre Seat Locking",
-      "description": "Endpoints for 220 stalls inventory and concurrency locking.",
+      "name": "Registration",
       "item": [
         {
-          "name": "1.1 Get All 220 Stalls (Real-Time Map & Status)",
+          "name": "Register_Stall",
           "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_stalls",
-            "description": "Fetches all 220 stalls with tier summary, prices, dimensions, and real-time status (Available, Hold, Booked, Blocked)."
-          }
-        },
-        {
-          "name": "1.2 Get Stalls by Tier (e.g. Silver)",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_stalls?tier=Silver",
-            "description": "Filters stalls by tier (Silver, Premium, Standard, Regular)."
-          }
-        },
-        {
-          "name": "1.3 Hold Stall (10-Min Concurrency Lock)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "if (res.message && res.message.hold_token) {",
-                  "    pm.collectionVariables.set(\"holdToken\", res.message.hold_token);",
-                  "    pm.collectionVariables.set(\"stallNumber\", res.message.stall_number);",
-                  "}"
-                ],
-                "type": "text/javascript"
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.register_stall"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Rithi\",\n  \"company_name\": \"Mdq\",\n  \"location\": \"Chennai\",\n  \"source_of_info\": \"Social Media\",\n  \"mobile_no\": \"9344126325\",\n  \"email\": \"rithinaveena2001@gmail.com\",\n  \"is_bni_member\": 0,\n  \"industry\": \"IT\",\n  \"segment\": \"Software Developer\",\n  \"bill\":\"1234\",\n  \"gst\":\"12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
+          },
+          "response": []
+        },
+        {
+          "name": "Register_Stall (BNI-Member)",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.register_stall",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.register_stall"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"stall_number\": \"SL-04\",\n  \"full_name\": \"Karthik Raja\",\n  \"email\": \"karthik@titanium.com\",\n  \"mobile_no\": \"9876500001\",\n  \"company_name\": \"Titanium Tech\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.hold_stall",
-            "description": "Locks a stall for 10 minutes (600s) using Redis atomic lock. Zero double-booking even under 10,000+ RPS."
-          }
-        },
-        {
-          "name": "1.4 Release Stall Hold",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"stall_number\": \"{{stallNumber}}\",\n  \"hold_token\": \"{{holdToken}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.release_stall_hold",
-            "description": "Releases temporary stall hold if attendee abandons checkout or picks another stall."
-          }
-        },
-        {
-          "name": "1.5 Register Stall & Initiate Order (1 User = 1 Stall)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "if (res.message && res.message.registration_id) {",
-                  "    pm.collectionVariables.set(\"registrationId\", res.message.registration_id);",
-                  "}",
-                  "if (res.message && res.message.razorpay_order) {",
-                  "    pm.collectionVariables.set(\"orderId\", res.message.razorpay_order.id);",
-                  "}"
-                ],
-                "type": "text/javascript"
+              "raw": "{\n  \"full_name\": \"Rithi\",\n  \"company_name\": \"MDQ\",\n  \"location\": \"Chennai\",\n  \"is_bni_member\": 1,\n  \"region_name\": \"Chennai Central\",\n  \"chapter_name\": \"Titanium\",\n  \"industry\": \"IT & Software\",\n  \"segment\": \"Enterprise SaaS\",\n  \"source_of_info\": \"BNI Chapter\",\n  \"mobile_no\": \"9344126325\",\n  \"email\": \"rithinaveena2001@gmail.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Murugan Textiles\",\n  \"company_name\": \"Murugan Weavers\",\n  \"stall_number\": \"PR-08\",\n  \"source_of_info\": \"Social Media\",\n  \"mobile_no\": \"9841234567\",\n  \"email\": \"murugan@weavers.com\",\n  \"create_order\": 1,\n  \"sync\": 1\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.register_stall",
-            "description": "Registers an exhibitor for a specific stall and creates the Razorpay order."
-          }
+          },
+          "response": []
         },
         {
-          "name": "1.4 Select / Assign Stall to Registration",
+          "name": "Register Visitors",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.register_visitor"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"registration_id\": \"{{registrationId}}\",\n  \"stall_number\": \"PR-08\"\n}"
+              "raw": "{\n  \"full_name\": \"Rithi\",\n  \"email\": \"rithinaveena2001@gmail.com\",\n  \"mobile_no\": \"9344126325\",\n  \"which_day\": \"Day 1\",\n  \"source_of_info\": \"WhatsApp\",\n  \"area_of_interest\":\"Coding\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_current_user_profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_current_user_profile"
+              ]
             },
-            "url": "{{baseUrl}}/api/method/connectfest.api.select_stall",
-            "description": "Explicitly selects or changes the stall for an exhibitor registration before payment."
-          }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.logout"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Edit Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.edit_profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.edit_profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"roja\",\n  \"company_name\": \"raj Global Exports Pvt Ltd\",\n  \"company_logo\": \"https://connectfest.in/files/Updated-logo.png\",\n  \"location\": \"raj\",\n  \"bill\": \"raj Global Exports Invoicing Pvt Ltd\",\n  \"gst\": \"33AAACR1234A1Z5\",\n  \"is_bni_member\": 1,\n  \"region_name\": \"raj Central\",\n  \"chapter_name\": \"rja\",\n  \"industry\": \"raj\",\n  \"segment\": \"raj Segment\",\n  \"source_of_info\": \"raj Chapter\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.send_email_otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.send_email_otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rithinaveena2001@gmail.com\",\n  \"purpose\": \"register\"\n  // \"type\":\"event\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.verify_email_otp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.verify_email_otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\":\"rithinaveena2001@gmail.com\",\n  \"otp\":\"302545\"\n  // \"type\":\"event\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },
     {
-      "name": "2. ConnectFest 3-Step Razorpay Checkout",
-      "description": "ConnectFest payment lifecycle endpoints.",
+      "name": "Stalls & Seat Locking",
       "item": [
         {
-          "name": "2.1 ConnectFest: Preview Payment (Breakdown before Paying)",
+          "name": "Get_Stalls",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_stalls",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_stalls"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.preview_payment",
-            "description": "Previews pricing, stall tier, base amount, and breakdown before checkout."
-          }
-        },
-        {
-          "name": "2.2 ConnectFest: Checkout Order (Initiate Order with Razorpay Test Keys)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "if (res.message && res.message.order_id) {",
-                  "    pm.collectionVariables.set(\"orderId\", res.message.order_id);",
-                  "}"
-                ],
-                "type": "text/javascript"
+              "raw": "{\n  \"status\":\"Available\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\",\n  \"payment_gateway\": \"Razorpay\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.checkout",
-            "description": "Creates Razorpay order and returns order_id & key_id for frontend popup."
-          }
+          },
+          "response": []
         },
         {
-          "name": "2.3 ConnectFest: Finalize Payment (Verify Signature & Confirm)",
+          "name": "Select_Stall",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.select_stall",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.select_stall"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference_doctype\": \"ConnectFest Registration\",\n  \"reference_docname\": \"{{registrationId}}\",\n  \"razorpay_order_id\": \"{{orderId}}\",\n  \"razorpay_payment_id\": \"pay_test_998877\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.finalize_payment",
-            "description": "Verifies HMAC-SHA256 signature and atomically marks stall as Confirmed and Booked."
-          }
-        },
-        {
-          "name": "2.4 Standalone: Create Razorpay Order",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registration_id\": \"{{registrationId}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.create_razorpay_order"
-          }
-        },
-        {
-          "name": "2.5 Standalone: Verify Razorpay Payment",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registration_id\": \"{{registrationId}}\",\n  \"razorpay_order_id\": \"{{orderId}}\",\n  \"razorpay_payment_id\": \"pay_test_998877\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.verify_razorpay_payment"
-          }
-        }
-      ]
-    },
-    {
-      "name": "3. Visitor Registration & Gate Pass QR",
-      "description": "Endpoints for Free Visitor Entrance passes matching Image 2.",
-      "item": [
-        {
-          "name": "3.1 Register Visitor (Day 1 / Day 2 / Both Days)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var res = pm.response.json();",
-                  "if (res.message && res.message.pass && res.message.pass.pass_code) {",
-                  "    pm.collectionVariables.set(\"passCode\", res.message.pass.pass_code);",
-                  "}"
-                ],
-                "type": "text/javascript"
+              "raw": "{\n  \"stall_number\": \"A-01\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Priya Shankar\",\n  \"visitor_image\": \"https://connectfest.in/assets/visitor.jpg\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Both days\",\n  \"source_of_info\": \"Website\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
-            "description": "Free registration for attendees with unique Pass Code CF27-XXXXXX and QR payload."
-          }
+          },
+          "response": []
         },
         {
-          "name": "3.1b Upload Visitor Image (Direct File or Base64)",
+          "name": "Create_Payment",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.create_razorpay_order",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.create_razorpay_order"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.upload_visitor_image",
-            "description": "Public helper endpoint to upload visitor photo and get public /files/... URL."
-          }
+              "raw": "{\n  \"stall_number\": \"A-01\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         },
         {
-          "name": "3.2 Duplicate Visitor Registration Check (Returns Existing Pass)",
+          "name": "Verify Payment",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.verify_razorpay_payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.verify_razorpay_payment"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Priya Duplicate Attempt\",\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\",\n  \"which_day\": \"Day 1\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.register_visitor",
-            "description": "Tests strict uniqueness. Re-returns original pass without creating duplicates."
-          }
+              "raw": "{\n  \"razorpay_order_id\": \"order_U19zgA2XEojjRO\",\n  \"razorpay_payment_id\": \"pay_test_123456\",\n  \"razorpay_signature\": \"mock_signature_valid\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         },
         {
-          "name": "3.3 Gate Entry QR Scanner (Valid Entrance)",
+          "name": "Preview Payment",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.preview_payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.preview_payment"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pass_code\": \"{{passCode}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.verify_gate_pass",
-            "description": "Scans visitor QR code at Chennai Trade Centre entry gate and admits attendee."
-          }
-        },
-        {
-          "name": "3.4 Gate Scanner Duplicate Entry Denial",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
+              "raw": "{\n  \"stall_number\": \"A-01\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"pass_code\": \"{{passCode}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.verify_gate_pass",
-            "description": "Simulates duplicate badge sharing. Denied with timestamp of previous entry."
-          }
-        },
-        {
-          "name": "3.5 Check User Booking Status",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"priya.shankar@example.com\",\n  \"mobile_no\": \"9840112233\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.check_user_booking_status",
-            "description": "Checks if a given email/mobile has an existing stall booking or visitor pass."
-          }
+            }
+          },
+          "response": []
         }
       ]
     },
     {
-      "name": "4. Admin Controls & Monitoring",
-      "description": "Admin operations and live monitoring endpoints.",
+      "name": "Admin",
       "item": [
         {
-          "name": "4.1 Get Admin Dashboard Live Metrics",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_admin_dashboard_data",
-            "description": "Real-time metrics: 220 stalls count, revenue, visitor registration and gate check-ins."
-          }
-        },
-        {
-          "name": "4.2 Admin: Block Stall (e.g. PR-11)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"stall_number\": \"PR-11\",\n  \"action\": \"block\",\n  \"reason\": \"VIP Sponsor Reserved\"\n}"
+          "name": "Stall Management",
+          "item": [
+            {
+              "name": "Get Stalls",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_stalls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_stalls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"Booked\",\n  \"tier\": \"Premium\",\n  \"page\": 1,\n  \"limit\": 50\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
             },
-            "url": "{{baseUrl}}/api/method/connectfest.api.toggle_stall_block",
-            "description": "Admin blocks a stall. Users cannot book or hold blocked stalls."
-          }
-        },
-        {
-          "name": "4.3 Admin: Unblock Stall",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"stall_number\": \"PR-11\",\n  \"action\": \"unblock\"\n}"
+            {
+              "name": "Create Stall",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_stall",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_create_stall"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"stall_number\": \"PR-47\",\n  \"tier\": \"Premium\",\n  \"dimensions\": \"3 x 3 m\",\n  \"zone\": \"Zone C - Center Aisles\",\n  \"price\": 45000\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
             },
-            "url": "{{baseUrl}}/api/method/connectfest.api.toggle_stall_block",
-            "description": "Admin restores a stall to Available status."
-          }
+            {
+              "name": "Update  Stall ",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_stall",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_update_stall"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"stall_number\": \"A-01\",\n  \"tier\": \"Premium\",\n  \"dimensions\": \"3 x 3 m\",\n  \"zone\": \"Zone C - Center Aisles\",\n  \"price\": 10\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete  Stall ",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_stall",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_delete_stall"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"// Option 1 - Delete Single\": \"---\",\n  \"stall_number\": \"A-01\",\n  \"// Option 2 - Delete All\": \"---\",\n  \"delete_all\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Block / Unblock Stall",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.toggle_stall_block",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.toggle_stall_block"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"stall_number\": \"PR-10\",\n  \"action\": \"block\",\n  \"reason\": \"Reserved for Chief Guest / VIP Sponsor\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Book Stall",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_book_stall",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_book_stall"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"full_name\": \"Arun Kumar\",\n  \"email\": \"arun@example.com\",\n  \"mobile_no\": \"9876543210\",\n  \"company_name\": \"Arun Tech Solutions\",\n  \"stall_numbers\": [\"STALL-005\", \"STALL-006\"],\n  \"payment_mode\": \"Cash\",\n  \"is_bni_member\": 1,\n  \"region_name\": \"Chennai North\",\n  \"chapter_name\": \"Achievers\",\n  \"industry\": \"Information Technology\",\n  \"segment\": \"Software Development\",\n  \"location\": \"Chennai\",\n  \"notes\": \"Payment received in cash at office\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Bulk Create Stalls",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_bulk_create_stalls",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_bulk_create_stalls"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"block\": \"A\",\n  \"dimensions\": \"3/2\",\n  \"price\": 35000,\n  \"count\": 5,\n  \"prefix\": \"A-\",\n  \"start_number\": 1,\n  \"pad_digits\": 2,\n  \"crn\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
         },
         {
-          "name": "4.4 Universal Registration Lookup",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_registration?registration_id={{registrationId}}"
-          }
+          "name": "User Control",
+          "item": [
+            {
+              "name": "Dashboard",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.get_admin_dashboard_data",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.get_admin_dashboard_data"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"administrator\",\n  \"password\": \"admin\"\n  // \"otp\":\"999999\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Enable / Disable Attendee Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_toggle_user_status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_toggle_user_status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_email\": \"sakthi@gmail.com\",\n  \"mobile_no\": \"8148043523\",\n  \"enabled\": 0\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get All Users",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_all_users",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_all_users"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"role\":\"visitors\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_confirm_payment",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_confirm_payment"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "// Existing User\n// {\n//   \"mobile_no\": \"9876543210\",\n//   \"stall_number\": \"A-15\",\n//   \"payment_mode\": \"Online\",\n//   \"create_order\": 1\n// }\n\n// Cash Payment\n// {\n//   \"email\": \"rithinaveena2001@gmail.com\",\n//   \"stall_number\": \"A-04\",\n//   \"payment_mode\": \"Cash\"\n// }\n\n\n{\n  \"full_name\": \"Sakthi\",\n  \"company_name\": \"MDQ\",\n  \"mobile_no\": \"8148043523\",\n  \"email\": \"Sakthimurugan@mdqualityapps.com\",\n  \"location\": \"Chennai\",\n  \"industry\": \"IT\",\n  \"segment\": \"Software\",\n  \"is_bni_member\": 1,\n  \"region_name\": \"Chennai CBD\",\n  \"chapter_name\": \"Titanium Chapter\",\n  \"source_of_info\": \"WhatsApp\",\n  \"stall_number\": \"A-11\",\n  \"payment_mode\": \"Cash\",\n  \"remarks\": \"Paid at counter desk\"\n}\n\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Export",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_export",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_export"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"format\": \"pdf\",\n  \"role\": \"exhibitor\",\n  \"payment_mode\": \"Cash\"\n   // \"download\": 1\n}\n\n\n// {\n//   \"format\": \"pdf\",\n//   \"role\": \"exhibitor\",\n//   \"is_bni_member\": 1\n// }\n\n\n// {\n//   \"format\": \"json\",\n//   \"role\": \"all\",\n//   \"payment_status\": \"Paid\"\n// }\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify_Pass",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_verify_gate_passs",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_verify_gate_passs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"pass_code\": \"CF27-000006\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Grant Access",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_grant_scanner_access",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_grant_scanner_access"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"rithinaveena2001@gmail.com\",\n  \"enable\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Scanners",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_scanner_users",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_scanner_users"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Admin Quick Control",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_update_settings"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  // \"price_silver\": 100000,\n  \"price_premium\": 99999,\n  \"price_standard\":1000,\n  \"event_name\": \"ConnectFest 2027\",\n  \"event_dates\": \"20 & 21 Feb 2027\",\n  \"event_venue\": \"Chennai Trade Centre, Tambaram\",\n  \"crn_bni_only\": 0,\n  \"non_bni_extra_percentage\": 10,\n  \"stall_hold_duration_minutes\": 10,\n  \"otp_expiry_seconds\": 120\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Reset Test Data (Delete All Stalls)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_reset_test_data",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_reset_test_data"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"delete_all_stalls\": 1,\n  \"clear_events\": 0,\n  \"clear_exhibitors\": 1,\n  \"clear_visitors\": 1,\n  \"clear_otps\": 1,\n  \"clear_queues\": 1,\n  \"confirm\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Admin API to reset data. When delete_all_stalls=1, all stalls are deleted. clear_events=0 protects Event Registrations."
+              },
+              "response": []
+            }
+          ]
         },
         {
-          "name": "4.5 Ingestion Queue Stats",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_queue_stats"
-          }
+          "name": "Pricing Management",
+          "item": [
+            {
+              "name": "Get All Pricing Tiers with GST Breakdown",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.get_all_tier_pricing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.get_all_tier_pricing"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": " Create New Pricing Tier",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_tier_pricing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_create_tier_pricing"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tier_name\": \"Diamond VIP\",\n  \"price\": 150000.0,\n  \"gst_percent\": 18.0,\n  \"description\": \"Ultra VIP Front Gate Pavilion with branding screen\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update  Pricing Tier",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_tier_pricing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_update_tier_pricing"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tier_name\": \"Diamond VIP\",\n  \"price\": 50000.0,\n  \"gst_percent\": 18.0,\n  \"description\": \"Updated Prime Center Aisles with branding pack\",\n  \"is_active\": 1\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": " Delete  Pricing Tier",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_tier_pricing",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_delete_tier_pricing"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tier_name\": \"Diamond VIP\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
         },
         {
-          "name": "4.6 Manual Queue Flush",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.flush_queue"
-          }
+          "name": "Terms And Conditions",
+          "item": [
+            {
+              "name": "Create ",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_terms_and_conditions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_create_terms_and_conditions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"VIP Lounge & Media Guidelines 2027\",\n  \"terms_type\": \"General\",\n  \"version\": \"1.0\",\n  \"effective_date\": \"2026-10-01\",\n  \"summary\": \"Special guidelines for VIP badge holders and media crew.\",\n  \"content\": \"### VIP Guidelines\\n1. Priority auditorium seating.\\n2. Press cameras allowed only in designated enclosures.\",\n  \"is_active\": 1,\n  \"mandatory_acceptance\": 0,\n  \"display_order\": 10\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_terms_and_conditions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_update_terms_and_conditions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"terms_id\": \"TC-01681\",\n  \"title\": \"Exhibitor Stall Agreement & Guidelines 2027 (Revised)\",\n  \"summary\": \"Updated power allocation.\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.get_terms_and_conditions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.get_terms_and_conditions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"terms_type\": \"General\"\n}\n",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_terms_and_conditions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_delete_terms_and_conditions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"terms_ids\": [\"TC-01681\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "BNI Members",
+          "item": [
+            {
+              "name": "CRN",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_toggle_crn_bni_restriction",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_toggle_crn_bni_restriction"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"enable\":1,\n  \"non_bni_extra_percentage\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Create",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_bni_member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_create_bni_member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "// {\n//   \"members\": [\n//     {\n//       \"first_name\": \"DEEPA\",\n//       \"last_name\": \"M\",\n//       \"email\": \"mdeepa1976@gmail.com\",\n//       \"mobile_no\": \"+91 8754407965\",\n//       \"company_name\": \"Yuvathi Trust\",\n//       \"industry\": \"Organizations & Others\",\n//       \"chapter_name\": \"BNI Nakshatra\"\n//     },\n//     {\n//       \"first_name\": \"KARTHIK\",\n//       \"last_name\": \"VEERARAGHAVALU\",\n//       \"email\": \"karthikv.shakthi@gmail.com\",\n//       \"mobile_no\": \"+91 9444573912\",\n//       \"company_name\": \"SHAKTHI ELECTRICAL ENTERPRISES\",\n//       \"industry\": \"Construction, Electrical Contractor\",\n//       \"chapter_name\": \"BNI Nakshatra\"\n//     },\n//     {\n//       \"first_name\": \"PRABHOO\",\n//       \"last_name\": \"N.M\",\n//       \"email\": \"prabhoo@nnmsales.com\",\n//       \"mobile_no\": \"9940010313\",\n//       \"company_name\": \"NNM SALES CORPORATION\",\n//       \"industry\": \"Retail, Lighting Retailers\",\n//       \"chapter_name\": \"BNI Nakshatra\"\n//     }\n//   ]\n// }\n\n\n\n\n{\n  \"mobile_no\":\"8148043523\",\n  \"email\":\"sakthimuruganjcse2021@gmail.com\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_bni_members",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_bni_members"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  // \"search\": \"8148043523\",\n  \"page\": 1,\n  \"limit\": 10\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_bni_member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_delete_bni_member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "// {\n//   \"mobile_no\": \"8148043523\"\n// }\n\n{\n  \"delete_all\": true\n}\n\n// {\n//   \"mobile_numbers\": [\n//     \"9876543210\",\n//     \"9876543211\",\n//     \"9876543212\"\n//   ]\n// }",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_edit_bni_member",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_edit_bni_member"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"mobile_no\": \"9940010313\",\n  \"member_name\": \"Sakthi\",\n  \"new_mobile_no\": \"8148043523\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get - Duplicate",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "http://api.connectfesttn.in/api/method/connectfest.api.admin_get_bni_members",
+                  "host": [
+                    "api.connectfesttn.in"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_bni_members"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  // \"search\": \"8148043523\",\n  \"page\": 1,\n  \"limit\": 10\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },
     {
-      "name": "5. Attendee Authentication & Dynamic Pricing",
+      "name": "Gallery",
       "item": [
         {
-          "name": "5.1 Admin: Update Dynamic Stall Pricing",
+          "name": "Get Gallery",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_gallery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_gallery"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"silver\": 100000,\n  \"premium\": 45000,\n  \"standard\": 35000,\n  \"regular\": 25000\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.update_dynamic_pricing",
-            "description": "Admin dynamically updates tier prices and syncs all available stalls on the floor map."
-          }
-        },
-        {
-          "name": "5.2 Auth: Get Current User Profile (Session Cookie / Token)",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_current_user_profile",
-            "description": "Fetches profile and bookings of current logged-in user (supports both Frappe session cookie and Token auth)."
-          }
-        },
-        {
-          "name": "5.3 Dashboard: Attendee 'My Account' Dashboard",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
+              "raw": "{\n  \n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
-            },
-            "url": "{{baseUrl}}/api/method/connectfest.api.get_my_dashboard",
-            "description": "Returns booked stall details, invoice receipt, and digital pass with QR code for the attendee."
-          }
+            }
+          },
+          "response": []
         },
         {
-          "name": "5.4 Auth: Attendee Login & Dashboard Access",
+          "name": "Add Gallery",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_gallery_item",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_create_gallery_item"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+              "raw": "{\n  \"title\": \"ConnectFest 2027 Grand Expo Stage & Dignitaries\",\n  \"category\": \"Highlights\",\n  \"description\": \"Exclusive photos from the main auditorium and opening ceremony.\",\n  \"is_pinned\": 1,\n  \"is_published\": 1,\n  \"display_order\": 1,\n  \"images\": [\n    {\n      \"image\": \"/files/stage_photo_1.jpg\",\n      \"caption\": \"Lighting the Lamp with Chief Guests\",\n      \"is_cover\": 1\n    },\n    {\n      \"image\": \"/files/stage_photo_2.jpg\",\n      \"caption\": \"Keynote Address by Title Sponsor\",\n      \"is_cover\": 0\n    },\n    {\n      \"image\": \"/files/stage_photo_3.jpg\",\n      \"caption\": \"Audience and VIP delegation\",\n      \"is_cover\": 0\n    }\n  ]\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pin Gallery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_toggle_gallery_pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_toggle_gallery_pin"
+              ]
             },
-            "url": "{{baseUrl}}/api/method/connectfest.api.login_attendee",
-            "description": "Authenticates attendee and returns their booked stalls and visitor passes."
-          }
+            "body": {
+              "mode": "raw",
+              "raw": "// Multiple items-ah PIN panna (is_pinned: 1):\n{\n  \"gallery_ids\": [\"GAL-00105\", \"GAL-00132\"],\n  \"is_pinned\": 1\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Gallery Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_gallery_item",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_update_gallery_item"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gallery_id\": \"GAL-00133\",\n  \"title\": \"ConnectFest 2027 Grand Expo Stage & Dignitaries (Updated)\",\n  \"append_images\": 1,\n  \"images\": [\n    {\n      \"image\": \"/files/stage_photo_4.jpg\",\n      \"caption\": \"Networking High Tea Break\"\n    }\n  ]\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Gallery Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_gallery_item",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_delete_gallery_item"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gallery_id\": \"GAL-00132\"\n}\n\n\n\n// Array format:\n// {\n//   \"gallery_ids\": [\"GAL-00105\", \"GAL-00106\", \"GAL-00107\"]\n// }\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload File",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.upload_file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.upload_file"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sponser",
+      "item": [
+        {
+          "name": "Create Sponser",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_create_sponsor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_create_sponsor"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sponsor_name\": \"Google Cloud\",\n  \"sponsor_category\": \"Innovation Partner\",\n  \"sponsored_for\": \"Official AI & Cloud Innovation Stage Partner\",\n  \"logo\": \"/files/google_cloud.png\",\n  \"website_url\": \"https://cloud.google.com\",\n  \"stall_number\": \"TS-01\",\n  \"is_featured\": 1,\n  \"is_active\": 1,\n  \"display_order\": 1,\n  \"description\": \"Empowering enterprise AI and scalable infrastructure.\",\n  \"contact_person\": \"Sundar\",\n  \"email\": \"partnerships@google.com\",\n  \"phone\": \"9876543210\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sponsers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_sponsors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_sponsors"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update  Sponsers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_sponsor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_update_sponsor"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sponsor_id\": \"SPON-00134\",\n  \"sponsored_for\": \"Official AI & Cloud Innovation Stage + VIP Gala Dinner Partner\",\n  \"website_url\": \"https://cloud.google.com\",\n  \"display_order\": 2,\n  \"is_featured\": 1\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete  Sponsers ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_delete_sponsor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_delete_sponsor"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sponsor_ids\": [\"SPON-00134\"]\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Become A Sponser",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.become_a_sponsor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.become_a_sponsor"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sundar\",\n  \"company_name\": \"Zoho Corporation\",\n  \"mobile\": \"9876543210\",\n  \"email\": \"partnerships@zoho.com\",\n  \"logo\": \"https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg\",\n  \"website_url\": \"https://zoho.com\",\n  \"sponsor_category\": \"Title Sponsor\",\n  \"sponsored_for\": \"Grand Title Event Sponsor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Action Sponsers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_action_sponsor_registration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_action_sponsor_registration"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_id\": \"SPON-REG-16795\",\n  \"action\": \"block\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Registered Sponsers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_sponsor_registrations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.admin_get_sponsor_registrations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"All\",\n  \"page\": 1,\n  \"limit\": 50,\n  \"search\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Register Event",
+      "item": [
+        {
+          "name": "Register Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.register_bni_event",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.register_bni_event"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Rithi\",\n  \"company_name\": \"MDQ Tech\",\n  \"mobile_no\": \"9344126325\",\n  \"email\": \"rithinaveena2001@gmail.com\",\n  \"chapter_name\": \"Titans\",\n  \"region_name\": \"Chennai Central\",\n  \"location\": \"Chennai\",\n  \"industry\": \"IT\",\n  \"segment\": \"Software\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Pass",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.check_bni_event_pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.check_bni_event_pass"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pass_code\":\"BNI-EVT-16478\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event Pass",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_bni_event_pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_bni_event_pass"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "\n\n{\"email\": \"sakthimuruganjcse2021@gmail.com\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event Registors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_event_registrations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_event_registrations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  // \"search\": \"Sakthi\",\n  // \"chapter\": \"Titans\",\n  // \"status\": \"Checked In\",\n  // \"page\": 1,\n  // \"limit\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Visitors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/method/connectfest.api.get_visitor_registrations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "method",
+                "connectfest.api.get_visitor_registrations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     }

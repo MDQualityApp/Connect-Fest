@@ -739,14 +739,19 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 def admin_clear_all_bookings(**kwargs):
 	"""
 	Admin API: Complete wipe and reset for testing.
-	Deletes all Exhibitor Registrations, Visitor Registrations, resets 220 stalls to Available, and clears Redis queues.
+	Supports delete_all_stalls=1 / stall_delete_all=1 to delete all stalls.
+	Does NOT delete BNI Event Registrations by default (clear_events=0).
 	"""
 	return _admin_clear_all_bookings(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def admin_reset_test_data(**kwargs):
-	"""Alias for admin_clear_all_bookings."""
+	"""
+	Admin API: Reset test data.
+	Supports delete_all_stalls=1 / stall_delete_all=1 to delete all stalls.
+	Does NOT delete BNI Event Registrations by default (clear_events=0).
+	"""
 	return _admin_clear_all_bookings(**kwargs)
 
 

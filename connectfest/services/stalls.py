@@ -2168,11 +2168,13 @@ def admin_restore_defaults(reset_pricing=1, reset_stalls=1, reset_booked=0, **kw
 @handle_api_errors("ConnectFest Admin Clear All Bookings Error")
 def admin_clear_all_bookings(**kwargs):
 	"""
-	Admin Testing API: Clears exhibitors, visitors, and resets all 220 stalls to Available.
+	Admin Testing API: Clears exhibitors, visitors, and resets or deletes stalls.
 	Parameters:
+	- delete_all_stalls: 1 / True (or stall_delete_all: 1) = Delete ALL stalls from tabConnectFest Stall
+	- clear_events: 0 (default) = Does NOT delete BNI Event Registrations (set 1 to delete)
 	- clear_exhibitors: 1 (default) = Delete all records from tabConnectFest Registration
 	- clear_visitors: 1 (default) = Delete all records from tabConnectFest Visitor Registration
-	- reset_stalls: 1 (default) = Reset all stalls to Available and wipe booking fields & locks
+	- reset_stalls: 1 (default when delete_all_stalls=0) = Reset all stalls to Available
 	- clear_otps: 1 (default) = Delete all records from tabConnectFest OTP
 	- clear_queues: 1 (default) = Flush Redis queue and lock keys
 	"""
@@ -2196,9 +2198,10 @@ def admin_clear_all_bookings(**kwargs):
 
 	clear_ex = parse_boolean(data.get("clear_exhibitors", True))
 	clear_vis = parse_boolean(data.get("clear_visitors", True))
-	clear_events = parse_boolean(data.get("clear_events", True))
+	clear_events = parse_boolean(data.get("clear_events", False))
 	clear_bni_members = parse_boolean(data.get("clear_bni_members", False))
 	clear_users = parse_boolean(data.get("clear_users", True))
+	delete_all_st = parse_boolean(data.get("delete_all_stalls") or data.get("stall_delete_all") or data.get("delete_stalls", False))
 	reset_st = parse_boolean(data.get("reset_stalls", True))
 	clear_otp = parse_boolean(data.get("clear_otps", True))
 	clear_q = parse_boolean(data.get("clear_queues", True))
@@ -2219,12 +2222,14 @@ def admin_clear_all_bookings(**kwargs):
 		frappe.db.commit()
 		summary["visitors_deleted"] = count_before
 
-	# 3. Clear BNI Event Registrations
+	# 3. Clear BNI Event Registrations (Optional, defaults to False to protect event attendees)
 	if clear_events:
 		count_before = frappe.db.count("ConnectFest BNI Event Registration")
 		frappe.db.sql("DELETE FROM `tabConnectFest BNI Event Registration`")
 		frappe.db.commit()
 		summary["bni_events_deleted"] = count_before
+	else:
+		summary["bni_events_preserved"] = frappe.db.count("ConnectFest BNI Event Registration")
 
 	# 4. Clear CNR Member Directory (optional)
 	if clear_bni_members:
@@ -2238,8 +2243,23 @@ def admin_clear_all_bookings(**kwargs):
 	# 5. Clear Test Website Users
 	if clear_users:
 		try:
-			u_cnt = frappe.db.sql("SELECT COUNT(*) FROM `tabUser` WHERE user_type = 'Website User' AND name NOT IN ('Administrator', 'Guest')")[0][0]
-			frappe.db.sql("DELETE FROM `tabUser` WHERE user_type = 'Website User' AND name NOT IN ('Administrator', 'Guest')")
+			exclude_emails = set(["administrator", "guest"])
+			if not clear_events:
+				try:
+					ev_emails = frappe.db.sql_list("SELECT email FROM `tabConnectFest BNI Event Registration` WHERE email IS NOT NULL AND email != ''")
+					exclude_emails.update([e.strip().lower() for e in ev_emails if e])
+				except Exception:
+					pass
+			if not clear_ex:
+				try:
+					reg_emails = frappe.db.sql_list("SELECT email FROM `tabConnectFest Registration` WHERE email IS NOT NULL AND email != ''")
+					exclude_emails.update([e.strip().lower() for e in reg_emails if e])
+				except Exception:
+					pass
+
+			quoted = ", ".join(frappe.db.escape(e) for e in exclude_emails)
+			u_cnt = frappe.db.sql(f"SELECT COUNT(*) FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({quoted})")[0][0]
+			frappe.db.sql(f"DELETE FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({quoted})")
 			frappe.db.sql("DELETE FROM `tabHas Role` WHERE parent NOT IN (SELECT name FROM `tabUser`)")
 			frappe.db.sql("DELETE FROM `tabSessions` WHERE user != 'Administrator'")
 			frappe.db.commit()
@@ -2247,8 +2267,21 @@ def admin_clear_all_bookings(**kwargs):
 		except Exception as e:
 			summary["users_clear_note"] = str(e)
 
-	# 6. Reset Stalls
-	if reset_st:
+	# 6. Delete All Stalls or Reset Stalls to Available
+	if delete_all_st:
+		count_before = frappe.db.count("ConnectFest Stall")
+		frappe.db.sql("UPDATE `tabConnectFest Registration` SET stall_number = NULL")
+		frappe.db.sql("DELETE FROM `tabConnectFest Stall`")
+		frappe.db.commit()
+		summary["stalls_deleted"] = count_before
+		try:
+			cache = frappe.cache()
+			cache.delete_value("cf:all_stalls")
+			cache.delete_keys("cf:stall:*")
+			cache.delete_keys("connectfest:hold:*")
+		except Exception:
+			pass
+	elif reset_st:
 		frappe.db.sql("""
 			UPDATE `tabConnectFest Stall`
 			SET status = 'Available',
@@ -2301,6 +2334,7 @@ def admin_clear_all_bookings(**kwargs):
 		"current_state": {
 			"exhibitors_count": frappe.db.count("ConnectFest Registration"),
 			"visitors_count": frappe.db.count("ConnectFest Visitor Registration"),
+			"bni_events_count": frappe.db.count("ConnectFest BNI Event Registration"),
 			"booked_stalls": frappe.db.count("ConnectFest Stall", filters={"status": "Booked"}),
 			"available_stalls": frappe.db.count("ConnectFest Stall", filters={"status": "Available"}),
 			"total_stalls": frappe.db.count("ConnectFest Stall"),
