@@ -1078,14 +1078,14 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"delete_all_stalls\": 1,\n  \"clear_events\": 0,\n  \"clear_users\": 0,\n  \"clear_exhibitors\": 1,\n  \"clear_visitors\": 1,\n  \"clear_otps\": 1,\n  \"clear_queues\": 1,\n  \"confirm\": true\n}",
+                  "raw": "{\n  \"delete_all_stalls\": 1,\n  \"clear_events\": 0,\n  \"clear_exhibitors\": 1,\n  \"clear_visitors\": 1,\n  \"clear_otps\": 1,\n  \"clear_queues\": 1,\n  \"confirm\": true\n}",
                   "options": {
                     "raw": {
                       "language": "json"
                     }
                   }
                 },
-                "description": "Admin API to reset data. delete_all_stalls=1 deletes all stalls. clear_events=0 protects Event Registrations. clear_users=0 protects ALL users."
+                "description": "Admin API to reset data. When delete_all_stalls=1, all stalls are deleted. clear_events=0 protects Event Registrations."
               },
               "response": []
             }
