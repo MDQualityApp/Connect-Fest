@@ -2200,7 +2200,7 @@ def admin_clear_all_bookings(**kwargs):
 	clear_vis = parse_boolean(data.get("clear_visitors", True))
 	clear_events = parse_boolean(data.get("clear_events", False))
 	clear_bni_members = parse_boolean(data.get("clear_bni_members", False))
-	clear_users = parse_boolean(data.get("clear_users", True))
+	clear_users = parse_boolean(data.get("clear_users", False))
 	delete_all_st = parse_boolean(data.get("delete_all_stalls") or data.get("stall_delete_all") or data.get("delete_stalls", False))
 	reset_st = parse_boolean(data.get("reset_stalls", True))
 	clear_otp = parse_boolean(data.get("clear_otps", True))
@@ -2240,10 +2240,20 @@ def admin_clear_all_bookings(**kwargs):
 		frappe.db.commit()
 		summary["bni_members_deleted"] = count_before
 
-	# 5. Clear Test Website Users
+	# 5. Clear Test Website Users (Defaults to False - protects Admins, Scanners & Attendees)
 	if clear_users:
 		try:
 			exclude_emails = set(["administrator", "guest"])
+			# Always protect admins and scanner users
+			try:
+				privileged = frappe.db.sql_list("""
+					SELECT DISTINCT parent FROM `tabHas Role` 
+					WHERE role IN ('System Manager', 'Administrator', 'ConnectFest Gate Scanner', 'Desk User')
+				""")
+				exclude_emails.update([p.strip().lower() for p in privileged if p])
+			except Exception:
+				pass
+
 			if not clear_events:
 				try:
 					ev_emails = frappe.db.sql_list("SELECT email FROM `tabConnectFest BNI Event Registration` WHERE email IS NOT NULL AND email != ''")
@@ -2266,6 +2276,8 @@ def admin_clear_all_bookings(**kwargs):
 			summary["test_website_users_deleted"] = u_cnt
 		except Exception as e:
 			summary["users_clear_note"] = str(e)
+	else:
+		summary["users_preserved"] = True
 
 	# 6. Delete All Stalls or Reset Stalls to Available
 	if delete_all_st:

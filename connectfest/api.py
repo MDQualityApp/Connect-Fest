@@ -740,7 +740,8 @@ def admin_clear_all_bookings(**kwargs):
 	"""
 	Admin API: Complete wipe and reset for testing.
 	Supports delete_all_stalls=1 / stall_delete_all=1 to delete all stalls.
-	Does NOT delete BNI Event Registrations by default (clear_events=0).
+	Does NOT delete BNI Event Registrations (clear_events=0).
+	Does NOT delete Users by default (clear_users=0).
 	"""
 	return _admin_clear_all_bookings(**kwargs)
 
@@ -750,7 +751,8 @@ def admin_reset_test_data(**kwargs):
 	"""
 	Admin API: Reset test data.
 	Supports delete_all_stalls=1 / stall_delete_all=1 to delete all stalls.
-	Does NOT delete BNI Event Registrations by default (clear_events=0).
+	Does NOT delete BNI Event Registrations (clear_events=0).
+	Does NOT delete Users by default (clear_users=0).
 	"""
 	return _admin_clear_all_bookings(**kwargs)
 
