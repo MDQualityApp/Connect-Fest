@@ -893,7 +893,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		is_bni_member=record.get("is_bni_member"),
 		custom_base_price=stall_doc.price
 	)
-	tier = stall_doc.tier
+	tier = stall_doc.tier or ""
 	price = price_info["total_amount"]
 
 	record["stall_number"] = stall_num
@@ -939,7 +939,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 
 	return {
 		"status": "success",
-		"message": f"Stall {stall_num} ({tier}) selected successfully for {reg_id}",
+		"message": f"Stall {stall_num} ({tier}) selected successfully for {reg_id}" if tier else f"Stall {stall_num} selected successfully for {reg_id}",
 		"registration_id": reg_id,
 		"stall_number": stall_num,
 		"stall_category": tier,

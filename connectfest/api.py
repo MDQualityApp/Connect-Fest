@@ -71,6 +71,7 @@ from connectfest.services.stalls import (
 	get_admin_dashboard_data as _get_admin_dashboard_data,
 	admin_get_stalls as _admin_get_stalls,
 	admin_create_stall as _admin_create_stall,
+	admin_bulk_create_stalls as _admin_bulk_create_stalls,
 	admin_get_stall as _admin_get_stall,
 	admin_update_stall as _admin_update_stall,
 	admin_update_stall_crn as _admin_update_stall_crn,
@@ -645,9 +646,21 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 
 
 @frappe.whitelist(allow_guest=True)
-def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price=None, zone=None, **kwargs):
-	"""Admin API: Create a new exhibition stall."""
+def admin_create_stall(stall_number=None, tier=None, dimensions=None, price=None, zone=None, **kwargs):
+	"""Admin API: Create a new exhibition stall or multiple stalls dynamically."""
 	return _admin_create_stall(stall_number=stall_number, tier=tier, dimensions=dimensions, price=price, zone=zone, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_bulk_create_stalls(**kwargs):
+	"""Admin API: Bulk Create Multiple Exhibition Stalls dynamically."""
+	return _admin_bulk_create_stalls(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def bulk_create_stalls(**kwargs):
+	"""Alias for admin_bulk_create_stalls."""
+	return _admin_bulk_create_stalls(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -738,9 +751,10 @@ def admin_reset_test_data(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
-def setup_stalls():
-	"""Setup API: Populates or verifies 220 stalls and pricing tiers while preserving bookings."""
-	return _setup_default_stalls(preserve_booked=True)
+def setup_stalls(seed_stalls=False, **kwargs):
+	"""Setup API: Verifies pricing tiers and default settings. Stalls preserved unless seed_stalls=True."""
+	from frappe.utils import cint
+	return _setup_default_stalls(preserve_booked=True, seed_stalls=bool(cint(seed_stalls)))
 
 seed_stalls = setup_stalls
 

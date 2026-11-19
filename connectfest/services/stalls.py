@@ -343,7 +343,7 @@ def get_stalls(**kwargs):
 				"hold_expires_at",
 			],
 			order_by="stall_number ASC",
-			limit=500,
+			limit=5000,
 		)
 
 		now_dt = now_datetime()
@@ -359,19 +359,23 @@ def get_stalls(**kwargs):
 
 		holds_released = 0
 		for stall in stalls:
-			t = stall.tier or "Regular"
+			t = (stall.tier or "Standard").strip() or "Standard"
 			if t not in tier_summary:
-				tier_summary[t] = {"total": 0, "available": 0, "booked": 0, "price": flt(pricing.get(t, stall.price))}
+				tier_summary[t] = {"total": 0, "available": 0, "booked": 0, "price": flt(stall.price or pricing.get(t, 0))}
 
 			tier_price = pricing.get(t, stall.price)
 			# Stall-specific custom price override:
-			# If an individual stall has a custom price configured by admin that differs from the default tier price, respect the stall's price!
 			stall_custom_price = flt(stall.get("price", 0))
-			if stall_custom_price > 0 and stall_custom_price != flt(tier_price):
+			if stall_custom_price > 0:
 				stall["price"] = stall_custom_price
 			else:
-				stall["price"] = tier_price
+				stall["price"] = flt(tier_price)
 			stall["crn"] = cint(stall.get("crn", 0))
+			stall["x"] = flt(stall.get("x") or 0.0)
+			stall["y"] = flt(stall.get("y") or 0.0)
+			stall["width"] = flt(stall.get("width") or 0.0)
+			stall["height"] = flt(stall.get("height") or 0.0)
+			stall["label"] = stall.get("label") or ""
 
 			# Release expired hold
 			if stall.status == "Hold" and stall.hold_expires_at and stall.hold_expires_at <= now_dt:
@@ -407,7 +411,8 @@ def get_stalls(**kwargs):
 
 			# Zone assignment
 			if not stall.get("zone"):
-				if t == "Title Sponsor": stall["zone"] = "Zone TS - Title Sponsor Arena"
+				if stall.get("block"): stall["zone"] = f"Zone {stall['block']}"
+				elif t == "Title Sponsor": stall["zone"] = "Zone TS - Title Sponsor Arena"
 				elif t == "Silver": stall["zone"] = "Zone D - East Pavilions"
 				elif t == "Premium": stall["zone"] = "Zone C - Center Grand Aisles"
 				elif t == "Standard": stall["zone"] = "Zone B - West Aisles"
@@ -1211,7 +1216,7 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 			"modified",
 		],
 		order_by="stall_number ASC",
-		limit=500,
+		limit=5000,
 	)
 
 	# Fetch payment details for booked stalls from ConnectFest Registration
@@ -1244,10 +1249,16 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 		base_p = flt(s.get("price", 0.0))
 		s["non_bni_extra_percentage"] = non_bni_extra_percentage
 		s["non_bni_price"] = round(base_p * (1.0 + non_bni_extra_percentage / 100.0), 2)
+		s["x"] = flt(s.get("x") or 0.0)
+		s["y"] = flt(s.get("y") or 0.0)
+		s["width"] = flt(s.get("width") or 0.0)
+		s["height"] = flt(s.get("height") or 0.0)
+		s["label"] = s.get("label") or ""
 		# Attach zone
-		t = s.tier or "Regular"
+		t = (s.tier or "Standard").strip() or "Standard"
 		if not s.get("zone"):
-			if t == "Title Sponsor": s["zone"] = "Zone TS - Title Sponsor Arena"
+			if s.get("block"): s["zone"] = f"Zone {s['block']}"
+			elif t == "Title Sponsor": s["zone"] = "Zone TS - Title Sponsor Arena"
 			elif t == "Silver": s["zone"] = "Zone D - East Pavilions"
 			elif t == "Premium": s["zone"] = "Zone C - Center Grand Aisles"
 			elif t == "Standard": s["zone"] = "Zone B - West Aisles"
@@ -1358,9 +1369,165 @@ def admin_get_stalls(status=None, tier=None, search=None, page=1, limit=50, **kw
 	}
 
 
-def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price=None, zone=None, crn=0, **kwargs):
+def admin_bulk_create_stalls(**kwargs):
 	"""
-	Admin API: Create a new exhibition stall.
+	Admin API: Bulk Create Multiple Exhibition Stalls dynamically.
+	Supports:
+	- block: Block / Aisle (e.g. "A", "B", "Block 1")
+	- dimensions: Dimensions (e.g. "3x2", "3/2", "3x3", "4x3")
+	- price: Custom stall price (e.g. 35000)
+	- count: Number of stalls to create (e.g. 5)
+	- prefix: Stall prefix (e.g. "A-")
+	- start_number: Starting number (default 1)
+	- pad_digits: Digits padding (default 2 -> "A-01", "A-02")
+	- stall_numbers: Explicit list or comma/newline separated string
+	- tier: Optional tier (e.g. "Standard", "Premium", or leave blank)
+	- zone: Optional zone (auto-generated if empty)
+	- crn: Corner stall flag (0 or 1)
+	- stalls: Optional list of individual stall dicts
+	"""
+	from connectfest.services.auth import check_admin_permission
+	from connectfest.services.pricing import get_tier_pricing
+	err = check_admin_permission("bulk stall creation")
+	if err:
+		return err
+
+	data = extract_request_data(kwargs)
+
+	# 1. Resolve stalls to create
+	stalls_to_create = []
+
+	raw_stalls = data.get("stalls") or kwargs.get("stalls")
+	if isinstance(raw_stalls, str):
+		try:
+			raw_stalls = json.loads(raw_stalls)
+		except Exception:
+			raw_stalls = None
+
+	blk = (data.get("block") or kwargs.get("block") or "").strip()
+	dims = (data.get("dimensions") or kwargs.get("dimensions") or "3x2").strip()
+	t = (data.get("tier") or kwargs.get("tier") or "").strip()
+	z = (data.get("zone") or kwargs.get("zone") or (f"Zone {blk}" if blk else "General")).strip()
+	raw_p = data.get("price") if data.get("price") is not None else kwargs.get("price")
+	p = flt(raw_p) if raw_p is not None else 0.0
+	if p <= 0 and t:
+		pricing = get_tier_pricing()
+		p = flt(pricing.get(t, 0.0))
+	if p <= 0:
+		p = 35000.0
+
+	raw_crn = data.get("crn") if "crn" in data else kwargs.get("crn", 0)
+	crn_val = 1 if (parse_boolean(raw_crn) or str(raw_crn).strip().lower() in ("1", "true", "yes", "on", "crn")) else 0
+
+	if isinstance(raw_stalls, list) and raw_stalls:
+		stalls_to_create = raw_stalls
+	else:
+		raw_numbers = data.get("stall_numbers") or kwargs.get("stall_numbers") or data.get("custom_numbers") or kwargs.get("custom_numbers")
+		stall_numbers_list = []
+		if raw_numbers:
+			if isinstance(raw_numbers, list):
+				stall_numbers_list = [str(x).strip().upper() for x in raw_numbers if str(x).strip()]
+			elif isinstance(raw_numbers, str):
+				import re
+				parts = re.split(r'[\r\n,;]+', raw_numbers)
+				stall_numbers_list = [x.strip().upper() for x in parts if x.strip()]
+
+		if stall_numbers_list:
+			for s_num in stall_numbers_list:
+				stalls_to_create.append({
+					"stall_number": s_num,
+					"block": blk,
+					"dimensions": dims,
+					"price": p,
+					"tier": t,
+					"zone": z,
+					"crn": crn_val,
+				})
+		else:
+			pfx = (data.get("prefix") or kwargs.get("prefix") or (f"{blk}-" if blk else "A-")).strip().upper()
+			single_s_num = (data.get("stall_number") or kwargs.get("stall_number") or "").strip().upper()
+			cnt = cint(data.get("count") or kwargs.get("count") or 1)
+			start_num = cint(data.get("start_number") or kwargs.get("start_number") or data.get("start") or 1)
+			pad = cint(data.get("pad_digits") if "pad_digits" in data else kwargs.get("pad_digits", 2))
+			if "pad_zeros" in data and not parse_boolean(data.get("pad_zeros")):
+				pad = 0
+
+			if cnt <= 1 and single_s_num:
+				stalls_to_create.append({
+					"stall_number": single_s_num,
+					"block": blk,
+					"dimensions": dims,
+					"price": p,
+					"tier": t,
+					"zone": z,
+					"crn": crn_val,
+				})
+			else:
+				for i in range(start_num, start_num + cnt):
+					num_str = f"{pfx}{str(i).zfill(pad)}" if pad > 0 else f"{pfx}{i}"
+					stalls_to_create.append({
+						"stall_number": num_str,
+						"block": blk,
+						"dimensions": dims,
+						"price": p,
+						"tier": t,
+						"zone": z,
+						"crn": crn_val,
+					})
+
+	if not stalls_to_create:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "No stall numbers or configuration provided to create stalls."}
+
+	created = []
+	skipped = []
+	for st in stalls_to_create:
+		s_num = str(st.get("stall_number") or "").strip().upper()
+		if not s_num:
+			continue
+		if frappe.db.exists("ConnectFest Stall", s_num):
+			skipped.append(s_num)
+			continue
+
+		st_p = flt(st.get("price", p))
+		st_tier = (st.get("tier") or t).strip()
+		st_dim = (st.get("dimensions") or dims).strip()
+		st_blk = (st.get("block") or blk).strip()
+		st_z = (st.get("zone") or (z if z else (f"Zone {st_blk}" if st_blk else "General"))).strip()
+		st_crn = cint(st.get("crn", crn_val))
+
+		doc = frappe.get_doc({
+			"doctype": "ConnectFest Stall",
+			"stall_number": s_num,
+			"block": st_blk,
+			"dimensions": st_dim,
+			"price": st_p,
+			"tier": st_tier,
+			"zone": st_z,
+			"status": "Available",
+			"crn": st_crn,
+			"is_blocked_by_admin": 0,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		created.append(s_num)
+
+	frappe.db.commit()
+	invalidate_stalls_cache()
+
+	return {
+		"status": "success",
+		"message": f"Successfully created {len(created)} stall(s)!" + (f" ({len(skipped)} skipped as duplicates)" if skipped else ""),
+		"created_count": len(created),
+		"skipped_count": len(skipped),
+		"created_stalls": created,
+		"skipped_stalls": skipped,
+	}
+
+
+def admin_create_stall(stall_number=None, tier=None, dimensions=None, price=None, zone=None, crn=0, block=None, **kwargs):
+	"""
+	Admin API: Create a new exhibition stall or multiple stalls dynamically.
 	Requires System Manager or Administrator privileges.
 	"""
 	from connectfest.services.auth import check_admin_permission
@@ -1370,29 +1537,46 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 		return err
 
 	data = extract_request_data(kwargs)
+	raw_count = data.get("count") or kwargs.get("count")
+	if (raw_count and cint(raw_count) > 1) or data.get("stall_numbers") or kwargs.get("stall_numbers") or data.get("stalls") or kwargs.get("stalls"):
+		return admin_bulk_create_stalls(
+			stall_number=stall_number,
+			tier=tier,
+			dimensions=dimensions,
+			price=price,
+			zone=zone,
+			crn=crn,
+			block=block,
+			**kwargs
+		)
+
 	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
-	t = (tier or data.get("tier") or "Regular").strip()
-	dim = (dimensions or data.get("dimensions") or ("3 x 3 m" if t in ("Premium", "Standard") else ("6 x 3 m" if t == "Silver" else "2.5 x 2.5 m"))).strip()
-	z = (zone or data.get("zone") or ("Zone D - East Pavilions" if t == "Silver" else ("Zone C - Center Aisles" if t == "Premium" else ("Zone B - West Aisles" if t == "Standard" else "Zone E - South Entrance Corridor")))).strip()
+	t = (tier or data.get("tier") or "").strip()
+	blk = (block or data.get("block") or "").strip()
+	dim = (dimensions or data.get("dimensions") or "3x2").strip()
+	z = (zone or data.get("zone") or (f"Zone {blk}" if blk else "General")).strip()
 	raw_crn = crn if crn is not None else (data.get("crn") if "crn" in data else kwargs.get("crn", 0))
 	crn_val = 1 if (parse_boolean(raw_crn) or str(raw_crn).strip().lower() in ("1", "true", "yes", "on", "crn")) else 0
 
 	if not s_num:
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "Stall Number (stall_number) is mandatory (e.g. 'PR-50', 'VIP-01')"}
+		return {"status": "error", "message": "Stall Number (stall_number) is mandatory (e.g. 'A-01', 'B-05')"}
 
 	if frappe.db.exists("ConnectFest Stall", s_num):
 		frappe.local.response["http_status_code"] = 409
 		return {"status": "error", "message": f"Stall '{s_num}' already exists in inventory!"}
 
 	p = flt(price if price is not None else data.get("price"))
-	if p <= 0:
+	if p <= 0 and t:
 		pricing = get_tier_pricing()
-		p = flt(pricing.get(t, 25000.0))
+		p = flt(pricing.get(t, 0.0))
+	if p <= 0:
+		p = 35000.0
 
 	doc = frappe.get_doc({
 		"doctype": "ConnectFest Stall",
 		"stall_number": s_num,
+		"block": blk,
 		"tier": t,
 		"dimensions": dim,
 		"zone": z,
@@ -1408,9 +1592,10 @@ def admin_create_stall(stall_number=None, tier="Regular", dimensions=None, price
 
 	return {
 		"status": "success",
-		"message": f"Stall {s_num} ({t}) created successfully!",
+		"message": f"Stall {s_num} created successfully!",
 		"stall": {
 			"stall_number": s_num,
+			"block": blk,
 			"tier": t,
 			"dimensions": dim,
 			"zone": z,
@@ -1463,6 +1648,7 @@ def admin_update_stall(stall_number=None, **kwargs):
 
 	stall = frappe.get_doc("ConnectFest Stall", s_num)
 
+	if "block" in data: stall.block = data["block"]
 	if "tier" in data: stall.tier = data["tier"]
 	if "dimensions" in data: stall.dimensions = data["dimensions"]
 	if "zone" in data: stall.zone = data["zone"]
@@ -1575,8 +1761,12 @@ admin_toggle_stall_crn = admin_update_stall_crn
 
 def admin_delete_stall(stall_number=None, **kwargs):
 	"""
-	Admin API: Delete a stall.
-	CRITICAL RULE: If a stall is already BOOKED by an exhibitor, deletion is strictly PREVENTED!
+	Admin API: Delete a stall or multiple stalls.
+	Supports:
+	- stall_number: single stall (e.g. 'A-01')
+	- stall_numbers: list or comma-separated stall numbers (e.g. 'A-01, A-02' or ['A-01', 'A-02'])
+	- delete_all / select_all: 1/True to delete all stalls!
+	- force: 1/True to force deletion even if booked (use with caution)
 	"""
 	from connectfest.services.auth import check_admin_permission
 	from connectfest.services.common import STALL_LOCK_PREFIX
@@ -1585,42 +1775,66 @@ def admin_delete_stall(stall_number=None, **kwargs):
 		return err
 
 	data = extract_request_data(kwargs)
-	s_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip().upper()
+	delete_all_flag = parse_boolean(data.get("delete_all") or kwargs.get("delete_all") or data.get("select_all") or kwargs.get("select_all"))
+	force_val = parse_boolean(data.get("force") or kwargs.get("force"))
+	cache = frappe.cache()
 
-	if not s_num:
-		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": "Stall Number (stall_number) is required"}
-
-	if not frappe.db.exists("ConnectFest Stall", s_num):
-		frappe.local.response["http_status_code"] = 404
-		return {"status": "error", "message": f"Stall '{s_num}' does not exist"}
-
-	stall = frappe.get_doc("ConnectFest Stall", s_num)
-
-	# STRICT CHECK: Cannot delete booked stall!
-	if stall.status == "Booked" or stall.booked_by_registration:
-		frappe.local.response["http_status_code"] = 409
-		buyer = stall.booked_by_name or stall.booked_by_registration
+	if delete_all_flag:
+		if force_val:
+			frappe.db.sql("DELETE FROM `tabConnectFest Stall`")
+		else:
+			frappe.db.sql("""
+				DELETE FROM `tabConnectFest Stall`
+				WHERE (status != 'Booked' OR status IS NULL)
+				AND (booked_by_registration IS NULL OR booked_by_registration = '')
+			""")
+		frappe.db.commit()
+		invalidate_stalls_cache()
 		return {
-			"status": "error",
-			"message": f"Cannot delete stall '{s_num}' because it has already been booked and paid for by exhibitor '{buyer}'!"
+			"status": "success",
+			"message": "All stalls deleted successfully.",
+			"remaining_stalls": frappe.db.count("ConnectFest Stall"),
 		}
 
-	# Clean up any hold
-	try:
-		cache = frappe.cache()
-		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{s_num}"))
-	except Exception:
-		pass
+	raw_nums = data.get("stall_numbers") or kwargs.get("stall_numbers") or data.get("stall_no") or stall_number
+	stall_list = parse_stall_numbers(raw_nums) if raw_nums else []
+	if not stall_list:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Stall Number (stall_number or stall_numbers) is required"}
 
-	frappe.db.delete("ConnectFest Stall", {"name": s_num})
+	deleted = []
+	errors = []
+	for s_num in stall_list:
+		if not frappe.db.exists("ConnectFest Stall", s_num):
+			errors.append(f"Stall '{s_num}' does not exist")
+			continue
+
+		stall = frappe.get_doc("ConnectFest Stall", s_num)
+		if (stall.status == "Booked" or stall.booked_by_registration) and not force_val:
+			buyer = stall.booked_by_name or stall.booked_by_registration
+			errors.append(f"Cannot delete booked stall '{s_num}' (booked by {buyer})")
+			continue
+
+		try:
+			cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{s_num}"))
+		except Exception:
+			pass
+
+		frappe.db.delete("ConnectFest Stall", {"name": s_num})
+		deleted.append(s_num)
+
 	frappe.db.commit()
 	invalidate_stalls_cache()
 
+	if not deleted and errors:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "; ".join(errors)}
+
 	return {
 		"status": "success",
-		"message": f"Stall '{s_num}' deleted successfully from inventory.",
-		"deleted_stall": s_num,
+		"message": f"Successfully deleted {len(deleted)} stall(s)." + (f" Warnings: {'; '.join(errors)}" if errors else ""),
+		"deleted_stalls": deleted,
+		"errors": errors,
 	}
 
 
@@ -1746,19 +1960,12 @@ def build_connectfest_220_stalls():
 DEFAULT_STALLS_SPEC = build_connectfest_220_stalls()
 
 
-def setup_default_stalls(preserve_booked=True):
+def setup_default_stalls(preserve_booked=True, seed_stalls=False):
 	"""
 	Universal Stall & Tier Setup / Initialization Function for ConnectFest 2027.
-	Sets up all 220 official floor-plan stalls (Blocks A to P + Title Sponsor TS-01) with SVG coordinates & dimensions.
-	- 220 stalls:
-	  * Title Sponsor: 1 stall (TS-01, 12x4m, Grand Central Arena)
-	  * Silver: 37 stalls (4x3m, 6x3m, 8x3m, 6x4m, 8x4m, 6x5m)
-	  * Premium: 81 stalls (3x3m, 5x2m, 5x3m, 6x2m)
-	  * Standard: 59 stalls (3x2m)
-	  * Regular: 42 stalls (2x2m)
-	- Sets up default 5 tier pricing in 'ConnectFest Tier Pricing'.
-	- Preserves booked stalls & registrations.
-	- 100% Idempotent and safe to run multiple times.
+	- By default (seed_stalls=False): seeds dynamic tier pricing and site settings if missing.
+	  Admin-created stalls are PRESERVED and never wiped or overwritten during bench migrate!
+	- Only if explicitly requested (seed_stalls=True): seeds the 220 official floor-plan stalls.
 	"""
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
 	sess_user = getattr(getattr(frappe, "session", None), "user", None) or "Administrator"
@@ -1811,23 +2018,20 @@ def setup_default_stalls(preserve_booked=True):
 		except Exception:
 			pass
 
-	# 3. Seed / Verify all 220 Default Stalls
+	if not seed_stalls:
+		return {
+			"status": "success",
+			"message": "Tier pricing and default settings verified. Stalls preserved.",
+			"total_stalls": frappe.db.count("ConnectFest Stall") if frappe.db.table_exists("ConnectFest Stall") else 0,
+			"newly_created": 0,
+			"updated": 0,
+		}
+
+	# 3. Seed / Verify all 220 Default Stalls (Only when seed_stalls=True)
 	if not frappe.db.table_exists("ConnectFest Stall"):
 		return {"status": "skipped", "message": "ConnectFest Stall table not found"}
 
 	pricing = get_tier_pricing()
-
-	# Clean up obsolete placeholder unbooked stalls (e.g. SL-, PR-, ST-, RG-)
-	try:
-		frappe.db.sql("""
-			DELETE FROM `tabConnectFest Stall`
-			WHERE (stall_number LIKE 'SL-%' OR stall_number LIKE 'PR-%' OR stall_number LIKE 'ST-%' OR stall_number LIKE 'RG-%')
-			AND (status != 'Booked' OR status IS NULL)
-			AND (booked_by_registration IS NULL OR booked_by_registration = '')
-		""")
-	except Exception:
-		pass
-
 	created_count = 0
 	updated_count = 0
 	spec_stalls = build_connectfest_220_stalls()

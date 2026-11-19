@@ -7,12 +7,12 @@
  "engine": "InnoDB",
  "field_order": [
   "stall_number",
-  "tier",
-  "dimensions",
-  "zone",
-  "price",
-  "status",
   "block",
+  "dimensions",
+  "price",
+  "tier",
+  "zone",
+  "status",
   "crn",
   "label",
   "x",
@@ -44,23 +44,16 @@
    "unique": 1
   },
   {
-   "fieldname": "tier",
+   "fieldname": "block",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Tier",
-   "reqd": 1,
-   "search_index": 1
+   "label": "Block / Aisle"
   },
   {
    "fieldname": "dimensions",
    "fieldtype": "Data",
-   "label": "Dimensions"
-  },
-  {
-   "fieldname": "zone",
-   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Zone"
+   "label": "Dimensions"
   },
   {
    "fieldname": "price",
@@ -68,6 +61,20 @@
    "in_list_view": 1,
    "label": "Price (INR)",
    "reqd": 1
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tier",
+   "reqd": 0,
+   "search_index": 1
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Zone"
   },
   {
    "default": "Available",
@@ -80,12 +87,6 @@
    "search_index": 1
   },
   {
-   "fieldname": "block",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Block / Aisle"
-  },
-  {
    "default": "0",
    "fieldname": "crn",
    "fieldtype": "Check",
@@ -95,26 +96,31 @@
   {
    "fieldname": "label",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Floorplan Label"
   },
   {
    "fieldname": "x",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "SVG X"
   },
   {
    "fieldname": "y",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "SVG Y"
   },
   {
    "fieldname": "width",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "SVG Width"
   },
   {
    "fieldname": "height",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "SVG Height"
   },
   {
@@ -195,7 +201,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-17 19:30:00",
+ "modified": "2026-11-19 11:00:00",
  "modified_by": "Administrator",
  "module": "ConnectFest",
  "name": "ConnectFest Stall",

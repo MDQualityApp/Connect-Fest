@@ -55,13 +55,14 @@ def ensure_standard_roles():
 def after_migrate():
 	"""
 	Hook executed automatically at the end of `bench migrate`.
-	Ensures site_config defaults, 220 standard stalls, pricing tiers, sponsors, terms, and settings exist.
+	Ensures site_config defaults, pricing tiers, sponsors, terms, and settings exist.
+	Stalls created by admin are preserved and never deleted or overwritten during migrate!
 	"""
 	ensure_standard_roles()
 	setup_site_config_defaults()
 
 	try:
-		setup_default_stalls(preserve_booked=True)
+		setup_default_stalls(preserve_booked=True, seed_stalls=False)
 	except Exception as e:
 		frappe.log_error(f"ConnectFest after_migrate error: {str(e)}", frappe.get_traceback())
 		print(f"ConnectFest after_migrate warning: {e}")
@@ -87,7 +88,7 @@ def after_install():
 	setup_site_config_defaults()
 
 	try:
-		setup_default_stalls(preserve_booked=True)
+		setup_default_stalls(preserve_booked=True, seed_stalls=False)
 	except Exception as e:
 		frappe.log_error(f"ConnectFest after_install error: {str(e)}", frappe.get_traceback())
 		print(f"ConnectFest after_install warning: {e}")
