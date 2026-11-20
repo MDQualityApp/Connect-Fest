@@ -415,8 +415,8 @@ def register_stall(**kwargs):
 	pass_2_image = save_image_from_base64_or_url(raw_p2_img, file_name_prefix=f"exh2_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_p2_img else ""
 	pass_2_mobile = (data.get("pass_2_mobile") or data.get("co_exhibitor_mobile") or "").strip()
 	pass_2_email = (data.get("pass_2_email") or data.get("co_exhibitor_email") or "").strip().lower()
-	pass_2_code = f"{reg_id}-P2"
-	pass_2_qr = f"CONNECTFEST2027:EXHIBITOR:{stall_number or ''}:{pass_2_code}:{pass_2_email or email}" if pass_2_name else ""
+	pass_2_code = f"{reg_id}-P2" if pass_2_name else ""
+	pass_2_qr = f"CONNECTFEST2027:EXHIBITOR:{stall_number or ''}:{pass_2_code}:{pass_2_email or email}" if (pass_2_name and pass_2_code) else ""
 
 	record = {
 		"name": reg_id,
@@ -906,7 +906,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					"checked_in": 0,
 					"checked_in_at": None,
 					"checked_in_by": None,
-					"pass_2_pass_code": f"{new_reg_id}-P2",
+					"pass_2_pass_code": f"{new_reg_id}-P2" if prev.get("pass_2_name") else "",
 					"pass_2_checked_in": 0,
 					"pass_2_checked_in_at": None,
 					"pass_2_checked_in_by": None,
@@ -1017,12 +1017,14 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 
 	if db_target:
 		p_code = frappe.db.get_value("ConnectFest Registration", db_target, "pass_code") or reg_id
-		p2_code = frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_pass_code") or f"{p_code}-P2"
-		p2_name = frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_name") or ""
-		p2_em = frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_email") or ""
+		p2_name = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_name") or "").strip()
+		p2_code = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_pass_code") or "").strip()
+		if p2_name and not p2_code:
+			p2_code = f"{p_code}-P2"
+		p2_em = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_email") or "").strip()
 		em = record.get("email") or ""
 		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p_code}:{em}"
-		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p2_code}:{p2_em or em}" if p2_name else ""
+		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p2_code}:{p2_em or em}" if (p2_name and p2_code) else ""
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			db_target,
@@ -1034,8 +1036,8 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				"payment_mode": "Online",
 				"pass_code": p_code,
 				"qr_payload": qr_pl,
-				"pass_2_pass_code": p2_code,
-				"pass_2_qr_payload": p2_qr,
+				"pass_2_pass_code": p2_code if p2_name else "",
+				"pass_2_qr_payload": p2_qr if p2_name else "",
 			},
 			update_modified=False,
 		)

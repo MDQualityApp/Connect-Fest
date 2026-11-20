@@ -1113,9 +1113,13 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				# Pass 2: Co-Exhibitor Pass (Booth Staff)
 				chk_p2 = cint(sb.get("pass_2_checked_in") or 0)
 				p2_name = (sb.get("pass_2_name") or "").strip()
-				p2_code = sb.get("pass_2_pass_code") or f"{sb.get('registration_id')}-P2"
 				is_p2_assigned = bool(p2_name)
-				p2_qr = sb.get("pass_2_qr_payload") or (f"CONNECTFEST2027:EXHIBITOR:{sb.get('stall_number')}:{p2_code}:{sb.get('pass_2_email') or sb.get('email')}" if is_p2_assigned else None)
+				p2_code = (sb.get("pass_2_pass_code") or "").strip() if is_p2_assigned else None
+				if is_p2_assigned and not p2_code:
+					p2_code = f"{sb.get('registration_id')}-P2"
+				p2_qr = (sb.get("pass_2_qr_payload") or "").strip() if is_p2_assigned else None
+				if is_p2_assigned and not p2_qr and p2_code:
+					p2_qr = f"CONNECTFEST2027:EXHIBITOR:{sb.get('stall_number')}:{p2_code}:{sb.get('pass_2_email') or sb.get('email')}"
 				p2 = {
 					"pass_index": 2,
 					"pass_number": 2,
@@ -1124,10 +1128,10 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"pass_code": p2_code,
 					"registration_id": sb.get("registration_id"),
 					"full_name": p2_name or "Co-Exhibitor (Unassigned)",
-					"visitor_image": format_full_url(sb.get("pass_2_image")),
-					"image": format_full_url(sb.get("pass_2_image")),
-					"mobile_no": sb.get("pass_2_mobile") or "",
-					"email": sb.get("pass_2_email") or "",
+					"visitor_image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
+					"image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
+					"mobile_no": sb.get("pass_2_mobile") or "" if is_p2_assigned else "",
+					"email": sb.get("pass_2_email") or "" if is_p2_assigned else "",
 					"company_name": sb.get("company_name"),
 					"company_logo": sb.get("company_logo"),
 					"location": sb.get("location") or "",
@@ -1353,10 +1357,14 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	}
 
 	# Pass 2: Co-Exhibitor Pass (Booth Staff)
-	pcode2 = rec.get("pass_2_pass_code") or f"{rec.get('registration_id')}-P2"
 	p2_name = (rec.get("pass_2_name") or "").strip()
 	is_p2_assigned = bool(p2_name)
-	qr2 = rec.get("pass_2_qr_payload") or (f"CONNECTFEST2027:EXHIBITOR:{rec.get('stall_number')}:{pcode2}:{rec.get('pass_2_email') or rec.get('email')}" if is_p2_assigned else None)
+	pcode2 = (rec.get("pass_2_pass_code") or "").strip() if is_p2_assigned else None
+	if is_p2_assigned and not pcode2:
+		pcode2 = f"{rec.get('registration_id')}-P2"
+	qr2 = (rec.get("pass_2_qr_payload") or "").strip() if is_p2_assigned else None
+	if is_p2_assigned and not qr2 and pcode2:
+		qr2 = f"CONNECTFEST2027:EXHIBITOR:{rec.get('stall_number')}:{pcode2}:{rec.get('pass_2_email') or rec.get('email')}"
 	chk2 = cint(rec.get("pass_2_checked_in") or 0)
 
 	pass_2 = {
@@ -1367,10 +1375,10 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"pass_code": pcode2,
 		"registration_id": rec.get("registration_id") or rec.get("name"),
 		"full_name": p2_name or "Co-Exhibitor (Unassigned)",
-		"visitor_image": format_full_url(rec.get("pass_2_image")),
-		"image": format_full_url(rec.get("pass_2_image")),
-		"mobile_no": rec.get("pass_2_mobile") or "",
-		"email": rec.get("pass_2_email") or "",
+		"visitor_image": format_full_url(rec.get("pass_2_image")) if is_p2_assigned else "",
+		"image": format_full_url(rec.get("pass_2_image")) if is_p2_assigned else "",
+		"mobile_no": rec.get("pass_2_mobile") or "" if is_p2_assigned else "",
+		"email": rec.get("pass_2_email") or "" if is_p2_assigned else "",
 		"company_name": rec.get("company_name"),
 		"company_logo": format_full_url(rec.get("company_logo")),
 		"location": rec.get("location") or "",

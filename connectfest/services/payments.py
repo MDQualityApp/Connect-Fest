@@ -778,10 +778,12 @@ def verify_razorpay_payment(**kwargs):
 		st_num = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "stall_number") or ""
 		em = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or ""
 		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p_code}:{em}"
-		p2_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_pass_code") or f"{p_code}-P2"
-		p2_name = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_name") or ""
-		p2_em = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_email") or ""
-		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p2_code}:{p2_em or em}" if p2_name else ""
+		p2_name = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_name") or "").strip()
+		p2_code = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_pass_code") or "").strip()
+		if p2_name and not p2_code:
+			p2_code = f"{p_code}-P2"
+		p2_em = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_email") or "").strip()
+		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p2_code}:{p2_em or em}" if (p2_name and p2_code) else ""
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			{"registration_id": reg_id},
@@ -795,8 +797,8 @@ def verify_razorpay_payment(**kwargs):
 				"payment_date": now_str,
 				"pass_code": p_code,
 				"qr_payload": qr_pl,
-				"pass_2_pass_code": p2_code,
-				"pass_2_qr_payload": p2_qr,
+				"pass_2_pass_code": p2_code if p2_name else "",
+				"pass_2_qr_payload": p2_qr if p2_name else "",
 			},
 		)
 		frappe.db.commit()
@@ -1846,10 +1848,13 @@ def admin_confirm_payment(**kwargs):
 	if not getattr(reg_doc, "pass_code", None):
 		reg_doc.pass_code = actual_reg_id
 	reg_doc.qr_payload = f"CONNECTFEST2027:EXHIBITOR:{chosen_stall}:{reg_doc.pass_code}:{reg_doc.email}"
-	if not getattr(reg_doc, "pass_2_pass_code", None):
-		reg_doc.pass_2_pass_code = f"{reg_doc.pass_code}-P2"
-	if getattr(reg_doc, "pass_2_name", None):
+	if getattr(reg_doc, "pass_2_name", None) and str(reg_doc.pass_2_name).strip():
+		if not getattr(reg_doc, "pass_2_pass_code", None):
+			reg_doc.pass_2_pass_code = f"{reg_doc.pass_code}-P2"
 		reg_doc.pass_2_qr_payload = f"CONNECTFEST2027:EXHIBITOR:{chosen_stall}:{reg_doc.pass_2_pass_code}:{reg_doc.pass_2_email or reg_doc.email}"
+	else:
+		reg_doc.pass_2_pass_code = ""
+		reg_doc.pass_2_qr_payload = ""
 	reg_doc.save(ignore_permissions=True)
 
 	# Update stall doc
