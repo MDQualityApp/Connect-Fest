@@ -113,6 +113,7 @@ from connectfest.services.passes import (
 	get_scanned_users as _get_scanned_users,
 	admin_get_scanned_users as _admin_get_scanned_users,
 	get_exhibitor_badge as _get_exhibitor_badge,
+	update_co_exhibitor_pass as _update_co_exhibitor_pass,
 )
 from connectfest.services.settings import (
 	admin_get_settings as _admin_get_settings,
@@ -509,6 +510,24 @@ def get_exhibitor_pass(registration_id=None, stall_number=None, **kwargs):
 def get_badge(registration_id=None, stall_number=None, **kwargs):
 	"""General alias for get_exhibitor_badge."""
 	return _get_exhibitor_badge(registration_id=registration_id, stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_co_exhibitor_pass(registration_id=None, stall_number=None, name=None, full_name=None, image=None, photo=None, mobile_no=None, email=None, **kwargs):
+	"""Assigns or updates the 2nd Exhibitor Pass (Friend / Booth Staff) details."""
+	return _update_co_exhibitor_pass(registration_id=registration_id, stall_number=stall_number, name=name, full_name=full_name, image=image, photo=photo, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_second_exhibitor_pass(registration_id=None, stall_number=None, name=None, full_name=None, image=None, photo=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for update_co_exhibitor_pass."""
+	return _update_co_exhibitor_pass(registration_id=registration_id, stall_number=stall_number, name=name, full_name=full_name, image=image, photo=photo, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def set_second_exhibitor_pass(registration_id=None, stall_number=None, name=None, full_name=None, image=None, photo=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for update_co_exhibitor_pass."""
+	return _update_co_exhibitor_pass(registration_id=registration_id, stall_number=stall_number, name=name, full_name=full_name, image=image, photo=photo, mobile_no=mobile_no, email=email, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

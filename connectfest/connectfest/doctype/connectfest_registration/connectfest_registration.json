@@ -296,6 +296,63 @@
    "fieldname": "checked_in_by",
    "fieldtype": "Data",
    "label": "Checked In By"
+  },
+  {
+   "fieldname": "pass_1_image",
+   "fieldtype": "Attach Image",
+   "label": "Pass 1 Photo"
+  },
+  {
+   "fieldname": "pass_2_section",
+   "fieldtype": "Section Break",
+   "label": "Co-Exhibitor Pass 2"
+  },
+  {
+   "fieldname": "pass_2_name",
+   "fieldtype": "Data",
+   "label": "Pass 2 Holder Name"
+  },
+  {
+   "fieldname": "pass_2_image",
+   "fieldtype": "Attach Image",
+   "label": "Pass 2 Photo"
+  },
+  {
+   "fieldname": "pass_2_mobile",
+   "fieldtype": "Data",
+   "label": "Pass 2 Mobile"
+  },
+  {
+   "fieldname": "pass_2_email",
+   "fieldtype": "Data",
+   "label": "Pass 2 Email"
+  },
+  {
+   "fieldname": "pass_2_pass_code",
+   "fieldtype": "Data",
+   "label": "Pass 2 Code",
+   "search_index": 1
+  },
+  {
+   "fieldname": "pass_2_qr_payload",
+   "fieldtype": "Small Text",
+   "label": "Pass 2 QR Payload"
+  },
+  {
+   "default": "0",
+   "fieldname": "pass_2_checked_in",
+   "fieldtype": "Check",
+   "label": "Pass 2 Checked In"
+  },
+  {
+   "fieldname": "pass_2_checked_in_at",
+   "fieldtype": "Datetime",
+   "label": "Pass 2 Checked In At"
+  },
+  {
+   "fieldname": "pass_2_checked_in_by",
+   "fieldtype": "Data",
+   "label": "Pass 2 Checked In By"
   }
  ],
  "index_web_pages_for_search": 0,
