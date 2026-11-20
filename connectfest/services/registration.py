@@ -151,6 +151,43 @@ def register_stall(**kwargs):
 		if not chapter_name:
 			errors.append("Chapter Name (chapter_name) is mandatory for BNI members")
 
+	if errors:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "Validation Failed", "errors": errors}
+
+	# Enforce logged-in user constraint:
+	# If an attendee is already logged in (non-admin), they CANNOT register using a different email or mobile number!
+	from connectfest.services.auth import is_admin_user, get_authenticated_user
+	sess_user = getattr(frappe.session, "user", None)
+	auth_user = get_authenticated_user(data, **kwargs)
+	if not auth_user and sess_user and sess_user != "Guest":
+		auth_user = sess_user
+	is_admin = is_admin_user(auth_user) if auth_user else False
+
+	if auth_user and not is_admin:
+		logged_email = auth_user.strip().lower()
+		logged_phone = (
+			frappe.db.get_value("ConnectFest Registration", {"email": auth_user}, "mobile_no")
+			or frappe.db.get_value("User", auth_user, "mobile_no")
+			or frappe.db.get_value("User", auth_user, "phone")
+			or ""
+		).strip()
+		clean_logged_phone = normalize_phone_number(logged_phone) if logged_phone else ""
+
+		if email and email != logged_email:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{auth_user}'. Stall registration must match your logged-in email. To register for a different email, please log out first.",
+			}
+
+		if clean_logged_phone and mobile_no and mobile_no != clean_logged_phone:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{auth_user}'. Stall registration must match your registered mobile number ({clean_logged_phone}). To register with a different mobile number, please log out first.",
+			}
+
 	# Enforce Strict Uniqueness on Email and Mobile
 	if email or mobile_no:
 		# 1. Check existing exhibitor registrations
@@ -486,8 +523,40 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		return {"status": "error", "message": f"Stall '{stall_num}' does not exist in ConnectFest inventory"}
 
 	stall_doc = frappe.get_doc("ConnectFest Stall", stall_num)
-	from connectfest.services.auth import is_admin_user
-	is_admin = is_admin_user(sess_user)
+	from connectfest.services.auth import is_admin_user, get_authenticated_user
+	auth_user = get_authenticated_user(data, **kwargs)
+	if not auth_user and sess_user and sess_user != "Guest":
+		auth_user = sess_user
+	is_admin = is_admin_user(auth_user) if auth_user else False
+
+	if auth_user and not is_admin:
+		logged_email = auth_user.strip().lower()
+		logged_phone = (
+			frappe.db.get_value("ConnectFest Registration", {"email": auth_user}, "mobile_no")
+			or frappe.db.get_value("User", auth_user, "mobile_no")
+			or frappe.db.get_value("User", auth_user, "phone")
+			or ""
+		).strip()
+		from connectfest.services.bni_members import normalize_phone_number
+		clean_logged_phone = normalize_phone_number(logged_phone) if logged_phone else ""
+
+		req_e = (data.get("email") or "").strip().lower()
+		if req_e and req_e != logged_email:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{auth_user}'. Stall booking must match your logged-in email. To book for a different account, please log out first.",
+			}
+
+		raw_m = (data.get("mobile_no") or data.get("phone") or "").strip()
+		clean_req_m = normalize_phone_number(raw_m) if raw_m else ""
+		if clean_req_m and clean_logged_phone and clean_req_m != clean_logged_phone:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{auth_user}'. Stall booking must match your registered mobile number ({clean_logged_phone}). To book for a different account, please log out first.",
+			}
+
 	if (stall_doc.is_blocked_by_admin or stall_doc.status == "Blocked") and not is_admin:
 		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": f"Stall '{stall_num}' is blocked by administration ({stall_doc.blocked_reason or 'Reserved'})"}
@@ -1061,6 +1130,32 @@ def register_visitor(**kwargs):
 		if booked_stalls:
 			has_bought_stall = True
 			is_exhibitor = True
+
+	from connectfest.services.auth import is_admin_user
+	is_admin = is_admin_user(sess_user) if is_session_logged_in else False
+	if is_session_logged_in and not is_admin and not has_bought_stall:
+		sess_lower = sess_user.lower()
+		logged_phone = (
+			frappe.db.get_value("ConnectFest Visitor Registration", {"email": sess_user}, "mobile_no")
+			or frappe.db.get_value("User", sess_user, "mobile_no")
+			or frappe.db.get_value("User", sess_user, "phone")
+			or ""
+		).strip()
+		from connectfest.services.bni_members import normalize_phone_number
+		clean_logged_phone = normalize_phone_number(logged_phone) if logged_phone else ""
+
+		if email and email != sess_lower:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{sess_user}'. Visitor pass registration must match your logged-in email. To register for a different account, please log out first.",
+			}
+		if clean_logged_phone and mobile_no and mobile_no != clean_logged_phone:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"You are currently logged in as '{sess_user}'. Visitor pass registration must match your registered mobile number ({clean_logged_phone}). To register for a different account, please log out first.",
+			}
 
 	# Email OTP Verification:
 	# If caller is NOT logged in, visitor registration strictly requires Email OTP verification!

@@ -562,17 +562,25 @@ def send_email_otp(email=None, **kwargs):
 			"message": "Valid purpose ('register' or 'login') is required to send verification code.",
 		}
 
-	# Disallow sending login OTP if user is already logged in
-	if purpose == "login":
-		from connectfest.services.auth import get_authenticated_user, is_admin_user
-		auth_user = get_authenticated_user(data, **kwargs)
-		if auth_user and not is_admin_user(auth_user):
+	# Disallow sending OTP for another user if already logged in
+	from connectfest.services.auth import get_authenticated_user, is_admin_user
+	auth_user = get_authenticated_user(data, **kwargs)
+	if auth_user and not is_admin_user(auth_user):
+		if purpose == "login":
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
 				"message": "You are already logged in! Please log out to request a login OTP.",
 			}
+		elif purpose in ("register", "registration"):
+			if target_email != auth_user.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"You are currently logged in as '{auth_user}'. Verification OTP can only be requested for your logged-in email. Please log out first to register another account.",
+				}
 
+	if purpose == "login":
 		# Admin login strictly requires password via Admin Portal
 		if is_admin_user(target_email):
 			frappe.local.response["http_status_code"] = 403
