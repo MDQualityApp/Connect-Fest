@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import now_datetime, flt
+from frappe.utils import now_datetime, flt, cint
 from connectfest.services.common import (
 	STALL_CACHE_PREFIX,
 	VISITOR_CACHE_PREFIX,
@@ -84,13 +84,15 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		found_code = None
 		for p in parts:
 			p_clean = p.strip()
-			if p_clean.startswith("CF27-") or p_clean.startswith("VIS-") or p_clean.startswith("CF-") or p_clean.startswith("BNI-"):
+			if p_clean.startswith("CF27-") or p_clean.startswith("VIS-") or p_clean.startswith("CF-") or p_clean.startswith("BNI-") or p_clean.startswith("EXH-"):
 				found_code = p_clean
 				break
 		if found_code:
 			code = found_code
+		elif len(parts) >= 4 and parts[1].upper() == "EXHIBITOR":
+			code = parts[3].strip() or parts[2].strip()
 		elif len(parts) >= 2:
-			code = parts[1]
+			code = parts[1].strip()
 
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -255,17 +257,19 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	exhibitor = None
 	if code:
 		exhibitor = frappe.db.sql("""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       stall_number, stall_category, payment_status, status
+			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
+			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
+			       checked_in, checked_in_at, checked_in_by
 			FROM `tabConnectFest Registration`
-			WHERE registration_id = %(code)s OR name = %(code)s
+			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s OR stall_number = %(code)s
 			LIMIT 1
 		""", {"code": code}, as_dict=True)
 
 	if not exhibitor and mob_scan:
 		exhibitor = frappe.db.sql("""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       stall_number, stall_category, payment_status, status
+			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
+			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
+			       checked_in, checked_in_at, checked_in_by
 			FROM `tabConnectFest Registration`
 			WHERE mobile_no = %(mob)s
 			ORDER BY creation DESC LIMIT 1
@@ -273,8 +277,9 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 	if not exhibitor and email_scan:
 		exhibitor = frappe.db.sql("""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       stall_number, stall_category, payment_status, status
+			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
+			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
+			       checked_in, checked_in_at, checked_in_by
 			FROM `tabConnectFest Registration`
 			WHERE email = %(email)s
 			ORDER BY creation DESC LIMIT 1
@@ -282,21 +287,90 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 	if exhibitor:
 		rec = exhibitor[0]
+
+		# Check Stall Allocation
+		if not rec.stall_number:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "no_stall",
+				"verified": False,
+				"pass_type": "exhibitor_pass",
+				"message": "❌ ACCESS DENIED: Exhibitor has not selected or been assigned a stall number.",
+			}
+
+		# Check Payment Status
+		if rec.payment_status != "Paid":
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "payment_pending",
+				"verified": False,
+				"pass_type": "exhibitor_pass",
+				"message": f"❌ ACCESS DENIED (Payment Pending): Stall '{rec.stall_number}' payment is pending ({rec.payment_status or 'Pending'}). Gate entry requires confirmed payment.",
+			}
+
+		# Duplicate Scan Check
+		if rec.checked_in:
+			return {
+				"status": "duplicate_entry",
+				"verified": False,
+				"pass_type": "exhibitor_pass",
+				"message": f"⚠️ ALREADY SCANNED! Exhibitor pass ({rec.pass_code or rec.registration_id}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass": {
+					"registration_id": rec.registration_id or rec.name,
+					"pass_code": rec.pass_code or rec.registration_id,
+					"full_name": rec.full_name,
+					"company_name": rec.company_name,
+					"company_logo": format_full_url(rec.company_logo),
+					"stall_number": rec.stall_number,
+					"stall_category": rec.stall_category,
+					"payment_status": rec.payment_status,
+					"checked_in_at": str(rec.checked_in_at or ""),
+					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
+					"venue": "Chennai Trade Centre, Nandambakkam",
+				},
+			}
+
+		frappe.db.set_value("ConnectFest Registration", rec.name, {
+			"checked_in": 1,
+			"checked_in_at": now_str,
+			"checked_in_by": sess_user,
+			"status": "Checked In",
+		})
+		frappe.db.commit()
+
+		zone_map = {
+			"Silver": "Zone D - East Pavilions",
+			"Premium": "Zone C - Center Aisles",
+			"Standard": "Zone B - West Aisles",
+			"Regular": "Zone E - South Entrance Corridor",
+		}
+		zone = zone_map.get(rec.stall_category) or "Zone B - West Aisles"
+
 		return {
 			"status": "success",
 			"verified": True,
 			"pass_type": "exhibitor_pass",
-			"message": f"✅ EXHIBITOR PASS VERIFIED - STALL {rec.get('stall_number')} ({rec.get('stall_category')})",
+			"message": f"✅ EXHIBITOR PASS VERIFIED - WELCOME {rec.full_name.upper()}! STALL {rec.stall_number} ({rec.stall_category})",
 			"pass": {
+				"pass_code": rec.pass_code or rec.registration_id or rec.name,
 				"registration_id": rec.registration_id or rec.name,
 				"full_name": rec.full_name,
 				"company_name": rec.company_name,
+				"company_logo": format_full_url(rec.company_logo),
+				"location": rec.location or "",
 				"stall_number": rec.stall_number,
 				"stall_category": rec.stall_category,
+				"zone": zone,
+				"access": "EXHIBITOR - ALL AREAS & SETUP",
+				"which_day": "Both days",
 				"payment_status": rec.payment_status,
 				"mobile_no": rec.mobile_no,
 				"email": rec.email,
+				"checked_in": 1,
+				"checked_in_at": now_str,
+				"checked_in_by": sess_user,
 				"venue": "Chennai Trade Centre, Nandambakkam",
+				"dates": "20 & 21 Feb 2027",
 			},
 		}
 
@@ -485,6 +559,53 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 				"creation": str(r.get("creation")),
 			})
 
+	# 3. Fetch from Exhibitor Registrations
+	if filter_type in ("all", "exhibitor", "exhibitors", "stall", "stalls"):
+		ex_conds = ["payment_status = 'Paid'"]
+		ex_vals = {}
+		if filter_status in ("scanned", "checked_in", "checkedin", "1"):
+			ex_conds.append("checked_in = 1")
+		elif filter_status in ("not_scanned", "pending", "unscanned", "notscanned", "0"):
+			ex_conds.append("(checked_in = 0 OR checked_in IS NULL)")
+
+		if scanner_filter:
+			ex_conds.append("checked_in_by = %(scanner)s")
+			ex_vals["scanner"] = scanner_filter
+
+		if search_q:
+			ex_conds.append("(full_name LIKE %(q)s OR mobile_no LIKE %(q)s OR email LIKE %(q)s OR pass_code LIKE %(q)s OR company_name LIKE %(q)s OR stall_number LIKE %(q)s)")
+			ex_vals["q"] = f"%{search_q}%"
+
+		ex_where = f"WHERE {' AND '.join(ex_conds)}"
+		ex_sql = f"""
+			SELECT name, registration_id, full_name, company_name, company_logo, mobile_no, email,
+			       stall_number, stall_category, pass_code, status, checked_in, checked_in_at, checked_in_by, creation
+			FROM `tabConnectFest Registration`
+			{ex_where}
+			ORDER BY creation DESC
+		"""
+		ex_rows = frappe.db.sql(ex_sql, ex_vals, as_dict=True)
+		for r in ex_rows:
+			records.append({
+				"id": r.get("registration_id") or r.get("name"),
+				"name": r.get("registration_id") or r.get("name"),
+				"full_name": r.get("full_name"),
+				"company_name": r.get("company_name"),
+				"company_logo": format_full_url(r.get("company_logo")),
+				"email": r.get("email"),
+				"mobile_no": r.get("mobile_no"),
+				"pass_type": "exhibitor_pass",
+				"pass_code": r.get("pass_code") or r.get("registration_id"),
+				"stall_number": r.get("stall_number"),
+				"stall_category": r.get("stall_category"),
+				"details": f"Stall {r.get('stall_number')} ({r.get('stall_category') or 'Exhibitor'})",
+				"checked_in": cint(r.get("checked_in")),
+				"checked_in_at": str(r.get("checked_in_at")) if r.get("checked_in_at") else None,
+				"checked_in_by": r.get("checked_in_by"),
+				"status": "Checked In" if cint(r.get("checked_in")) else "Not Scanned",
+				"creation": str(r.get("creation")),
+			})
+
 	# Sort by check-in time DESC or creation DESC
 	records.sort(key=lambda x: x.get("checked_in_at") or x.get("creation") or "", reverse=True)
 
@@ -499,6 +620,9 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 	bni_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration`")[0][0]
 	bni_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration` WHERE checked_in = 1")[0][0]
 
+	ex_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid'")[0][0]
+	ex_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND checked_in = 1")[0][0]
+
 	# Paginate
 	start = (p - 1) * l
 	end = start + l
@@ -507,15 +631,18 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 	return {
 		"status": "success",
 		"summary": {
-			"total_registered": vis_tot + bni_tot,
-			"total_scanned": vis_chk + bni_chk,
-			"total_not_scanned": max(0, (vis_tot + bni_tot) - (vis_chk + bni_chk)),
+			"total_registered": vis_tot + bni_tot + ex_tot,
+			"total_scanned": vis_chk + bni_chk + ex_chk,
+			"total_not_scanned": max(0, (vis_tot + bni_tot + ex_tot) - (vis_chk + bni_chk + ex_chk)),
 			"visitor_registered": vis_tot,
 			"visitor_scanned": vis_chk,
 			"visitor_not_scanned": max(0, vis_tot - vis_chk),
 			"bni_event_registered": bni_tot,
 			"bni_event_scanned": bni_chk,
 			"bni_event_not_scanned": max(0, bni_tot - bni_chk),
+			"exhibitor_registered": ex_tot,
+			"exhibitor_scanned": ex_chk,
+			"exhibitor_not_scanned": max(0, ex_tot - ex_chk),
 			"current_filter": {
 				"status": filter_status or "all",
 				"type": filter_type or "all",
@@ -668,7 +795,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			       mobile_no, email, is_bni_member, region_name, chapter_name,
 			       industry, segment, stall_number, stall_category, amount, payment_status,
 			       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, status, creation,
-			       bill, gst
+			       bill, gst, pass_code, qr_payload, checked_in, checked_in_at, checked_in_by
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
 			ORDER BY creation DESC
@@ -759,10 +886,46 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"razorpay_order_id": sb.razorpay_order_id if is_authorized else "order_verified_secure",
 					"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
 					"status": status_desc,
-					"badge_qr_payload": (f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}" if is_authorized else None) if is_paid else None,
+					"pass_code": sb.get("pass_code") or sb.registration_id,
+					"badge_qr_payload": (sb.get("qr_payload") or f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}") if is_paid else None,
+					"qr_payload": (sb.get("qr_payload") or f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email}") if is_paid else None,
+					"checked_in": cint(sb.get("checked_in") or 0),
+					"checked_in_at": str(sb.get("checked_in_at") or "") if cint(sb.get("checked_in")) else None,
+					"checked_in_by": sb.get("checked_in_by") or None,
 					"venue": "Chennai Trade Centre, Nandambakkam",
 					"dates": "20 & 21 Feb 2027",
 				})
+
+		exhibitor_passes = []
+		for sb in all_stall_bookings:
+			if sb.get("has_paid") and sb.get("stall_number"):
+				chk_e = cint(sb.get("checked_in") or 0)
+				exhibitor_passes.append({
+					"pass_type": "exhibitor_pass",
+					"pass_code": sb.get("pass_code") or sb.get("registration_id"),
+					"registration_id": sb.get("registration_id"),
+					"full_name": sb.get("full_name"),
+					"company_name": sb.get("company_name"),
+					"company_logo": sb.get("company_logo"),
+					"location": sb.get("location") or "",
+					"stall_number": sb.get("stall_number"),
+					"stall_category": sb.get("stall_category"),
+					"zone": sb.get("zone"),
+					"dimensions": sb.get("dimensions"),
+					"access": "EXHIBITOR - BOTH DAYS & SETUP",
+					"which_day": "Both days",
+					"payment_status": "Paid",
+					"payment_mode": sb.get("payment_mode"),
+					"qr_payload": sb.get("qr_payload"),
+					"status": "Checked In" if chk_e else "Confirmed",
+					"checked_in": chk_e,
+					"is_attended": bool(chk_e),
+					"checked_in_at": sb.get("checked_in_at"),
+					"checked_in_by": sb.get("checked_in_by"),
+					"venue": "Chennai Trade Centre, Nandambakkam",
+					"dates": "20 & 21 Feb 2027",
+				})
+		exhibitor_pass = exhibitor_passes[0] if exhibitor_passes else None
 
 		stall_booking = all_stall_bookings[0] if all_stall_bookings else None
 
@@ -790,7 +953,9 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			visitor_pass = all_visitor_passes[0] if all_visitor_passes else None
 
 		resolved_dashboard_full_name = None
-		if stall_booking and stall_booking.get("full_name"):
+		if exhibitor_pass and exhibitor_pass.get("full_name"):
+			resolved_dashboard_full_name = exhibitor_pass.get("full_name")
+		elif stall_booking and stall_booking.get("full_name"):
 			resolved_dashboard_full_name = stall_booking.get("full_name")
 		elif visitor_pass and visitor_pass.get("full_name"):
 			resolved_dashboard_full_name = visitor_pass.get("full_name")
@@ -799,6 +964,20 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			"status": "success",
 			"full_name": resolved_dashboard_full_name,
 			"is_authorized": is_authorized,
+			"has_exhibitor_pass": bool(exhibitor_passes),
+			"exhibitor_pass": exhibitor_pass,
+			"exhibitor_passes": exhibitor_passes,
+			"total_exhibitor_passes": len(exhibitor_passes),
+			"pass_code": (
+				exhibitor_passes[0]["pass_code"] if exhibitor_passes
+				else (visitor_pass["pass_code"] if visitor_pass
+				else None)
+			),
+			"qr_payload": (
+				exhibitor_passes[0]["qr_payload"] if exhibitor_passes
+				else (visitor_pass.get("qr_payload") if visitor_pass
+				else None)
+			),
 			"has_stall_booking": bool(all_stall_bookings),
 			"stall_booking": stall_booking,
 			"stall_bookings": all_stall_bookings,
@@ -816,4 +995,124 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 	except Exception as e:
 		frappe.log_error("ConnectFest Dashboard Error", frappe.get_traceback())
 		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+
+
+def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
+	"""
+	Universal Exhibitor Badge / Digital Pass API.
+	Returns verified exhibitor pass details with pass_code, stall info, zone, and entry QR payload.
+	"""
+	data = extract_request_data(kwargs)
+	reg_id = (registration_id or data.get("registration_id") or data.get("id") or "").strip()
+	stall_num = (stall_number or data.get("stall_number") or data.get("stall_no") or "").strip()
+	em = safe_str(kwargs.get("email") or data.get("email") or data.get("user_email")).strip().lower()
+	mb = safe_str(kwargs.get("mobile_no") or data.get("mobile_no") or data.get("phone")).strip()
+
+	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import is_admin_user, get_authenticated_user
+	auth_user = get_authenticated_user(data, **kwargs)
+	if not auth_user and sess_user and sess_user != "Guest":
+		auth_user = sess_user
+	is_admin = is_admin_user(auth_user) if auth_user else False
+
+	where_clauses = []
+	params = {}
+	if reg_id:
+		where_clauses.append("(registration_id = %(reg_id)s OR name = %(reg_id)s OR pass_code = %(reg_id)s)")
+		params["reg_id"] = reg_id
+	if stall_num:
+		where_clauses.append("stall_number = %(stall_num)s")
+		params["stall_num"] = stall_num
+	if em:
+		where_clauses.append("email = %(email)s")
+		params["email"] = em
+	if mb:
+		where_clauses.append("mobile_no = %(mobile)s")
+		params["mobile"] = mb
+
+	if not where_clauses:
+		if auth_user and auth_user != "Guest":
+			where_clauses.append("email = %(email)s")
+			params["email"] = auth_user.lower()
+		else:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "registration_id, stall_number, email, or login required to view exhibitor badge"}
+
+	where_str = " OR ".join(where_clauses)
+	records = frappe.db.sql(f"""
+		SELECT name, registration_id, full_name, company_name, company_logo, location,
+		       mobile_no, email, is_bni_member, region_name, chapter_name,
+		       industry, segment, stall_number, stall_category, amount, payment_status,
+		       payment_mode, payment_date, status, creation, pass_code, qr_payload,
+		       checked_in, checked_in_at, checked_in_by
+		FROM `tabConnectFest Registration`
+		WHERE ({where_str})
+		ORDER BY creation DESC
+	""", params, as_dict=True)
+
+	if not records:
+		frappe.local.response["http_status_code"] = 404
+		return {"status": "not_found", "message": "No exhibitor registration found for the provided details."}
+
+	rec = records[0]
+
+	# IDOR Check: Ensure requester is owner or admin
+	if auth_user and not is_admin:
+		r_email = (rec.get("email") or "").strip().lower()
+		r_mob = (rec.get("mobile_no") or "").strip()
+		u_phone = (frappe.db.get_value("User", auth_user, "phone") or frappe.db.get_value("User", auth_user, "mobile_no") or "").strip()
+		if r_email != auth_user.lower() and (not u_phone or u_phone != r_mob):
+			frappe.local.response["http_status_code"] = 403
+			return {"status": "forbidden", "message": "Access Denied: You cannot view another exhibitor's badge."}
+
+	is_paid = (rec.get("payment_status") == "Paid")
+	stall_doc = None
+	if rec.get("stall_number") and frappe.db.exists("ConnectFest Stall", rec.get("stall_number")):
+		stall_doc = frappe.get_doc("ConnectFest Stall", rec.get("stall_number"))
+
+	zone_map = {
+		"Silver": "Zone D - East Pavilions",
+		"Premium": "Zone C - Center Aisles",
+		"Standard": "Zone B - West Aisles",
+		"Regular": "Zone E - South Entrance Corridor",
+	}
+	zone = zone_map.get(rec.get("stall_category")) or (stall_doc.zone if stall_doc else "Zone B - West Aisles")
+	pcode = rec.get("pass_code") or rec.get("registration_id")
+	qr = rec.get("qr_payload") or f"CONNECTFEST2027:EXHIBITOR:{rec.get('stall_number')}:{pcode}:{rec.get('email')}"
+	chk_in = cint(rec.get("checked_in") or 0)
+
+	badge = {
+		"pass_type": "exhibitor_pass",
+		"pass_code": pcode,
+		"registration_id": rec.get("registration_id") or rec.get("name"),
+		"full_name": rec.get("full_name"),
+		"company_name": rec.get("company_name"),
+		"company_logo": format_full_url(rec.get("company_logo")),
+		"location": rec.get("location") or "",
+		"stall_number": rec.get("stall_number"),
+		"stall_category": rec.get("stall_category"),
+		"tier": rec.get("stall_category"),
+		"zone": zone,
+		"dimensions": (stall_doc.dimensions if stall_doc else "") or "3 x 3 m",
+		"access": "EXHIBITOR - BOTH DAYS & SETUP",
+		"which_day": "Both days",
+		"payment_status": rec.get("payment_status"),
+		"payment_mode": rec.get("payment_mode"),
+		"has_paid": is_paid,
+		"qr_payload": qr if is_paid else None,
+		"status": "Checked In" if chk_in else ("Confirmed" if is_paid else "Awaiting Payment"),
+		"checked_in": chk_in,
+		"is_attended": bool(chk_in),
+		"checked_in_at": str(rec.get("checked_in_at") or "") if chk_in else None,
+		"checked_in_by": rec.get("checked_in_by"),
+		"venue": "Chennai Trade Centre, Nandambakkam",
+		"dates": "20 & 21 Feb 2027",
+	}
+
+	return {
+		"status": "success",
+		"badge": badge,
+		"pass": badge,
+		"exhibitor_pass": badge,
+	}
 

@@ -437,6 +437,11 @@ def register_stall(**kwargs):
 		"razorpay_signature": "",
 		"payment_date": None,
 		"status": "Registered",
+		"pass_code": reg_id,
+		"qr_payload": f"CONNECTFEST2027:EXHIBITOR:{stall_number or ''}:{reg_id}:{email}",
+		"checked_in": 0,
+		"checked_in_at": None,
+		"checked_in_by": None,
 		"creation": now_str,
 		"modified": now_str,
 		"modified_by": "Administrator",
@@ -877,6 +882,11 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					"payment_status": "Pending",
 					"payment_mode": "Online",
 					"status": "Registered",
+					"pass_code": new_reg_id,
+					"qr_payload": f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{new_reg_id}:{user_email or prev.get('email') or ''}",
+					"checked_in": 0,
+					"checked_in_at": None,
+					"checked_in_by": None,
 				})
 				new_doc.insert(ignore_permissions=True)
 				frappe.db.commit()
@@ -983,6 +993,9 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		db_target = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "name")
 
 	if db_target:
+		p_code = frappe.db.get_value("ConnectFest Registration", db_target, "pass_code") or reg_id
+		em = record.get("email") or ""
+		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p_code}:{em}"
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			db_target,
@@ -992,6 +1005,8 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				"amount": price,
 				"payment_status": "Pending",
 				"payment_mode": "Online",
+				"pass_code": p_code,
+				"qr_payload": qr_pl,
 			},
 			update_modified=False,
 		)

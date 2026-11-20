@@ -774,6 +774,10 @@ def verify_razorpay_payment(**kwargs):
 		set_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}", cached_item)
 
 	if frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
+		p_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_code") or reg_id
+		st_num = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "stall_number") or ""
+		em = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or ""
+		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p_code}:{em}"
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			{"registration_id": reg_id},
@@ -785,6 +789,8 @@ def verify_razorpay_payment(**kwargs):
 				"razorpay_payment_id": payment_id,
 				"razorpay_signature": signature,
 				"payment_date": now_str,
+				"pass_code": p_code,
+				"qr_payload": qr_pl,
 			},
 		)
 		frappe.db.commit()
@@ -1831,6 +1837,9 @@ def admin_confirm_payment(**kwargs):
 	reg_doc.status = "Registered"
 	reg_doc.razorpay_payment_id = ref_id
 	reg_doc.payment_date = now_str
+	if not getattr(reg_doc, "pass_code", None):
+		reg_doc.pass_code = actual_reg_id
+	reg_doc.qr_payload = f"CONNECTFEST2027:EXHIBITOR:{chosen_stall}:{reg_doc.pass_code}:{reg_doc.email}"
 	reg_doc.save(ignore_permissions=True)
 
 	# Update stall doc

@@ -516,7 +516,7 @@ def get_current_user_profile(**kwargs):
 		       is_bni_member, claimed_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
 		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation,
-		       bill, gst
+		       bill, gst, pass_code, qr_payload, checked_in, checked_in_at, checked_in_by
 		FROM `tabConnectFest Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
@@ -685,8 +685,45 @@ def get_current_user_profile(**kwargs):
 			"razorpay_order_id": sb.razorpay_order_id,
 			"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
 			"booking_status": status_desc,
+			"pass_code": sb.get("pass_code") or sb.registration_id,
+			"qr_payload": (sb.get("qr_payload") or f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{sb.registration_id}:{sb.email or target_user}") if is_paid else None,
+			"checked_in": cint(sb.get("checked_in") or 0),
+			"checked_in_at": str(sb.get("checked_in_at") or "") if cint(sb.get("checked_in")) else None,
+			"checked_in_by": sb.get("checked_in_by") or None,
 			"created_at": str(sb.creation),
 		})
+
+	exhibitor_passes = []
+	for s in stalls:
+		if s.get("has_paid") and s.get("stall_number"):
+			chk_ex = cint(s.get("checked_in") or 0)
+			exhibitor_passes.append({
+				"pass_type": "exhibitor_pass",
+				"pass_code": s.get("pass_code") or s.get("registration_id"),
+				"registration_id": s.get("registration_id"),
+				"full_name": s.get("full_name") or user_full_name,
+				"company_name": s.get("company_name") or company_name,
+				"company_logo": s.get("company_logo") or company_logo,
+				"location": s.get("location") or location,
+				"stall_number": s.get("stall_number"),
+				"stall_category": s.get("stall_category"),
+				"tier": s.get("tier"),
+				"zone": s.get("zone"),
+				"dimensions": s.get("dimensions"),
+				"access": "EXHIBITOR - BOTH DAYS & SETUP",
+				"which_day": "Both days",
+				"payment_status": "Paid",
+				"payment_mode": s.get("payment_mode"),
+				"qr_payload": s.get("qr_payload"),
+				"status": "Checked In" if chk_ex else "Confirmed",
+				"checked_in": chk_ex,
+				"is_attended": bool(chk_ex),
+				"checked_in_at": s.get("checked_in_at"),
+				"checked_in_by": s.get("checked_in_by"),
+				"venue": "Chennai Trade Centre, Nandambakkam",
+				"dates": "20 & 21 Feb 2027",
+				"created_at": s.get("created_at"),
+			})
 
 	visitor_passes = []
 	for v in visitors_raw:
@@ -773,8 +810,24 @@ def get_current_user_profile(**kwargs):
 		"stall_booking": stall_booking,
 		"stalls": stalls,
 
+		# Exhibitor Pass
+		"has_exhibitor_pass": bool(exhibitor_passes),
+		"exhibitor_pass": exhibitor_passes[0] if exhibitor_passes else None,
+		"exhibitor_passes": exhibitor_passes,
+
 		# Pass Code & Digital Badges
-		"pass_code": (visitor_passes[0]["pass_code"] if visitor_passes else (event_passes[0]["pass_code"] if event_passes else None)),
+		"pass_code": (
+			exhibitor_passes[0]["pass_code"] if exhibitor_passes
+			else (visitor_passes[0]["pass_code"] if visitor_passes
+			else (event_passes[0]["pass_code"] if event_passes
+			else None))
+		),
+		"qr_payload": (
+			exhibitor_passes[0]["qr_payload"] if exhibitor_passes
+			else (visitor_passes[0].get("qr_payload") if visitor_passes
+			else (event_passes[0].get("qr_payload") if event_passes
+			else None))
+		),
 
 		# Visitor Pass
 		"has_visitor_pass": bool(visitor_passes),

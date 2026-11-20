@@ -258,6 +258,44 @@
    "fieldtype": "Datetime",
    "label": "Payment Date",
    "read_only": 1
+  },
+  {
+   "fieldname": "gate_checkin_section",
+   "fieldtype": "Section Break",
+   "label": "Gate Entry & Check-In"
+  },
+  {
+   "fieldname": "pass_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pass Code",
+   "search_index": 1
+  },
+  {
+   "fieldname": "qr_payload",
+   "fieldtype": "Small Text",
+   "label": "QR Payload"
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_in",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Checked In"
+  },
+  {
+   "fieldname": "column_break_checkin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "checked_in_at",
+   "fieldtype": "Datetime",
+   "label": "Checked In At"
+  },
+  {
+   "fieldname": "checked_in_by",
+   "fieldtype": "Data",
+   "label": "Checked In By"
   }
  ],
  "index_web_pages_for_search": 0,

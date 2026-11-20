@@ -112,6 +112,7 @@ from connectfest.services.passes import (
 	get_my_dashboard as _get_my_dashboard,
 	get_scanned_users as _get_scanned_users,
 	admin_get_scanned_users as _admin_get_scanned_users,
+	get_exhibitor_badge as _get_exhibitor_badge,
 )
 from connectfest.services.settings import (
 	admin_get_settings as _admin_get_settings,
@@ -490,6 +491,24 @@ def get_registration(registration_id):
 def get_my_dashboard(email=None, mobile_no=None, **kwargs):
 	"""Attendee dashboard alias returning complete user profile and bookings."""
 	return _get_my_dashboard(email=email, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
+	"""Returns verified Exhibitor Badge details, pass_code and entry QR payload."""
+	return _get_exhibitor_badge(registration_id=registration_id, stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_exhibitor_pass(registration_id=None, stall_number=None, **kwargs):
+	"""Alias for get_exhibitor_badge."""
+	return _get_exhibitor_badge(registration_id=registration_id, stall_number=stall_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_badge(registration_id=None, stall_number=None, **kwargs):
+	"""General alias for get_exhibitor_badge."""
+	return _get_exhibitor_badge(registration_id=registration_id, stall_number=stall_number, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
