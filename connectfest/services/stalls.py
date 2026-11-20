@@ -1502,6 +1502,13 @@ def admin_bulk_create_stalls(**kwargs):
 		st_w = flt(st.get("width", 0.0))
 		st_h = flt(st.get("height", 0.0))
 
+		if st_tier:
+			try:
+				from connectfest.services.pricing import ensure_tier_pricing_exists
+				ensure_tier_pricing_exists(st_tier, st_p)
+			except Exception:
+				pass
+
 		doc = frappe.get_doc({
 			"doctype": "ConnectFest Stall",
 			"stall_number": s_num,
@@ -1583,6 +1590,13 @@ def admin_create_stall(stall_number=None, tier=None, dimensions=None, price=None
 		p = flt(pricing.get(t, 0.0))
 	if p <= 0:
 		p = 35000.0
+
+	if t:
+		try:
+			from connectfest.services.pricing import ensure_tier_pricing_exists
+			ensure_tier_pricing_exists(t, p)
+		except Exception:
+			pass
 
 	doc = frappe.get_doc({
 		"doctype": "ConnectFest Stall",

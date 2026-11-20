@@ -209,17 +209,11 @@ def build_confirmation_html(data):
 				</p>
 			</div>
 
-			<div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 16px 20px; border-radius: 8px; text-align: center; margin-bottom: 24px;">
-				<p style="margin: 0; font-size: 14px; color: #166534; font-weight: 700;">
-					📎 Official Stall Allocation Letter & Invoice Attached!
-				</p>
-				<p style="margin: 4px 0 0; font-size: 12px; color: #15803d;">
-					Your official 3-page confirmation PDF is attached directly to this email below. You can download, save, or print it anytime.
-				</p>
-			</div>
-
-			<div style="text-align: center; margin-bottom: 28px;">
-				<a href="{dashboard_url}" style="background: #cf2030; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(207, 32, 48, 0.25);">
+			<div style="text-align: center; margin-top: 8px; margin-bottom: 28px;">
+				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
+					📥 Download PDF
+				</a>
+				<a href="{dashboard_url}" style="background: #cf2030; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(207, 32, 48, 0.25);">
 					🌐 Visit ConnectFest Website
 				</a>
 			</div>

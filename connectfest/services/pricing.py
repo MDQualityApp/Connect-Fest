@@ -20,18 +20,6 @@ PRICING_CACHE_ALL_KEY = "connectfest:tier_pricing:all"
 # Standard reference templates (used ONLY by admin_restore_defaults on explicit request)
 DEFAULT_TIERS_TEMPLATE = [
 	{
-		"tier_name": "Title Sponsor",
-		"price": 250000.0,
-		"gst_percent": 18.0,
-		"description": "Grand Central Arena, 12x4m Exclusive Pavilion, Max Footfall & Main Stage Visibility",
-	},
-	{
-		"tier_name": "Silver",
-		"price": 100000.0,
-		"gst_percent": 18.0,
-		"description": "VIP East Pavilion, 4x3m / 6x3m Booth, 4 Spotlights, 2x 15A Power, Premium Fascia, Priority Branding",
-	},
-	{
 		"tier_name": "Premium",
 		"price": 45000.0,
 		"gst_percent": 18.0,
@@ -50,6 +38,34 @@ DEFAULT_TIERS_TEMPLATE = [
 		"description": "South Entrance Corridor, 2x2m Booth, 1 Spotlight, 1x 5A Power socket, Standard Fascia, Budget-friendly",
 	},
 ]
+
+
+def ensure_tier_pricing_exists(tier_name, price=None, description=None):
+	"""
+	Auto-creates a pricing tier in Frappe DocType 'ConnectFest Tier Pricing' if it does not already exist.
+	Called automatically whenever a stall is created with a new or custom tier.
+	"""
+	t_name = (tier_name or "").strip()
+	if not t_name:
+		return
+	if not frappe.db.table_exists("ConnectFest Tier Pricing"):
+		return
+
+	if not frappe.db.exists("ConnectFest Tier Pricing", {"tier_name": t_name}):
+		try:
+			p = flt(price or 0.0)
+			doc = frappe.new_doc("ConnectFest Tier Pricing")
+			doc.tier_name = t_name
+			doc.price = p
+			doc.gst_percent = 18.0
+			doc.description = description or f"{t_name} Exhibition Stall"
+			doc.is_active = 1
+			doc.flags.ignore_permissions = True
+			doc.insert()
+			frappe.db.commit()
+			invalidate_pricing_cache()
+		except Exception:
+			pass
 
 
 def invalidate_pricing_cache():

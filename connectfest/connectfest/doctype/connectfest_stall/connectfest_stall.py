@@ -14,6 +14,12 @@ class ConnectFestStall(Document):
 
 	def validate(self):
 		self.check_and_release_expired_hold(is_validating=True)
+		if self.tier:
+			try:
+				from connectfest.services.pricing import ensure_tier_pricing_exists
+				ensure_tier_pricing_exists(self.tier, self.price)
+			except Exception:
+				pass
 
 	def check_and_release_expired_hold(self, is_validating=False):
 		"""
