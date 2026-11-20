@@ -2,7 +2,7 @@ import io
 import csv
 import frappe
 from frappe.utils import now_datetime, flt, cint
-from connectfest.services.common import extract_request_data, handle_api_errors, parse_boolean, get_base_url
+from connectfest.services.common import extract_request_data, handle_api_errors, parse_boolean, get_base_url, format_full_url
 from connectfest.services.auth import check_admin_permission
 
 
@@ -161,7 +161,7 @@ def fetch_report_data(filters=None):
 				"registration_id": v.get("registration_id") or v.get("name"),
 				"user_type": "Visitor",
 				"full_name": v.get("full_name") or "",
-				"visitor_image": v.get("visitor_image") or "",
+				"visitor_image": format_full_url(v.get("visitor_image")),
 				"email": v.get("email") or "",
 				"mobile_no": v.get("mobile_no") or "",
 				"company_name": "-",

@@ -497,7 +497,7 @@ def get_current_user_profile(**kwargs):
 			}
 		target_user = requested_email
 
-	user_vals = frappe.db.get_value("User", target_user, ["full_name", "mobile_no", "phone"], as_dict=True)
+	user_vals = frappe.db.get_value("User", target_user, ["full_name", "mobile_no", "phone", "user_image"], as_dict=True)
 	if user_vals:
 		user_full_name = (user_vals.get("full_name") or "").strip()
 		user_roles = [r for r in frappe.get_roles(target_user) if r not in ("All", "Guest")]
@@ -694,7 +694,7 @@ def get_current_user_profile(**kwargs):
 			"registration_id": v.registration_id,
 			"full_name": (v.full_name if (v.get("full_name") and "@" not in v.get("full_name")) else user_full_name),
 			"pass_code": v.pass_code,
-			"visitor_image": v.visitor_image or "",
+			"visitor_image": format_full_url(v.visitor_image),
 			"which_day": v.which_day,
 			"area_of_interest": v.get("area_of_interest") or "",
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
@@ -740,6 +740,7 @@ def get_current_user_profile(**kwargs):
 		"email": target_user,
 		"full_name": user_full_name,
 		"mobile_no": user_mobile,
+		"user_image": format_full_url(user_vals.get("user_image") if user_vals else ""),
 		"roles": user_roles,
 		"role_type": role_type,
 		"is_admin": is_admin,
@@ -1597,7 +1598,7 @@ def admin_get_all_users(**kwargs):
 			visitor_info = {
 				"registration_id": vis_doc.registration_id,
 				"pass_code": vis_doc.pass_code or "",
-				"visitor_image": vis_doc.visitor_image or "",
+				"visitor_image": format_full_url(vis_doc.visitor_image),
 				"which_day": vis_doc.which_day or "Both days",
 				"checked_in": cint(vis_doc.checked_in),
 				"checked_in_at": str(vis_doc.checked_in_at or ""),

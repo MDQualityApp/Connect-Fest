@@ -164,7 +164,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"pass_code": rec.pass_code,
 				"registration_id": rec.registration_id or rec.name,
 				"full_name": rec.full_name,
-				"visitor_image": rec.visitor_image or "",
+				"visitor_image": format_full_url(rec.visitor_image),
 				"which_day": rec.which_day,
 				"email": rec.email,
 				"mobile_no": rec.mobile_no,
