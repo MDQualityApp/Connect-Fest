@@ -20,64 +20,104 @@ def get_email_header_style():
 
 def get_base_url():
 	"""
-	Dynamically resolves the environment base URL:
-	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns IPv4 Local URL (http://127.0.0.1:8080)
-	  to prevent Chrome IPv6 [::1] connection refused errors.
-	- When executed on Live (connectfestapp.mdqapps.online or custom domain), returns Live HTTPS URL.
+	Dynamically resolves the Frappe backend base URL for API endpoints and downloads:
+	- LIVE Production: https://api.connectfesttn.in
+	- UAT Environment: https://connectfest.mdqapps.online
+	- Local Environment: http://127.0.0.1:8080
 	"""
 	# 1. Check HTTP Request context
 	if hasattr(frappe, "request") and getattr(frappe, "request", None):
-		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip()
+		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip().lower()
 		if host:
 			if "localhost" in host:
 				port = host.split(":")[-1] if ":" in host else "8080"
 				return f"http://127.0.0.1:{port}"
 			elif "127.0.0.1" in host:
 				return f"http://{host}".rstrip("/")
+			elif "connectfesttn.in" in host:
+				return "https://api.connectfesttn.in"
 			elif "mdqapps.online" in host:
-				return f"https://{host}".rstrip("/")
+				return "https://connectfest.mdqapps.online"
 			else:
 				scheme = getattr(frappe.request, "scheme", "https")
 				return f"{scheme}://{host}".rstrip("/")
 
-	# 2. Check site config / frappe get_url()
-	site_name = getattr(frappe.local, "site", "") or ""
-	if "localhost" in site_name or "local" in site_name:
+	# 2. Check site config / site name
+	site_name = (getattr(frappe.local, "site", "") or "").lower()
+	if "connectfesttn.in" in site_name:
+		return "https://api.connectfesttn.in"
+	elif "mdqapps.online" in site_name:
+		return "https://connectfest.mdqapps.online"
+	elif "localhost" in site_name or "local" in site_name:
 		return "http://127.0.0.1:8080"
 
-	# 3. Check ConnectFest Settings frontend_dashboard_url if configured
 	try:
-		f_url = frappe.db.get_single_value("ConnectFest Settings", "frontend_dashboard_url")
-		if f_url and str(f_url).strip().startswith("http"):
-			from urllib.parse import urlparse
-			parsed = urlparse(str(f_url).strip())
-			if parsed.scheme and parsed.netloc and "localhost" not in parsed.netloc:
-				return f"{parsed.scheme}://{parsed.netloc}"
+		site_url = (frappe.utils.get_url() or "").strip().rstrip("/")
+		if site_url:
+			if "localhost" in site_url or "127.0.0.1" in site_url:
+				return "http://127.0.0.1:8080"
+			elif "connectfesttn.in" in site_url:
+				return "https://api.connectfesttn.in"
+			elif "mdqapps.online" in site_url:
+				return "https://connectfest.mdqapps.online"
+			elif site_url.startswith("http"):
+				return site_url
 	except Exception:
 		pass
 
-	return "https://connectfestapp.mdqapps.online"
+	return "https://api.connectfesttn.in"
 
 
 def get_attendee_dashboard_url():
 	"""
-	Resolves the Attendee Dashboard URL dynamically configured in ConnectFest Settings.
-	Falls back to base_url/ if not configured or empty.
+	Resolves the Attendee Dashboard URL dynamically:
+	- Respects ConnectFest Settings (frontend_dashboard_url) if explicitly configured.
+	- LIVE Production default: https://connectfesttn.in/
+	- UAT Environment default: https://connectfestapp.mdqapps.online/
+	- Local Environment default: http://localhost:3000/
 	"""
-	base_url = get_base_url()
 	custom_url = None
 	try:
 		custom_url = frappe.db.get_single_value("ConnectFest Settings", "frontend_dashboard_url")
 	except Exception:
 		pass
 
+	# Detect environment
+	is_live = False
+	is_uat = False
+	is_local = False
+
+	if hasattr(frappe, "request") and getattr(frappe, "request", None):
+		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip().lower()
+		if "connectfesttn.in" in host:
+			is_live = True
+		elif "mdqapps.online" in host:
+			is_uat = True
+		elif "localhost" in host or "127.0.0.1" in host:
+			is_local = True
+
+	if not (is_live or is_uat or is_local):
+		site_name = (getattr(frappe.local, "site", "") or "").lower()
+		if "connectfesttn.in" in site_name:
+			is_live = True
+		elif "mdqapps.online" in site_name:
+			is_uat = True
+		elif "localhost" in site_name or "local" in site_name:
+			is_local = True
+
+	default_frontend = "https://connectfesttn.in/"
+	if is_uat:
+		default_frontend = "https://connectfestapp.mdqapps.online/"
+	elif is_local:
+		default_frontend = "http://localhost:3000/"
+
 	if custom_url and str(custom_url).strip():
 		c_url = str(custom_url).strip()
-		if c_url.startswith("/"):
-			return f"{base_url}{c_url}"
-		return c_url
+		if c_url.startswith("http"):
+			return c_url.rstrip("/") + "/"
+		return f"{default_frontend.rstrip('/')}/{c_url.lstrip('/')}"
 
-	return f"{base_url}/"
+	return default_frontend
 
 
 def build_confirmation_html(data):
@@ -169,12 +209,18 @@ def build_confirmation_html(data):
 				</p>
 			</div>
 
+			<div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 16px 20px; border-radius: 8px; text-align: center; margin-bottom: 24px;">
+				<p style="margin: 0; font-size: 14px; color: #166534; font-weight: 700;">
+					📎 Official Stall Allocation Letter & Invoice Attached!
+				</p>
+				<p style="margin: 4px 0 0; font-size: 12px; color: #15803d;">
+					Your official 3-page confirmation PDF is attached directly to this email below. You can download, save, or print it anytime.
+				</p>
+			</div>
+
 			<div style="text-align: center; margin-bottom: 28px;">
-				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
-					📥 Download PDF
-				</a>
-				<a href="{dashboard_url}" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 13px 26px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
-					View Attendee Dashboard
+				<a href="{dashboard_url}" style="background: #cf2030; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(207, 32, 48, 0.25);">
+					🌐 Visit ConnectFest Website
 				</a>
 			</div>
 		</div>

@@ -376,41 +376,49 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 
 def get_base_url():
 	"""
-	Dynamically resolves the environment base URL:
-	- When executed on Local (localhost / 127.0.0.1 / connectfest.localhost), returns Local URL (e.g. http://localhost:8080).
-	- When executed on Live (connectfestapp.mdqapps.online or custom domain), returns Live HTTPS URL.
+	Dynamically resolves the Frappe backend base URL for API endpoints and downloads:
+	- LIVE Production: https://api.connectfesttn.in
+	- UAT Environment: https://connectfest.mdqapps.online
+	- Local Environment: http://127.0.0.1:8080 or http://localhost:8080
 	"""
 	# 1. Check HTTP Request context
 	if hasattr(frappe, "request") and getattr(frappe, "request", None):
-		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip()
+		host = (frappe.request.headers.get("Host") or getattr(frappe.request, "host", "") or "").strip().lower()
 		if host:
 			if "localhost" in host or "127.0.0.1" in host:
 				return f"http://{host}".rstrip("/")
+			elif "connectfesttn.in" in host:
+				return "https://api.connectfesttn.in"
 			elif "mdqapps.online" in host:
-				return f"https://{host}".rstrip("/")
+				return "https://connectfest.mdqapps.online"
 			else:
 				scheme = getattr(frappe.request, "scheme", "https")
 				return f"{scheme}://{host}".rstrip("/")
 
-	# 2. Check site config / frappe get_url()
+	# 2. Check site config / site name
+	site_name = (getattr(frappe.local, "site", "") or "").lower()
+	if "connectfesttn.in" in site_name:
+		return "https://api.connectfesttn.in"
+	elif "mdqapps.online" in site_name:
+		return "https://connectfest.mdqapps.online"
+	elif "localhost" in site_name or "local" in site_name:
+		return "http://localhost:8080"
+
 	try:
 		site_url = (frappe.utils.get_url() or "").strip().rstrip("/")
 		if site_url:
 			if "localhost" in site_url or "127.0.0.1" in site_url:
 				return "http://localhost:8080"
+			elif "connectfesttn.in" in site_url:
+				return "https://api.connectfesttn.in"
 			elif "mdqapps.online" in site_url:
-				return "https://connectfestapp.mdqapps.online"
+				return "https://connectfest.mdqapps.online"
 			elif site_url.startswith("http"):
 				return site_url
 	except Exception:
 		pass
 
-	# 3. Fallback based on local site
-	site_name = getattr(frappe.local, "site", "") or ""
-	if "localhost" in site_name or "local" in site_name:
-		return "http://localhost:8080"
-
-	return "https://connectfestapp.mdqapps.online"
+	return "https://api.connectfesttn.in"
 
 
 def check_expired_holds_lazy():
@@ -431,9 +439,9 @@ def check_expired_holds_lazy():
 def before_request():
 	"""
 	Runtime hook executed before processing any HTTP request.
-	Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs,
-	even if site_config.json does not have explicit flags.
-	Ultra-fast (<0.005ms) with zero DB/Redis overhead.
+	1. Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs.
+	2. Automatically redirects public visitors landing on root '/' of the backend to the official frontend website,
+	   ensuring Frappe Desk/backend URLs are never exposed to public users!
 	"""
 	frappe.local.allow_cors = "*"
 	if hasattr(frappe.local, "conf") and frappe.local.conf:
@@ -442,6 +450,16 @@ def before_request():
 		if req and hasattr(req, "path") and req.path:
 			if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
 				frappe.local.conf.ignore_csrf = True
+
+	# Public User Protection:
+	# If any user visits root '/' directly on the backend, instantly redirect them to the frontend website!
+	req = getattr(frappe, "request", None)
+	if req and hasattr(req, "path") and req.path in ("/", "/index"):
+		host = (getattr(frappe.request, "host", "") or "").lower()
+		if "connectfesttn.in" in host:
+			frappe.redirect("https://connectfesttn.in/")
+		elif "mdqapps.online" in host:
+			frappe.redirect("https://connectfestapp.mdqapps.online/")
 
 
 

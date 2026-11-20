@@ -673,14 +673,15 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			ORDER BY creation DESC
 		""", params, as_dict=True)
 
-		# 2. Fetch Visitor Pass
+		# 2. Fetch Visitor Passes (supports multiple passes for stall buyers)
 		visitor_pass = None
+		all_visitor_passes = []
 		visitors = frappe.db.sql(f"""
 			SELECT registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code,
 			       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE ({where_str})
-			ORDER BY creation DESC LIMIT 1
+			ORDER BY creation DESC
 		""", params, as_dict=True)
 
 		if not stalls and not visitors:
@@ -765,26 +766,27 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		stall_booking = all_stall_bookings[0] if all_stall_bookings else None
 
 		if visitors:
-			v = visitors[0]
-			raw_v_fn = (v.full_name or "").strip()
-			clean_v_fn = raw_v_fn.split("@")[0].replace(".", " ").replace("_", " ").title() if "@" in raw_v_fn else raw_v_fn
-			visitor_pass = {
-				"registration_id": v.registration_id,
-				"pass_code": v.pass_code,
-				"full_name": clean_v_fn,
-				"visitor_image": v.visitor_image or "",
-				"email": v.email if is_authorized else mask_email(v.email),
-				"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
-				"which_day": v.which_day,
-				"area_of_interest": v.get("area_of_interest") or "",
-				"access": "BOTH DAYS" if v.which_day == "Both days" else v.which_day.upper(),
-				"status": v.status,
-				"checked_in": v.checked_in,
-				"checked_in_at": str(v.checked_in_at or ""),
-				"qr_payload": (v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}") if is_authorized else None,
-				"venue": "Chennai Trade Centre, Nandambakkam",
-				"dates": "20 & 21 Feb 2027",
-			}
+			for v in visitors:
+				raw_v_fn = (v.full_name or "").strip()
+				clean_v_fn = raw_v_fn.split("@")[0].replace(".", " ").replace("_", " ").title() if "@" in raw_v_fn else raw_v_fn
+				all_visitor_passes.append({
+					"registration_id": v.registration_id,
+					"pass_code": v.pass_code,
+					"full_name": clean_v_fn,
+					"visitor_image": v.visitor_image or "",
+					"email": v.email if is_authorized else mask_email(v.email),
+					"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
+					"which_day": v.which_day,
+					"area_of_interest": v.get("area_of_interest") or "",
+					"access": "BOTH DAYS" if v.which_day == "Both days" else v.which_day.upper(),
+					"status": v.status,
+					"checked_in": v.checked_in,
+					"checked_in_at": str(v.checked_in_at or ""),
+					"qr_payload": (v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}") if is_authorized else None,
+					"venue": "Chennai Trade Centre, Nandambakkam",
+					"dates": "20 & 21 Feb 2027",
+				})
+			visitor_pass = all_visitor_passes[0] if all_visitor_passes else None
 
 		resolved_dashboard_full_name = None
 		if stall_booking and stall_booking.get("full_name"):
@@ -802,6 +804,8 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			"total_stalls": len(all_stall_bookings),
 			"has_visitor_pass": bool(visitor_pass),
 			"visitor_pass": visitor_pass,
+			"visitor_passes": all_visitor_passes,
+			"total_visitor_passes": len(all_visitor_passes),
 		}
 
 		if not is_authorized:

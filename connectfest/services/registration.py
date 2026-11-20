@@ -959,9 +959,34 @@ def register_visitor(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
+	# Determine session user
+	sess_user = getattr(frappe.session, "user", None) if hasattr(frappe, "session") else None
+	is_session_logged_in = bool(sess_user and sess_user != "Guest")
+
+	booked_by_email = (data.get("booked_by") or data.get("exhibitor_email") or data.get("created_by") or "").strip().lower()
+
 	full_name = (data.get("full_name") or data.get("name") or "").strip()
 	email = (data.get("email") or data.get("email_address") or "").strip().lower()
 	mobile_no = (data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip()
+
+	# If user is already logged in and fields are omitted, auto-populate from user/registration
+	if is_session_logged_in:
+		if not email:
+			email = sess_user.lower()
+		if not full_name:
+			full_name = (
+				frappe.db.get_value("ConnectFest Registration", {"email": email}, "full_name")
+				or frappe.db.get_value("User", email, "full_name")
+				or email.split("@")[0].title()
+			)
+		if not mobile_no:
+			mobile_no = (
+				frappe.db.get_value("ConnectFest Registration", {"email": email}, "mobile_no")
+				or frappe.db.get_value("User", email, "mobile_no")
+				or frappe.db.get_value("User", email, "phone")
+				or ""
+			)
+
 	raw_image = (data.get("visitor_image") or data.get("image") or data.get("photo") or data.get("visitor_photo") or data.get("avatar") or "").strip()
 	visitor_image = save_image_from_base64_or_url(raw_image, file_name_prefix=f"vis_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_image else ""
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
@@ -988,15 +1013,67 @@ def register_visitor(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "Validation Failed", "errors": errors}
 
-	# Validate Email OTP if provided or required
-	email_val_err = validate_registration_email_otp(email, data, expected_type="visitor")
-	if email_val_err:
-		frappe.local.response["http_status_code"] = 400
-		return email_val_err
+	# Check Exhibitor status:
+	# 1. Logged in session user has Exhibitor role or exists in ConnectFest Registration
+	# 2. Target email or mobile exists in ConnectFest Registration
+	# 3. Booked-by email exists in ConnectFest Registration
+	is_exhibitor = False
+	if is_session_logged_in:
+		user_roles = frappe.get_roles(sess_user)
+		if "Exhibitor" in user_roles or frappe.db.exists("ConnectFest Registration", {"email": sess_user.lower()}):
+			is_exhibitor = True
+
+	if not is_exhibitor:
+		if email and frappe.db.exists("ConnectFest Registration", {"email": email}):
+			is_exhibitor = True
+		elif mobile_no and frappe.db.exists("ConnectFest Registration", {"mobile_no": mobile_no}):
+			is_exhibitor = True
+		elif booked_by_email and frappe.db.exists("ConnectFest Registration", {"email": booked_by_email}):
+			is_exhibitor = True
+
+	# Determine whether stall is booked / bought (Paid or stall assigned)
+	has_bought_stall = False
+	stall_check_conditions = []
+	stall_check_values = {}
+
+	if is_session_logged_in:
+		stall_check_conditions.append("email = %(sess_user)s")
+		stall_check_values["sess_user"] = sess_user.lower()
+	if email:
+		stall_check_conditions.append("email = %(email)s")
+		stall_check_values["email"] = email
+	if mobile_no:
+		stall_check_conditions.append("mobile_no = %(mobile)s")
+		stall_check_values["mobile"] = mobile_no
+	if booked_by_email:
+		stall_check_conditions.append("email = %(booked_by)s")
+		stall_check_values["booked_by"] = booked_by_email
+
+	if stall_check_conditions:
+		where_stalls = " OR ".join(stall_check_conditions)
+		booked_stalls = frappe.db.sql(f"""
+			SELECT name, stall_number, payment_status, registration_id
+			FROM `tabConnectFest Registration`
+			WHERE ({where_stalls})
+			  AND (payment_status = 'Paid' OR (stall_number IS NOT NULL AND stall_number != ''))
+			LIMIT 1
+		""", stall_check_values, as_dict=True)
+		if booked_stalls:
+			has_bought_stall = True
+			is_exhibitor = True
+
+	# Email OTP Verification:
+	# If caller is NOT logged in, visitor registration strictly requires Email OTP verification!
+	# If caller is logged in (e.g. Exhibitor logged in), Email OTP is bypassed because session is already authenticated.
+	if not is_session_logged_in:
+		email_val_err = validate_registration_email_otp(email, data, expected_type="visitor")
+		if email_val_err:
+			frappe.local.response["http_status_code"] = 400
+			return email_val_err
 
 	cache = frappe.cache()
-	lock_email_key = cache.make_key(f"connectfest:lock_vreg:{email}") if email else None
-	lock_mob_key = cache.make_key(f"connectfest:lock_vreg:{mobile_no}") if mobile_no else None
+	lock_email_key = cache.make_key(f"connectfest:lock_vreg:{email}") if (email and not has_bought_stall) else None
+	lock_mob_key = cache.make_key(f"connectfest:lock_vreg:{mobile_no}") if (mobile_no and not has_bought_stall) else None
 	has_lock = False
 	if lock_email_key or lock_mob_key:
 		try:
@@ -1010,64 +1087,65 @@ def register_visitor(**kwargs):
 		except Exception:
 			has_lock = True
 
-	# Check for Existing Registration (Strict Uniqueness on Email & Mobile)
-	existing = frappe.db.sql("""
-		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
-		FROM `tabConnectFest Visitor Registration`
-		WHERE email = %(email)s OR mobile_no = %(mobile)s
-		LIMIT 1
-	""", {"email": email, "mobile": mobile_no}, as_dict=True)
+	# For non-stall buyers: enforce strict 1-visitor-pass limit per email and mobile
+	if not has_bought_stall:
+		existing = frappe.db.sql("""
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
+			FROM `tabConnectFest Visitor Registration`
+			WHERE email = %(email)s OR mobile_no = %(mobile)s
+			LIMIT 1
+		""", {"email": email, "mobile": mobile_no}, as_dict=True)
 
-	if existing:
-		rec = existing[0]
-		rec_email = (rec.email or "").strip().lower()
-		rec_mobile = (rec.mobile_no or "").strip()
+		if existing:
+			rec = existing[0]
+			rec_email = (rec.email or "").strip().lower()
+			rec_mobile = (rec.mobile_no or "").strip()
 
-		# Conflict A: Mobile matches, but email is different!
-		if mobile_no and rec_mobile == mobile_no and rec_email != email.lower():
-			frappe.local.response["http_status_code"] = 400
+			# Conflict A: Mobile matches, but email is different!
+			if mobile_no and rec_mobile == mobile_no and rec_email != email.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "Mobile number is already registered with another account! Each mobile number can only be used once."
+				}
+
+			# Conflict B: Email matches, but mobile is different!
+			if rec_email == email.lower() and mobile_no and rec_mobile != mobile_no:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "Email address is already registered with a different mobile number! Please use your registered mobile number."
+				}
+
+			if visitor_image and not rec.get("visitor_image"):
+				try:
+					frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "visitor_image", visitor_image)
+					rec["visitor_image"] = visitor_image
+					frappe.db.commit()
+				except Exception:
+					pass
+
+			ensure_frappe_user(rec_email, rec.full_name or full_name, rec_mobile, role="Website User")
+			if visitor_image:
+				try:
+					frappe.db.set_value("User", rec_email, "user_image", visitor_image)
+				except Exception:
+					pass
+
 			return {
-				"status": "error",
-				"message": "Mobile number is already registered with another account! Each mobile number can only be used once."
+				"status": "already_registered",
+				"message": "You are already registered for ConnectFest 2027! Please log in using Email OTP to access your entrance pass.",
 			}
 
-		# Conflict B: Email matches, but mobile is different!
-		if rec_email == email.lower() and mobile_no and rec_mobile != mobile_no:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "Email address is already registered with a different mobile number! Please use your registered mobile number."
-			}
-
-		if visitor_image and not rec.get("visitor_image"):
-			try:
-				frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "visitor_image", visitor_image)
-				rec["visitor_image"] = visitor_image
-				frappe.db.commit()
-			except Exception:
-				pass
-
-		ensure_frappe_user(rec_email, rec.full_name or full_name, rec_mobile, role="Website User")
-		if visitor_image:
-			try:
-				frappe.db.set_value("User", rec_email, "user_image", visitor_image)
-			except Exception:
-				pass
-
-		return {
-			"status": "already_registered",
-			"message": "You are already registered for ConnectFest 2027! Please log in using Email OTP to access your entrance pass.",
-		}
-
-	# Check if mobile_no is bound to another active User
-	if mobile_no:
-		user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
-		if user_with_mob and user_with_mob.lower() != email.lower():
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": "Mobile number is already registered with another account! Each mobile number can only be used once.",
-			}
+		# Check if mobile_no is bound to another active User
+		if mobile_no:
+			user_with_mob = frappe.db.get_value("User", {"mobile_no": mobile_no}, "name") or frappe.db.get_value("User", {"phone": mobile_no}, "name")
+			if user_with_mob and user_with_mob.lower() != email.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "Mobile number is already registered with another account! Each mobile number can only be used once.",
+				}
 
 	cache = frappe.cache()
 	reg_id = generate_visitor_id(cache)
@@ -1130,28 +1208,47 @@ def register_visitor(**kwargs):
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
-		# Provision Frappe User account immediately and auto-login
-		try:
-			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-			if visitor_image:
-				frappe.db.set_value("User", email, "user_image", visitor_image)
-			# Auto-login immediately upon successful registration
-			from frappe.auth import LoginManager
-			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-				frappe.local.login_manager.login_as(email)
-			else:
-				frappe.local.login_manager = LoginManager()
-				frappe.local.login_manager.login_as(email)
-			frappe.set_user(email)
-		except Exception:
-			pass
+		# Auto-login behavior:
+		# Exhibitors registering visitor passes MUST NOT be switched to visitor login!
+		# Only pure non-exhibitor visitors are auto-logged into the visitor account.
+		logged_in = False
+		if not is_exhibitor:
+			try:
+				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+				if visitor_image:
+					frappe.db.set_value("User", email, "user_image", visitor_image)
+				if getattr(frappe.local, "request", None):
+					from frappe.auth import LoginManager
+					if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+						frappe.local.login_manager.login_as(email)
+					else:
+						frappe.local.login_manager = LoginManager()
+						frappe.local.login_manager.login_as(email)
+				frappe.set_user(email)
+				logged_in = True
+			except Exception:
+				try:
+					frappe.set_user(email)
+				except Exception:
+					pass
+				logged_in = True
+		else:
+			# Exhibitor session protection: DO NOT overwrite session or log in as visitor!
+			try:
+				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+			except Exception:
+				pass
 
 		return {
 			"status": "success",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
-			"message": "Visitor registration successful!",
-			"logged_in": True,
+			"message": "Visitor registration successful!" if not is_exhibitor else "Visitor pass generated successfully!",
+			"logged_in": logged_in,
+			"is_exhibitor": is_exhibitor,
+			"has_bought_stall": has_bought_stall,
+			"user_type": "exhibitor" if is_exhibitor else "visitor",
+			"pass_info": pass_info,
 		}
 	except Exception as e:
 		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())
@@ -1195,7 +1292,7 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 			SELECT registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
-			ORDER BY creation DESC LIMIT 1
+			ORDER BY creation DESC
 		""", {"email": em, "mobile": mb}, as_dict=True)
 		if visitors:
 			visitor_pass = visitors[0]
@@ -1209,6 +1306,8 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 		"stalls_list": [s.get("stall_number") for s in stall_bookings if s.get("stall_number")],
 		"has_visitor_pass": bool(visitor_pass),
 		"visitor_pass": visitor_pass,
+		"visitor_passes": visitors if (em or mb) else [],
+		"total_visitor_passes": len(visitors) if (em or mb) else 0,
 	}
 
 

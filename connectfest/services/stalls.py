@@ -1496,6 +1496,12 @@ def admin_bulk_create_stalls(**kwargs):
 		st_z = (st.get("zone") or (z if z else (f"Zone {st_blk}" if st_blk else "General"))).strip()
 		st_crn = cint(st.get("crn", crn_val))
 
+		st_label = (st.get("label") or st_dim).strip()
+		st_x = flt(st.get("x", 0.0))
+		st_y = flt(st.get("y", 0.0))
+		st_w = flt(st.get("width", 0.0))
+		st_h = flt(st.get("height", 0.0))
+
 		doc = frappe.get_doc({
 			"doctype": "ConnectFest Stall",
 			"stall_number": s_num,
@@ -1507,6 +1513,11 @@ def admin_bulk_create_stalls(**kwargs):
 			"status": "Available",
 			"crn": st_crn,
 			"is_blocked_by_admin": 0,
+			"label": st_label,
+			"x": st_x,
+			"y": st_y,
+			"width": st_w,
+			"height": st_h,
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()
