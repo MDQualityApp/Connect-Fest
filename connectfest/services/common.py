@@ -473,4 +473,22 @@ def before_request():
 				frappe.local.conf.ignore_csrf = True
 
 
+import secrets
+
+PASS_CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 32 chars: excludes 0, O, 1, I to eliminate human confusion
+
+
+def generate_secure_pass_code(prefix="CF"):
+	"""
+	Generates a cryptographically secure, unguessable, human-enterable pass code.
+	Format: CF-XXXX-XXXX (e.g. CF-7K9M-4X2B)
+	- Over 1.09 trillion combinations (32^8), impossible to guess or brute-force.
+	- Excludes confusing characters (0/O, 1/I) so manual keypad entry at gate is foolproof.
+	"""
+	p1 = "".join(secrets.choice(PASS_CODE_CHARS) for _ in range(4))
+	p2 = "".join(secrets.choice(PASS_CODE_CHARS) for _ in range(4))
+	return f"{prefix}-{p1}-{p2}"
+
+
+
 

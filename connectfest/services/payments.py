@@ -774,16 +774,20 @@ def verify_razorpay_payment(**kwargs):
 		set_cached_record(cache, f"{STALL_CACHE_PREFIX}{reg_id}", cached_item)
 
 	if frappe.db.exists("ConnectFest Registration", {"registration_id": reg_id}):
-		p_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_code") or reg_id
+		p_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_code")
+		if not p_code or p_code.startswith("CF-2611-"):
+			from connectfest.services.common import generate_secure_pass_code
+			p_code = generate_secure_pass_code("CF")
 		st_num = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "stall_number") or ""
 		em = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or ""
-		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p_code}:{em}"
+		qr_pl = p_code
 		p2_name = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_name") or "").strip()
 		p2_code = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_pass_code") or "").strip()
-		if p2_name and not p2_code:
-			p2_code = f"{p_code}-P2"
+		if p2_name and (not p2_code or p2_code.startswith("CF-2611-") or p2_code.endswith("-P2")):
+			from connectfest.services.common import generate_secure_pass_code
+			p2_code = generate_secure_pass_code("CF")
 		p2_em = (frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_email") or "").strip()
-		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{st_num}:{p2_code}:{p2_em or em}" if (p2_name and p2_code) else ""
+		p2_qr = p2_code if (p2_name and p2_code) else ""
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			{"registration_id": reg_id},
@@ -1845,13 +1849,15 @@ def admin_confirm_payment(**kwargs):
 	reg_doc.status = "Registered"
 	reg_doc.razorpay_payment_id = ref_id
 	reg_doc.payment_date = now_str
-	if not getattr(reg_doc, "pass_code", None):
-		reg_doc.pass_code = actual_reg_id
-	reg_doc.qr_payload = f"CONNECTFEST2027:EXHIBITOR:{chosen_stall}:{reg_doc.pass_code}:{reg_doc.email}"
+	if not getattr(reg_doc, "pass_code", None) or str(reg_doc.pass_code).startswith("CF-2611-"):
+		from connectfest.services.common import generate_secure_pass_code
+		reg_doc.pass_code = generate_secure_pass_code("CF")
+	reg_doc.qr_payload = reg_doc.pass_code
 	if getattr(reg_doc, "pass_2_name", None) and str(reg_doc.pass_2_name).strip():
-		if not getattr(reg_doc, "pass_2_pass_code", None):
-			reg_doc.pass_2_pass_code = f"{reg_doc.pass_code}-P2"
-		reg_doc.pass_2_qr_payload = f"CONNECTFEST2027:EXHIBITOR:{chosen_stall}:{reg_doc.pass_2_pass_code}:{reg_doc.pass_2_email or reg_doc.email}"
+		if not getattr(reg_doc, "pass_2_pass_code", None) or str(reg_doc.pass_2_pass_code).startswith("CF-2611-") or str(reg_doc.pass_2_pass_code).endswith("-P2"):
+			from connectfest.services.common import generate_secure_pass_code
+			reg_doc.pass_2_pass_code = generate_secure_pass_code("CF")
+		reg_doc.pass_2_qr_payload = reg_doc.pass_2_pass_code
 	else:
 		reg_doc.pass_2_pass_code = ""
 		reg_doc.pass_2_qr_payload = ""

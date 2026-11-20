@@ -263,6 +263,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	# =========================================================================
 	exhibitor = None
 	clean_base_code = code.rsplit("-", 1)[0] if ("-P2" in code.upper() or code.endswith("-2")) else code
+	no_hyphen_code = code.replace("-", "").strip().upper()
 
 	if is_pass_2_scan:
 		exhibitor = frappe.db.sql("""
@@ -273,12 +274,13 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
 			FROM `tabConnectFest Registration`
 			WHERE pass_2_pass_code = %(code)s
+			   OR REPLACE(pass_2_pass_code, '-', '') = %(no_hyphen)s
 			   OR (pass_2_pass_code LIKE %(p2_like)s)
 			   OR registration_id = %(base)s
 			   OR name = %(base)s
 			   OR stall_number = %(base)s
 			LIMIT 1
-		""", {"code": code, "p2_like": f"%{code}%", "base": clean_base_code}, as_dict=True)
+		""", {"code": code, "no_hyphen": no_hyphen_code, "p2_like": f"%{code}%", "base": clean_base_code}, as_dict=True)
 
 	if not exhibitor and code:
 		exhibitor = frappe.db.sql("""
@@ -288,10 +290,15 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email, pass_2_pass_code, pass_2_qr_payload,
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
 			FROM `tabConnectFest Registration`
-			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s OR stall_number = %(code)s
+			WHERE pass_code = %(code)s 
+			   OR REPLACE(pass_code, '-', '') = %(no_hyphen)s
 			   OR pass_2_pass_code = %(code)s
+			   OR REPLACE(pass_2_pass_code, '-', '') = %(no_hyphen)s
+			   OR registration_id = %(code)s 
+			   OR name = %(code)s 
+			   OR stall_number = %(code)s
 			LIMIT 1
-		""", {"code": code}, as_dict=True)
+		""", {"code": code, "no_hyphen": no_hyphen_code}, as_dict=True)
 
 	if not exhibitor and mob_scan:
 		exhibitor = frappe.db.sql("""
@@ -349,7 +356,8 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		zone = zone_map.get(rec.stall_category) or "Zone B - West Aisles"
 
 		# Determine whether this scan evaluates Pass 2 (Co-Exhibitor) or Pass 1 (Primary)
-		check_as_pass_2 = is_pass_2_scan or (code and code == rec.get("pass_2_pass_code"))
+		p2_code_val = (rec.get("pass_2_pass_code") or "").strip().upper()
+		check_as_pass_2 = is_pass_2_scan or (code and (code.upper() == p2_code_val or (p2_code_val and no_hyphen_code == p2_code_val.replace("-", ""))))
 		if not check_as_pass_2 and (mob_scan and rec.get("pass_2_mobile") and mob_scan == rec.get("pass_2_mobile") and mob_scan != rec.get("mobile_no")):
 			check_as_pass_2 = True
 		if not check_as_pass_2 and (email_scan and rec.get("pass_2_email") and email_scan == rec.get("pass_2_email") and email_scan != rec.get("email")):
@@ -1510,8 +1518,11 @@ def update_co_exhibitor_pass(registration_id=None, stall_number=None, name=None,
 	# Save uploaded image
 	saved_img = save_image_from_base64_or_url(raw_img, file_name_prefix=f"exh2_{rec.stall_number}") if raw_img else (rec.get("pass_2_image") or "")
 
-	p2_code = rec.get("pass_2_pass_code") or f"{rec.registration_id or rec.name}-P2"
-	p2_qr = f"CONNECTFEST2027:EXHIBITOR:{rec.stall_number}:{p2_code}:{p2_email or rec.email}"
+	p2_code = (rec.get("pass_2_pass_code") or "").strip()
+	if not p2_code or p2_code.startswith("CF-2611-") or p2_code.endswith("-P2"):
+		from connectfest.services.common import generate_secure_pass_code
+		p2_code = generate_secure_pass_code("CF")
+	p2_qr = p2_code
 
 	frappe.db.set_value("ConnectFest Registration", rec.name, {
 		"pass_2_name": p2_name,
@@ -1533,18 +1544,15 @@ def update_co_exhibitor_pass(registration_id=None, stall_number=None, name=None,
 
 	pass_2_data = {
 		"pass_index": 2,
-		"pass_number": 2,
 		"pass_title": "Co-Exhibitor Pass (Booth Staff)",
 		"pass_type": "exhibitor_pass",
 		"pass_code": p2_code,
 		"registration_id": rec.registration_id or rec.name,
 		"full_name": p2_name,
 		"image": format_full_url(saved_img),
-		"visitor_image": format_full_url(saved_img),
 		"mobile_no": p2_mobile,
 		"email": p2_email,
 		"company_name": rec.company_name,
-		"company_logo": format_full_url(rec.company_logo),
 		"stall_number": rec.stall_number,
 		"stall_category": rec.stall_category,
 		"zone": zone,
@@ -1562,8 +1570,6 @@ def update_co_exhibitor_pass(registration_id=None, stall_number=None, name=None,
 		"status": "success",
 		"message": f"Co-Exhibitor Pass 2 successfully issued to {p2_name} for Stall {rec.stall_number}!",
 		"pass": pass_2_data,
-		"co_exhibitor_pass": pass_2_data,
-		"pass_2": pass_2_data,
 	}
 
 

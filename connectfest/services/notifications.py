@@ -147,6 +147,12 @@ def build_confirmation_html(data):
 	except Exception:
 		pass
 
+	# Pass 1 Primary Exhibitor Pass Details (Only 1 QR sent in confirmation email)
+	p1_code = data.get("pass_code") or f"{reg_id}-P1"
+	# Encode clean pass_code directly so every phone scanner reads it without "No usable data found" error
+	p1_qr = p1_code
+	p1_qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=6&data={urllib.parse.quote(str(p1_qr))}"
+
 	base_url = get_base_url()
 	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
 	dashboard_url = get_attendee_dashboard_url()
@@ -202,6 +208,24 @@ def build_confirmation_html(data):
 				</table>
 			</div>
 
+			<div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.05);">
+				<table style="width: 100%; border-collapse: collapse;">
+					<tr>
+						<td style="vertical-align: top; width: 62%;">
+							<div style="display: inline-block; font-size: 11px; font-weight: 700; color: #4f46e5; background: #eef2ff; border: 1px solid #c7d2fe; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Primary Exhibitor Digital Pass</div>
+							<div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">{full_name}</div>
+							<div style="font-size: 13px; color: #475569; margin-bottom: 6px;">{company_name or 'Exhibitor'}</div>
+							<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
+							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
+						</td>
+						<td style="vertical-align: middle; text-align: center; width: 38%;">
+							<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
+							<span style="font-size: 10px; color: #94a3b8; display: block; margin-top: 4px;">Gate Entry QR</span>
+						</td>
+					</tr>
+				</table>
+			</div>
+
 			<div style="background: #eef2ff; border-left: 4px solid #4f46e5; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
 				<h4 style="margin: 0 0 6px; color: #3730a3; font-size: 14px; font-weight: 700;">Event Venue & Schedule</h4>
 				<p style="margin: 0; font-size: 13px; color: #4338ca; line-height: 1.6;">
@@ -213,7 +237,7 @@ def build_confirmation_html(data):
 
 			<div style="text-align: center; margin-top: 8px; margin-bottom: 28px;">
 				<a href="{view_passes_url}" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
-					🎟️ View & Download Passes
+					🎟️ View Passes
 				</a>
 				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
 					📥 Download Allocation PDF
@@ -322,17 +346,6 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		for k, v in kwargs.items():
 			if v: reg_data[k] = v
 
-		# Trigger WhatsApp Confirmation via WATI (Non-blocking & Zero-disturbance)
-		try:
-			from connectfest.services.wati import send_booking_confirmation_whatsapp
-			send_booking_confirmation_whatsapp(
-				registration_id=reg_data.get("registration_id") or reg_data.get("name"),
-				mobile_no=reg_data.get("mobile_no"),
-				reg_data=reg_data,
-			)
-		except Exception:
-			pass
-
 		target_email = email or reg_data.get("email")
 		if not target_email or "@" not in target_email:
 			return {"status": "skipped", "message": "No valid email address found for attendee"}
@@ -371,6 +384,7 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		except Exception as e:
 			frappe.log_error(title="Failed to generate allocation PDF attachment", message=frappe.get_traceback())
 
+		# Fast, High-Priority Email Dispatch (never blocked behind external API calls)
 		frappe.sendmail(
 			recipients=[target_email],
 			subject=subject,
@@ -378,12 +392,25 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 			attachments=attachments if attachments else None,
 			now=True,
 			delayed=False,
+			x_priority=1,
+			send_priority=1,
 		)
 		frappe.db.commit()
 
 		try:
 			from frappe.email.queue import flush
 			flush(from_test=False)
+		except Exception:
+			pass
+
+		# Trigger WhatsApp Confirmation via WATI after email is committed (Non-blocking & Zero-disturbance)
+		try:
+			from connectfest.services.wati import send_booking_confirmation_whatsapp
+			send_booking_confirmation_whatsapp(
+				registration_id=reg_data.get("registration_id") or reg_data.get("name"),
+				mobile_no=reg_data.get("mobile_no"),
+				reg_data=reg_data,
+			)
 		except Exception:
 			pass
 

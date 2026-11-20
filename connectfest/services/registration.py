@@ -15,6 +15,7 @@ from connectfest.services.common import (
 	set_cached_record,
 	generate_stall_id,
 	generate_visitor_id,
+	generate_secure_pass_code,
 	save_image_from_base64_or_url,
 	handle_api_errors,
 )
@@ -446,8 +447,8 @@ def register_stall(**kwargs):
 		"razorpay_signature": "",
 		"payment_date": None,
 		"status": "Registered",
-		"pass_code": reg_id,
-		"qr_payload": f"CONNECTFEST2027:EXHIBITOR:{stall_number or ''}:{reg_id}:{email}",
+		"pass_code": generate_secure_pass_code("CF"),
+		"qr_payload": "",
 		"checked_in": 0,
 		"checked_in_at": None,
 		"checked_in_by": None,
@@ -901,8 +902,8 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 					"payment_status": "Pending",
 					"payment_mode": "Online",
 					"status": "Registered",
-					"pass_code": new_reg_id,
-					"qr_payload": f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{new_reg_id}:{user_email or prev.get('email') or ''}",
+					"pass_code": generate_secure_pass_code("CF"),
+					"qr_payload": "",
 					"checked_in": 0,
 					"checked_in_at": None,
 					"checked_in_by": None,
@@ -1016,15 +1017,17 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 		db_target = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "name")
 
 	if db_target:
-		p_code = frappe.db.get_value("ConnectFest Registration", db_target, "pass_code") or reg_id
+		p_code = frappe.db.get_value("ConnectFest Registration", db_target, "pass_code")
+		if not p_code or p_code.startswith("CF-2611-"):
+			p_code = generate_secure_pass_code("CF")
 		p2_name = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_name") or "").strip()
 		p2_code = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_pass_code") or "").strip()
-		if p2_name and not p2_code:
-			p2_code = f"{p_code}-P2"
+		if p2_name and (not p2_code or p2_code.startswith("CF-2611-") or p2_code.endswith("-P2")):
+			p2_code = generate_secure_pass_code("CF")
 		p2_em = (frappe.db.get_value("ConnectFest Registration", db_target, "pass_2_email") or "").strip()
 		em = record.get("email") or ""
-		qr_pl = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p_code}:{em}"
-		p2_qr = f"CONNECTFEST2027:EXHIBITOR:{stall_num}:{p2_code}:{p2_em or em}" if (p2_name and p2_code) else ""
+		qr_pl = p_code
+		p2_qr = p2_code if (p2_name and p2_code) else ""
 		frappe.db.set_value(
 			"ConnectFest Registration",
 			db_target,
@@ -1304,14 +1307,10 @@ def register_visitor(**kwargs):
 	cache = frappe.cache()
 	reg_id = generate_visitor_id(cache)
 	while True:
-		try:
-			seq = cache.incr(cache.make_key("connectfest:visitor_pass_counter"))
-		except Exception:
-			seq = int(time.time() * 1000) % 1000000
-		pass_code = f"CF27-{seq:06d}"
+		pass_code = generate_secure_pass_code("CF27")
 		if not frappe.db.exists("ConnectFest Visitor Registration", {"pass_code": pass_code}):
 			break
-	qr_payload = f"CONNECTFEST2027:{pass_code}:{email}:{mobile_no}"
+	qr_payload = pass_code
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S.%f")
 
 	record = {

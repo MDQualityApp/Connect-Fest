@@ -123,42 +123,6 @@ def register_bni_event(**kwargs):
 			"message": f"Missing mandatory credentials: {', '.join(missing)} are all required to verify CNR membership."
 		}
 
-	# Enforce logged-in user constraint:
-	# If an attendee is already logged in (non-admin), their submitted email & mobile MUST EXACTLY MATCH!
-	from connectfest.services.auth import is_admin_user, get_authenticated_user
-	sess_user = getattr(frappe.session, "user", None)
-	auth_user = get_authenticated_user(data, **kwargs)
-	if not auth_user and sess_user and sess_user != "Guest":
-		auth_user = sess_user
-	is_admin = is_admin_user(auth_user) if auth_user else False
-
-	if auth_user and not is_admin:
-		sess_email = auth_user.strip().lower()
-		sess_phone = (
-			frappe.db.get_value("ConnectFest Registration", {"email": auth_user}, "mobile_no")
-			or frappe.db.get_value("ConnectFest Visitor Registration", {"email": auth_user}, "mobile_no")
-			or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": auth_user}, "mobile_no")
-			or frappe.db.get_value("User", auth_user, "mobile_no")
-			or frappe.db.get_value("User", auth_user, "phone")
-			or ""
-		).strip()
-		clean_sess_phone = normalize_phone_number(sess_phone) if sess_phone else ""
-		clean_req_phone = normalize_phone_number(mobile_no) if mobile_no else ""
-
-		if email and email.strip().lower() != sess_email:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": f"You are currently logged in as '{auth_user}'. Event registration must match your logged-in email. To register for a different email, please log out first.",
-			}
-
-		if clean_sess_phone and clean_req_phone and clean_req_phone != clean_sess_phone:
-			frappe.local.response["http_status_code"] = 400
-			return {
-				"status": "error",
-				"message": f"You are currently logged in as '{auth_user}'. Event registration must match your registered mobile number ({clean_sess_phone}). To register with a different mobile number, please log out first.",
-			}
-
 	# Verify Name, Mobile, and Email exist in ConnectFest CNR Member DocType
 	# Mandatory regardless of crn_bni_only toggle!
 	is_bni, bni_doc = is_valid_bni_member(mobile_no=mobile_no, email=email, name=full_name)
