@@ -267,7 +267,7 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 			if is_valid:
 				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
 				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
-				return saved.file_url
+				return format_full_url(saved.file_url)
 			return ""
 		except Exception as e:
 			frappe.log_error("Uploaded Image Save Error", frappe.get_traceback())
@@ -291,7 +291,7 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 			if is_valid:
 				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
 				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
-				return saved.file_url
+				return format_full_url(saved.file_url)
 			return ""
 		except Exception as e:
 			frappe.log_error("Image Save Error", frappe.get_traceback())
@@ -299,7 +299,7 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 
 	if len(val) > 500:
 		return ""
-	return val
+	return format_full_url(val)
 
 
 def handle_api_errors(title_or_fn="ConnectFest Error"):
@@ -419,6 +419,27 @@ def get_base_url():
 		pass
 
 	return "https://api.connectfesttn.in"
+
+
+def format_full_url(file_url):
+	"""
+	Converts relative file path (/files/xyz.webp) into absolute public full URL:
+	- LIVE Production: https://api.connectfesttn.in/files/xyz.webp
+	- UAT Environment: https://connectfest.mdqapps.online/files/xyz.webp
+	- Local Environment: http://127.0.0.1:8080/files/xyz.webp or http://localhost:8080/files/xyz.webp
+	If already an absolute HTTP/HTTPS URL, returns as-is.
+	"""
+	if not file_url:
+		return ""
+	file_str = str(file_url).strip()
+	if not file_str:
+		return ""
+	if file_str.startswith("http://") or file_str.startswith("https://"):
+		return file_str
+	base = get_base_url().rstrip("/")
+	if not file_str.startswith("/"):
+		file_str = f"/{file_str}"
+	return f"{base}{file_str}"
 
 
 def check_expired_holds_lazy():

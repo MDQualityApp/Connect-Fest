@@ -151,7 +151,15 @@ def _format_gallery_doc(doc_or_dict, include_images=True, images_by_parent=None)
 				for r in child_rows
 			]
 
-	if not cover_image and images_list:
+	from connectfest.services.common import format_full_url
+	if images_list:
+		for img_item in images_list:
+			if isinstance(img_item, dict) and "image" in img_item:
+				img_item["image"] = format_full_url(img_item["image"])
+
+	if cover_image:
+		cover_image = format_full_url(cover_image)
+	elif images_list:
 		cover_image = images_list[0]["image"]
 
 	return {
@@ -863,14 +871,13 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 	from frappe.utils.file_manager import save_file
 	safe_fname = f"cf_{uuid.uuid4().hex[:12]}.{detected_ext}"
 	saved = save_file(safe_fname, raw_bytes, dt=None, dn=None, is_private=cint(is_private))
-	saved_url = saved.file_url
-
-	full_url = frappe.utils.get_url(saved_url) if saved_url.startswith("/") else saved_url
+	saved_url = format_full_url(saved.file_url)
 	return {
 		"status": "success",
 		"message": "File verified and uploaded securely",
 		"file_url": saved_url,
-		"full_url": full_url,
+		"full_url": saved_url,
+		"url": saved_url,
 		"filename": safe_fname,
 		"format": detected_ext.upper(),
 		"size_bytes": len(raw_bytes),

@@ -6,6 +6,7 @@ from connectfest.services.common import (
 	extract_request_data,
 	get_cached_record,
 	safe_str,
+	format_full_url,
 )
 
 
@@ -733,7 +734,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"registration_id": sb.registration_id,
 					"full_name": clean_fn,
 					"company_name": sb.company_name,
-					"company_logo": sb.company_logo or "",
+					"company_logo": format_full_url(sb.company_logo),
 					"location": sb.location or "",
 					"bill": sb.get("bill") or "",
 					"gst": sb.get("gst") or "",
@@ -773,7 +774,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"registration_id": v.registration_id,
 					"pass_code": v.pass_code,
 					"full_name": clean_v_fn,
-					"visitor_image": v.visitor_image or "",
+					"visitor_image": format_full_url(v.visitor_image),
 					"email": v.email if is_authorized else mask_email(v.email),
 					"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
 					"which_day": v.which_day,

@@ -7,6 +7,7 @@ from connectfest.services.common import (
 	parse_boolean,
 	handle_api_errors,
 	save_image_from_base64_or_url,
+	format_full_url,
 )
 from connectfest.services.auth import check_admin_permission
 
@@ -74,7 +75,7 @@ def _format_sponsor_doc(doc_or_dict):
 		"sponsor_name": sponsor_name,
 		"sponsor_category": sponsor_category,
 		"sponsored_for": sponsored_for,
-		"logo": logo,
+		"logo": format_full_url(logo),
 		"website_url": website_url,
 		"stall_number": stall_number or None,
 		"description": description,
@@ -254,7 +255,7 @@ def _format_sponsor_registration(doc_or_dict):
 		"email": email,
 		"mobile": mobile_no,
 		"mobile_no": mobile_no,
-		"logo": logo,
+		"logo": format_full_url(logo),
 		"website_url": website_url,
 		"sponsor_category": sponsor_category,
 		"sponsored_for": sponsored_for,

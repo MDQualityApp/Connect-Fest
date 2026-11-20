@@ -1330,14 +1330,14 @@ def upload_visitor_image(file=None, filedata=None, filename=None, **kwargs):
 			"message": "No valid image provided. Send an image file in multipart/form-data or a base64 image data string."
 		}
 
-	from connectfest.services.common import get_base_url
-	base = get_base_url()
-	full_url = f"{base}{saved_url}" if saved_url.startswith("/") else saved_url
+	from connectfest.services.common import format_full_url
+	full_url = format_full_url(saved_url)
 	return {
 		"status": "success",
 		"message": "Image uploaded successfully",
-		"file_url": saved_url,
+		"file_url": full_url,
 		"full_url": full_url,
+		"url": full_url,
 	}
 
 

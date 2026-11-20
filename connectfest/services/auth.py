@@ -2,7 +2,7 @@ import frappe
 import frappe.auth
 from frappe.auth import LoginManager
 from frappe.utils import flt, cint
-from connectfest.services.common import extract_request_data, handle_api_errors
+from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
 
@@ -601,7 +601,7 @@ def get_current_user_profile(**kwargs):
 	primary_reg = stalls_raw[0] if stalls_raw else None
 	primary_event = events_raw[0] if events_raw else None
 	company_name = (primary_reg.company_name if primary_reg else (primary_event.company_name if primary_event else "")) or ""
-	company_logo = (primary_reg.company_logo if primary_reg else "") or ""
+	company_logo = format_full_url((primary_reg.company_logo if primary_reg else "") or "")
 	location = (primary_reg.location if primary_reg else (primary_event.location if primary_event else "")) or ""
 	industry = (primary_reg.industry if primary_reg else (primary_event.industry if primary_event else "")) or ""
 	segment = (primary_reg.segment if primary_reg else (primary_event.segment if primary_event else "")) or ""
@@ -657,7 +657,7 @@ def get_current_user_profile(**kwargs):
 			"registration_id": sb.registration_id,
 			"full_name": (sb.full_name if (sb.full_name and "@" not in sb.full_name) else user_full_name),
 			"company_name": sb.company_name or company_name,
-			"company_logo": sb.company_logo or company_logo,
+			"company_logo": format_full_url(sb.company_logo or company_logo),
 			"location": sb.location or location,
 			"bill": sb.get("bill") or "",
 			"gst": sb.get("gst") or "",
@@ -1538,7 +1538,7 @@ def admin_get_all_users(**kwargs):
 		enabled = cint(u_doc.enabled) if u_doc else 1
 		creation = str(u_doc.creation if u_doc else (ex_doc.creation if ex_doc else (vis_doc.creation if vis_doc else "")))
 		last_login = str(u_doc.last_login if u_doc and u_doc.last_login else "")
-		user_image = (u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or (vis_doc.visitor_image if vis_doc else "") or ""
+		user_image = format_full_url((u_doc.user_image if u_doc else "") or (ex_doc.company_logo if ex_doc else "") or (vis_doc.visitor_image if vis_doc else "") or "")
 
 		exhibitor_info = None
 		if ex_list:
@@ -1570,7 +1570,7 @@ def admin_get_all_users(**kwargs):
 			exhibitor_info = {
 				"registration_id": latest_ex.registration_id,
 				"company_name": latest_ex.company_name or "",
-				"company_logo": latest_ex.company_logo or "",
+				"company_logo": format_full_url(latest_ex.company_logo or ""),
 				"location": latest_ex.location or "",
 				"bill": latest_ex.get("bill") or "",
 				"gst": latest_ex.get("gst") or "",
