@@ -963,17 +963,30 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				except Exception:
 					pass
 
-			# Send OTP directly to Admin Email
+			# Send OTP directly to Admin Email (Fast non-blocking background dispatch)
 			if admin_email:
+				from connectfest.services.otp import (
+					build_admin_2fa_html,
+					_email_executor,
+					_background_send_email_task,
+				)
+				email_subject = f"{otp_code} is your ConnectFest Admin verification code"
+				email_content = build_admin_2fa_html(otp_code, admin_user=usr, admin_email=admin_email, expiry_seconds=120)
+				site_name = getattr(getattr(frappe, "local", None), "site", "connectfest.localhost") or "connectfest.localhost"
 				try:
-					frappe.sendmail(
-						recipients=[admin_email],
-						subject="ConnectFest Admin 2FA Verification Code",
-						message=f"<p>Hello Administrator,</p><p>Your 2FA verification code for ConnectFest Admin Login is: <strong>{otp_code}</strong></p><p>This code is valid for 2 minutes.</p>",
-						now=True
-					)
+					_email_executor.submit(_background_send_email_task, site_name, admin_email, email_subject, email_content)
 				except Exception:
-					pass
+					try:
+						frappe.sendmail(
+							recipients=[admin_email],
+							subject=email_subject,
+							message=email_content,
+							now=False,
+							delayed=True,
+						)
+						frappe.db.commit()
+					except Exception:
+						pass
 
 			return {
 				"status": "otp_required",

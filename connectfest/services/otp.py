@@ -369,7 +369,74 @@ def build_email_otp_html(otp_code, target_email=None, user_name=None, expiry_sec
       <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 0 0 16px;" />
 
       <p style="font-size: 13px; color: #94a3b8; margin: 0;">
-        ConnectFest Team &bull; Chennai Trade Centre
+        ConnectFest Team
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>"""
+	return html
+
+
+def build_admin_2fa_html(otp_code, admin_user=None, admin_email=None, expiry_seconds=120):
+	"""
+	Clean, simple, minimal HTML email template for ConnectFest Admin 2FA.
+	Anti-spam optimized with preheaders and clean styling so it lands directly in Inbox.
+	"""
+	display_name = (admin_user or "").strip()
+	greeting = f"Hello {display_name}," if display_name and display_name.lower() != "administrator" else "Hello Administrator,"
+	exp_text = format_expiry_text(expiry_seconds)
+
+	html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConnectFest Admin Verification</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <!-- Preheader text for clean preview in inbox -->
+  <div style="display: none; font-size: 1px; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden; mso-hide: all;">
+    Your Admin verification code is {otp_code}. Valid for {exp_text}.
+  </div>
+
+  <div style="max-width: 480px; margin: 30px auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+    
+    <!-- Header -->
+    <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #e0e7ff; margin-bottom: 6px;">
+        CONNECTFEST 2027
+      </div>
+      <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.3px;">
+        Admin Verification Code
+      </h1>
+    </div>
+
+    <!-- Body Content -->
+    <div style="padding: 28px 24px;">
+      <p style="font-size: 15px; color: #0f172a; margin: 0 0 10px; font-weight: 600;">
+        {greeting}
+      </p>
+      <p style="font-size: 14px; color: #475569; margin: 0 0 20px; line-height: 1.5;">
+        Your one-time verification code for ConnectFest Admin login is:
+      </p>
+
+      <!-- Clean OTP Box -->
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 12px; text-align: center; margin: 0 0 20px;">
+        <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #0f172a; margin-left: 8px;">
+          {otp_code}
+        </div>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b; margin: 0 0 24px; line-height: 1.4;">
+        This code is valid for {exp_text}. Please do not share this code with anyone.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 0 0 16px;" />
+
+      <p style="font-size: 12px; color: #94a3b8; margin: 0;">
+        ConnectFest Team
       </p>
     </div>
 
