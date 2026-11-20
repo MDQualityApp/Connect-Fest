@@ -1,3 +1,4 @@
+import urllib.parse
 import frappe
 from frappe.utils import flt, now_datetime
 from connectfest.services.common import extract_request_data, handle_api_errors
@@ -124,13 +125,24 @@ def build_confirmation_html(data):
 	full_name = data.get("full_name") or "Valued Attendee"
 	company_name = data.get("company_name") or ""
 	company_str = f" ({company_name})" if company_name else ""
-	reg_id = data.get("registration_id") or "N/A"
+	reg_id = data.get("registration_id") or data.get("name") or "N/A"
 	stall_numbers = data.get("stall_numbers") or data.get("stall_number") or "Assigned"
 	stall_category = data.get("stall_category") or data.get("tier") or "Exhibitor"
 	amount = flt(data.get("amount", 0.0))
 	payment_mode = data.get("payment_mode") or "Online"
 	payment_id = data.get("razorpay_payment_id") or data.get("receipt_id") or "N/A"
 	payment_date = data.get("payment_date") or now_datetime().strftime("%d %b %Y, %I:%M %p")
+
+	# Pass 1 Details
+	p1_code = data.get("pass_code") or f"{reg_id}-P1"
+	p1_qr = data.get("qr_payload") or p1_code
+	p1_qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=8&data={urllib.parse.quote(str(p1_qr))}"
+
+	# Pass 2 Details
+	p2_code = data.get("pass_2_pass_code") or f"{reg_id}-P2"
+	p2_name = (data.get("pass_2_name") or "").strip()
+	p2_qr = data.get("pass_2_qr_payload") or p2_code
+	p2_qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=8&data={urllib.parse.quote(str(p2_qr))}"
 
 	# Fetch dynamic event details from ConnectFest Settings
 	event_name = "ConnectFest 2027"
@@ -149,6 +161,61 @@ def build_confirmation_html(data):
 	base_url = get_base_url()
 	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
 	dashboard_url = get_attendee_dashboard_url()
+	view_passes_url = f"{dashboard_url.rstrip('/')}/?view=passes&registration_id={reg_id}"
+
+	p1_card_html = f"""
+		<div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.05);">
+			<table style="width: 100%; border-collapse: collapse;">
+				<tr>
+					<td style="vertical-align: top; width: 62%;">
+						<div style="display: inline-block; font-size: 11px; font-weight: 700; color: #4f46e5; background: #eef2ff; border: 1px solid #c7d2fe; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Pass 1 • Primary Exhibitor</div>
+						<div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">{full_name}</div>
+						<div style="font-size: 13px; color: #475569; margin-bottom: 6px;">{company_name or 'Exhibitor'}</div>
+						<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
+						<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
+					</td>
+					<td style="vertical-align: middle; text-align: center; width: 38%;">
+						<img src="{p1_qr_url}" alt="Pass 1 QR Code" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff;" />
+						<span style="font-size: 10px; color: #94a3b8; display: block; margin-top: 4px;">Gate Entry QR</span>
+					</td>
+				</tr>
+			</table>
+		</div>
+	"""
+
+	if p2_name:
+		p2_card_html = f"""
+		<div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.05);">
+			<table style="width: 100%; border-collapse: collapse;">
+				<tr>
+					<td style="vertical-align: top; width: 62%;">
+						<div style="display: inline-block; font-size: 11px; font-weight: 700; color: #0891b2; background: #ecfeff; border: 1px solid #a5f3fc; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Pass 2 • Co-Exhibitor</div>
+						<div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">{p2_name}</div>
+						<div style="font-size: 13px; color: #475569; margin-bottom: 6px;">{company_name or 'Exhibitor Staff'}</div>
+						<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
+						<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #0891b2;">{p2_code}</strong></div>
+					</td>
+					<td style="vertical-align: middle; text-align: center; width: 38%;">
+						<img src="{p2_qr_url}" alt="Pass 2 QR Code" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff;" />
+						<span style="font-size: 10px; color: #94a3b8; display: block; margin-top: 4px;">Gate Entry QR</span>
+					</td>
+				</tr>
+			</table>
+		</div>
+		"""
+	else:
+		p2_card_html = f"""
+		<div style="background: #f8fafc; border: 1px dashed #94a3b8; border-radius: 10px; padding: 16px; margin-bottom: 14px;">
+			<div style="display: inline-block; font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Pass 2 • Co-Exhibitor Slot (Reserved)</div>
+			<div style="font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">1 Additional Pass Available</div>
+			<p style="font-size: 13px; color: #64748b; margin: 0 0 10px; line-height: 1.4;">
+				Each stall includes <strong>2 Exhibitor Passes</strong>. You can assign your friend, business partner, or booth staff at any time before the event.
+			</p>
+			<a href="{view_passes_url}" style="font-size: 12px; font-weight: 700; color: #4f46e5; text-decoration: none;">
+				👉 Click here to add friend / staff details & activate Pass 2 &rarr;
+			</a>
+		</div>
+		"""
 
 	return f"""
 	<div style="{get_email_header_style()}">
@@ -165,6 +232,15 @@ def build_confirmation_html(data):
 			<p style="font-size: 15px; margin: 0 0 24px; color: #475569;">
 				Congratulations! Your payment has been received successfully and your stall booking for <strong>{event_name}</strong> is officially confirmed.
 			</p>
+
+			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+				<h3 style="margin: 0 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: #4f46e5; font-weight: 700;">🎟️ Digital Exhibitor Passes (2 Included)</h3>
+				<p style="margin: 0 0 16px; font-size: 13px; color: #64748b; line-height: 1.4;">
+					Present these QR codes at the gate scanner or badge counter for instant check-in.
+				</p>
+				{p1_card_html}
+				{p2_card_html}
+			</div>
 
 			<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
 				<h3 style="margin: 0 0 16px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700;">Booking & Payment Receipt</h3>
@@ -210,11 +286,11 @@ def build_confirmation_html(data):
 			</div>
 
 			<div style="text-align: center; margin-top: 8px; margin-bottom: 28px;">
-				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
-					📥 Download PDF
+				<a href="{view_passes_url}" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
+					🎟️ View & Download Passes
 				</a>
-				<a href="{dashboard_url}" style="background: #cf2030; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(207, 32, 48, 0.25);">
-					🌐 Visit ConnectFest Website
+				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
+					📥 Download Allocation PDF
 				</a>
 			</div>
 		</div>
@@ -305,7 +381,10 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 			records = frappe.db.sql("""
 				SELECT name, registration_id, full_name, company_name, email, mobile_no,
 				       stall_number, stall_category, amount, payment_status, payment_mode,
-				       razorpay_payment_id, payment_date
+				       razorpay_payment_id, payment_date,
+				       pass_code, qr_payload, pass_1_image,
+				       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email,
+				       pass_2_pass_code, pass_2_qr_payload
 				FROM `tabConnectFest Registration`
 				WHERE registration_id = %(id)s OR name = %(id)s
 				LIMIT 1
