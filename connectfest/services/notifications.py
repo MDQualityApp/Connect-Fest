@@ -6,22 +6,6 @@ import frappe
 from frappe.utils import flt, now_datetime
 from connectfest.services.common import extract_request_data, handle_api_errors
 
-_wati_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
-
-def _safe_dispatch_wati_whatsapp(reg_id, mobile_no, reg_data):
-	"""Asynchronously fires WATI WhatsApp message in background without blocking email flow."""
-	try:
-		from connectfest.services.wati import send_booking_confirmation_whatsapp
-		send_booking_confirmation_whatsapp(
-			registration_id=reg_id,
-			mobile_no=mobile_no,
-			reg_data=reg_data,
-		)
-	except Exception:
-		pass
-
-
 def get_email_header_style():
 	return """
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -237,11 +221,11 @@ def build_confirmation_html(data):
 							<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
 							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 38%;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass QR" style="text-decoration: none; display: inline-block; cursor: pointer;">
-								<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
-								<span style="font-size: 10px; color: #4f46e5; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download QR</span>
+						<td style="vertical-align: middle; text-align: center; width: 35%; padding-left: 12px; border-left: 1px solid #f1f5f9;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Download Gate Pass QR" style="text-decoration: none; display: inline-block; background: #4f46e5; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; white-space: nowrap;">
+								📥 Download QR
 							</a>
+							<div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Scan at Entry</div>
 						</td>
 					</tr>
 				</table>
@@ -325,12 +309,11 @@ def build_visitor_confirmation_html(data):
 							<div style="font-size: 12px; color: #475569; margin-bottom: 5px;">Venue: <strong>{event_venue}</strong></div>
 							<div style="font-size: 12px; color: #475569;">Dates: <strong>{event_dates}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 42%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download QR code" style="text-decoration: none; display: inline-block;">
-								<img src="{qr_url}" alt="Visitor Pass QR" width="130" height="130" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
-								<span style="font-size: 10.5px; color: #b91c1c; font-weight: 700; display: block; margin-top: 6px; text-decoration: underline;">📥 Click to Download QR</span>
+						<td style="vertical-align: middle; text-align: center; width: 35%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Download Visitor Pass QR" style="text-decoration: none; display: inline-block; background: #b91c1c; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; white-space: nowrap;">
+								📥 Download QR
 							</a>
-							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+							<div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Scan at Entry</div>
 						</td>
 					</tr>
 				</table>
@@ -497,6 +480,7 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 			subject=subject,
 			message=html_body,
 			attachments=attachments if attachments else None,
+			add_css=False,
 			now=True,
 			delayed=False,
 			x_priority=1,
@@ -504,16 +488,16 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		)
 		frappe.db.commit()
 
-		# Trigger WhatsApp Confirmation via WATI asynchronously in background (Non-blocking & Zero-disturbance)
+		# Trigger WhatsApp Confirmation via WATI for exhibitor booking
 		try:
-			_wati_executor.submit(
-				_safe_dispatch_wati_whatsapp,
-				reg_data.get("registration_id") or reg_data.get("name"),
-				reg_data.get("mobile_no"),
-				reg_data,
+			from connectfest.services.wati import send_booking_confirmation_whatsapp
+			send_booking_confirmation_whatsapp(
+				registration_id=reg_data.get("registration_id") or reg_data.get("name"),
+				mobile_no=reg_data.get("mobile_no"),
+				reg_data=reg_data,
 			)
-		except Exception:
-			pass
+		except Exception as wati_err:
+			frappe.log_error(title="ConnectFest WhatsApp Send Error in Notification", message=str(wati_err))
 
 		if hasattr(frappe.local, "message_log"):
 			frappe.local.message_log = [
@@ -685,23 +669,13 @@ def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=
 			recipients=[target_email],
 			subject=subject,
 			message=html_body,
+			add_css=False,
 			now=True,
 			delayed=False,
 			x_priority=1,
 			send_priority=1,
 		)
 		frappe.db.commit()
-
-		# Trigger WhatsApp Confirmation via WATI asynchronously in background if needed
-		try:
-			_wati_executor.submit(
-				_safe_dispatch_wati_whatsapp,
-				reg_data.get("registration_id") or reg_data.get("name"),
-				reg_data.get("mobile_no"),
-				reg_data,
-			)
-		except Exception:
-			pass
 
 		if hasattr(frappe.local, "message_log"):
 			frappe.local.message_log = [
