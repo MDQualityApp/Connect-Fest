@@ -276,7 +276,7 @@ def check_admin_permission(resource_name="this administrative resource"):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": f"Access Denied: User '{sess_user}' is not an administrator and cannot access {resource_name}!",
+			"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
 		}
 
 	# Check for explicit session ID (sid) in headers, query parameters, or body
@@ -320,7 +320,7 @@ def check_admin_permission(resource_name="this administrative resource"):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
-				"message": f"Access Denied: User '{user_from_sid}' is not an administrator and cannot access {resource_name}!",
+				"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
 			}
 
 	# If still Guest or not authorized
@@ -1202,7 +1202,7 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 
 		if not frappe.db.exists("User", target_email):
 			frappe.local.response["http_status_code"] = 404
-			return {"status": "error", "message": f"User '{target_email}' does not exist"}
+			return {"status": "error", "message": "User not found. Please check your entered email address."}
 
 		frappe.db.set_value("User", target_email, "enabled", new_enabled)
 
@@ -1339,7 +1339,7 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 			frappe.local.response["http_status_code"] = 404
 			return {
 				"status": "error",
-				"message": f"User with email '{target_email}' does not exist! Please check the email address or register the user first."
+				"message": "User not found. Please check the email address or register first."
 			}
 
 		# Registered in ConnectFest but User record not yet created: provision once
@@ -1889,7 +1889,7 @@ def admin_get_user_details(user_email=None, mobile_no=None, **kwargs):
 
 	if not matched:
 		frappe.local.response["http_status_code"] = 404
-		return {"status": "error", "message": f"User not found for '{target_email or target_mob}'"}
+		return {"status": "error", "message": "User not found. Please check your credentials or register first."}
 
 	return {
 		"status": "success",
@@ -2579,7 +2579,7 @@ def admin_delete_user(**kwargs):
 		return {"status": "error", "message": "User email or mobile number is required for deletion."}
 
 	if target_user in ("administrator", "guest"):
-		return {"status": "error", "message": f"System user '{target_user}' cannot be deleted!"}
+		return {"status": "error", "message": "System user accounts cannot be deleted!"}
 
 	# Resolve user details if user exists in tabUser
 	user_deleted = False

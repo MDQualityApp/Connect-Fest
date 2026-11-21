@@ -204,11 +204,6 @@ def _background_send_email_task(site_name, recipient, subject, content):
 
 		frappe.sendmail(**sendmail_args)
 		frappe.db.commit()
-		try:
-			from frappe.email.queue import flush
-			flush(from_test=False)
-		except Exception:
-			pass
 		frappe.logger("connectfest").info(f"[Fast Async Email OTP] Delivered OTP to {recipient}")
 	except Exception as e:
 		frappe.logger("connectfest").warning(f"[Fast Async Email OTP] Error sending to {recipient}: {str(e)}")
@@ -577,7 +572,7 @@ def send_email_otp(email=None, **kwargs):
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
-					"message": f"You are currently logged in as '{auth_user}'. Verification OTP can only be requested for your logged-in email. Please log out first to register another account.",
+					"message": "You are currently logged in. Verification OTP can only be requested for your active account. Please log out first to register another account.",
 				}
 
 	if purpose == "login":
@@ -741,25 +736,88 @@ def send_email_otp(email=None, **kwargs):
 	type_cache_key = cache.make_key(f"connectfest:otp_type:{target_email}")
 	cache.setex(type_cache_key, otp_expiry, normalized_send_type)
 
-	# 3. Fast non-blocking background email dispatch (Sub-30ms HTTP response, zero server lag)
+	# 3. Verified email dispatch with full error tracking
 	email_subject = f"{otp_code} is your ConnectFest verification code"
 	email_content = build_email_otp_html(otp_code, target_email=target_email, user_name=user_name, expiry_seconds=otp_expiry)
 
-	site_name = getattr(getattr(frappe, "local", None), "site", "connectfest.localhost") or "connectfest.localhost"
-	try:
-		_email_executor.submit(_background_send_email_task, site_name, target_email, email_subject, email_content)
-	except Exception:
+	in_test = getattr(frappe.flags, "in_test", False) or getattr(getattr(frappe, "local", None), "in_test", False)
+	has_outgoing = bool(
+		frappe.db.get_value("Email Account", {"default_outgoing": 1, "enable_outgoing": 1})
+		or frappe.db.get_value("Email Account", {"enable_outgoing": 1})
+	)
+
+	if not has_outgoing and not in_test:
+		frappe.log_error(
+			title="ConnectFest OTP Email Account Missing",
+			message=f"Attempted to send OTP to '{target_email}', but no active outgoing Email Account is configured in Frappe (Desk > Email Account)."
+		)
+		frappe.db.commit()
+		frappe.local.response["http_status_code"] = 500
+		return {
+			"status": "error",
+			"message": "Something went wrong while sending verification email. Please try again or contact support.",
+		}
+
+	# Dynamically resolve sender from configured default outgoing Email Account
+	outgoing_acc = frappe.db.get_value(
+		"Email Account",
+		{"default_outgoing": 1, "enable_outgoing": 1},
+		["email_id", "email_account_name", "name"],
+		as_dict=True,
+	) or frappe.db.get_value(
+		"Email Account",
+		{"enable_outgoing": 1},
+		["email_id", "email_account_name", "name"],
+		as_dict=True,
+	)
+	sender_str = None
+	if outgoing_acc and outgoing_acc.get("email_id"):
+		s_name = outgoing_acc.get("email_account_name") or outgoing_acc.get("name") or "ConnectFest"
+		sender_str = f"{s_name} <{outgoing_acc.get('email_id')}>"
+
+	if not in_test:
 		try:
-			frappe.sendmail(
-				recipients=[target_email],
-				subject=email_subject,
-				message=email_content,
-				now=False,
-				delayed=True,
+			sendmail_args = {
+				"recipients": [target_email],
+				"subject": email_subject,
+				"message": email_content,
+				"now": True,
+				"delayed": False,
+				"x_priority": 1,
+				"send_priority": 1,
+			}
+			if sender_str:
+				sendmail_args["sender"] = sender_str
+
+			q = frappe.sendmail(**sendmail_args)
+			frappe.db.commit()
+
+			# Verify queue entry status if created
+			if q and getattr(q, "name", None):
+				q_info = frappe.db.get_value("Email Queue", q.name, ["status", "error"], as_dict=True)
+				if q_info and q_info.get("status") == "Error":
+					err_detail = q_info.get("error") or "SMTP transmission error"
+					frappe.log_error(
+						title=f"ConnectFest Email OTP Failed ({target_email})",
+						message=f"Email Queue [{q.name}] encountered an error for {target_email}:\n\n{err_detail}"
+					)
+					frappe.db.commit()
+					frappe.local.response["http_status_code"] = 500
+					return {
+						"status": "error",
+						"message": "Something went wrong while sending verification email. Please try again or contact support.",
+					}
+		except Exception as send_err:
+			frappe.log_error(
+				title=f"ConnectFest Email OTP Send Error ({target_email})",
+				message=frappe.get_traceback()
 			)
 			frappe.db.commit()
-		except Exception:
-			pass
+			frappe.local.response["http_status_code"] = 500
+			return {
+				"status": "error",
+				"message": "Something went wrong while sending verification email. Please try again or contact support.",
+			}
 
 	# Log OTP in Frappe site log for observability
 	try:

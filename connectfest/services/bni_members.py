@@ -576,7 +576,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 			)
 			if dup_email:
 				frappe.local.response["http_status_code"] = 409
-				return {"status": "error", "message": f"Email '{new_email}' is already assigned to another BNI Member"}
+				return {"status": "error", "message": "This email address is already assigned to another BNI Member"}
 			doc.email = new_email
 		else:
 			doc.email = ""
@@ -594,7 +594,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 		if new_mob and len(new_mob) == 10 and new_mob != doc.mobile_no:
 			if frappe.db.exists("ConnectFest CNR Member", new_mob):
 				frappe.local.response["http_status_code"] = 409
-				return {"status": "error", "message": f"Mobile number '{new_mob}' is already assigned to another BNI Member"}
+				return {"status": "error", "message": "This mobile number is already assigned to another BNI Member"}
 			doc.save(ignore_permissions=True)
 			frappe.rename_doc("ConnectFest CNR Member", doc.name, new_mob, force=True)
 			doc = frappe.get_doc("ConnectFest CNR Member", new_mob)

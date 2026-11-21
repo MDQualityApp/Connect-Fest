@@ -645,7 +645,7 @@ def download_stall_allocation_letter(**kwargs):
 			return
 
 		frappe.local.response["http_status_code"] = 404
-		return {"status": "error", "message": f"No booking registration found for {reg_id or mobile_no or email}"}
+		return {"status": "error", "message": "No confirmed booking registration found for the provided details."}
 
 	pdf_bytes = generate_stall_allocation_pdf_bytes(alloc_data)
 	booth_tag = str(alloc_data.get("stall_number") or alloc_data.get("registration_id") or "allotment").replace(" ", "_")

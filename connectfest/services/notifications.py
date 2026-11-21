@@ -1,7 +1,23 @@
 import urllib.parse
+import concurrent.futures
 import frappe
 from frappe.utils import flt, now_datetime
 from connectfest.services.common import extract_request_data, handle_api_errors
+
+_wati_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _safe_dispatch_wati_whatsapp(reg_id, mobile_no, reg_data):
+	"""Asynchronously fires WATI WhatsApp message in background without blocking email flow."""
+	try:
+		from connectfest.services.wati import send_booking_confirmation_whatsapp
+		send_booking_confirmation_whatsapp(
+			registration_id=reg_id,
+			mobile_no=mobile_no,
+			reg_data=reg_data,
+		)
+	except Exception:
+		pass
 
 
 def get_email_header_style():
@@ -154,6 +170,7 @@ def build_confirmation_html(data):
 	p1_qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=6&data={urllib.parse.quote(str(p1_qr))}"
 
 	base_url = get_base_url()
+	download_qr_url = f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(p1_code))}"
 	download_url = f"{base_url}/api/method/connectfest.api.download_stall_allocation_letter?registration_id={reg_id}"
 	dashboard_url = get_attendee_dashboard_url()
 	view_passes_url = f"{dashboard_url.rstrip('/')}/?view=passes&registration_id={reg_id}"
@@ -219,8 +236,10 @@ def build_confirmation_html(data):
 							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
 						</td>
 						<td style="vertical-align: middle; text-align: center; width: 38%;">
-							<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
-							<span style="font-size: 10px; color: #94a3b8; display: block; margin-top: 4px;">Gate Entry QR</span>
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass QR" style="text-decoration: none; display: inline-block; cursor: pointer;">
+								<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
+								<span style="font-size: 10px; color: #4f46e5; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download QR</span>
+							</a>
 						</td>
 					</tr>
 				</table>
@@ -368,21 +387,27 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 				"registration_id": reg_data.get("registration_id")
 			}
 
-		# Generate Stall Allocation & Terms PDF attachment
+		# Fast Concurrent PDF generation alongside HTML build
 		attachments = []
 		try:
 			from connectfest.services.invoice import get_registration_allocation_data, generate_stall_allocation_pdf_bytes
 			alloc_data = get_registration_allocation_data(registration_id=reg_data.get("registration_id") or reg_data.get("name"))
 			if not alloc_data:
 				alloc_data = reg_data
-			pdf_bytes = generate_stall_allocation_pdf_bytes(alloc_data)
-			stall_tag = str(reg_data.get("stall_numbers") or reg_data.get("stall_number") or reg_data.get("registration_id") or "allotment").replace(" ", "_").replace("-", "")
-			attachments.append({
-				"fname": f"Stall_Allocation_{stall_tag}.pdf",
-				"fcontent": pdf_bytes
-			})
-		except Exception as e:
-			frappe.log_error(title="Failed to generate allocation PDF attachment", message=frappe.get_traceback())
+
+			with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+				pdf_future = executor.submit(generate_stall_allocation_pdf_bytes, alloc_data)
+				try:
+					pdf_bytes = pdf_future.result(timeout=6)
+					stall_tag = str(reg_data.get("stall_numbers") or reg_data.get("stall_number") or reg_data.get("registration_id") or "allotment").replace(" ", "_").replace("-", "")
+					attachments.append({
+						"fname": f"Stall_Allocation_{stall_tag}.pdf",
+						"fcontent": pdf_bytes
+					})
+				except Exception:
+					frappe.log_error(title="Failed to generate allocation PDF attachment", message=frappe.get_traceback())
+		except Exception:
+			frappe.log_error(title="Failed to process allocation PDF attachment", message=frappe.get_traceback())
 
 		# Fast, High-Priority Email Dispatch (never blocked behind external API calls)
 		frappe.sendmail(
@@ -397,19 +422,13 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		)
 		frappe.db.commit()
 
+		# Trigger WhatsApp Confirmation via WATI asynchronously in background (Non-blocking & Zero-disturbance)
 		try:
-			from frappe.email.queue import flush
-			flush(from_test=False)
-		except Exception:
-			pass
-
-		# Trigger WhatsApp Confirmation via WATI after email is committed (Non-blocking & Zero-disturbance)
-		try:
-			from connectfest.services.wati import send_booking_confirmation_whatsapp
-			send_booking_confirmation_whatsapp(
-				registration_id=reg_data.get("registration_id") or reg_data.get("name"),
-				mobile_no=reg_data.get("mobile_no"),
-				reg_data=reg_data,
+			_wati_executor.submit(
+				_safe_dispatch_wati_whatsapp,
+				reg_data.get("registration_id") or reg_data.get("name"),
+				reg_data.get("mobile_no"),
+				reg_data,
 			)
 		except Exception:
 			pass
@@ -489,12 +508,6 @@ def send_payment_failure_email(registration_id=None, email=None, error_message=N
 			delayed=False,
 		)
 		frappe.db.commit()
-
-		try:
-			from frappe.email.queue import flush
-			flush(from_test=False)
-		except Exception:
-			pass
 
 		if hasattr(frappe.local, "message_log"):
 			frappe.local.message_log = [

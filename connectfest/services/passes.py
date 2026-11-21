@@ -1,3 +1,6 @@
+import re
+import urllib.parse
+import urllib.request
 import frappe
 from frappe.utils import now_datetime, flt, cint
 from connectfest.services.common import (
@@ -58,7 +61,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		return {
 			"status": "forbidden",
 			"verified": False,
-			"message": f"Access Denied: User '{sess_user}' does not have scanner privileges! Contact Event Administrator to grant scanner access.",
+			"message": "Access Denied: Your account does not have scanner privileges! Contact Event Administrator to grant scanner access.",
 		}
 
 	data = extract_request_data(kwargs)
@@ -589,7 +592,7 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": f"Access Denied: User '{sess_user}' does not have scanner privileges! Only Administrators and users with the 'ConnectFest Gate Scanner' role can view scanned users.",
+			"message": "Access Denied: Your account does not have scanner privileges! Only Administrators and users with the 'ConnectFest Gate Scanner' role can view scanned users.",
 		}
 
 	from frappe.utils import cint
@@ -1325,9 +1328,17 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	zone = zone_map.get(rec.get("stall_category")) or (stall_doc.zone if stall_doc else "Zone B - West Aisles")
 	dimensions = (stall_doc.dimensions if stall_doc else "") or "3 x 3 m"
 
+	base_url = "https://api.connectfesttn.in"
+	try:
+		from connectfest.services.notifications import get_base_url
+		base_url = get_base_url()
+	except Exception:
+		pass
+
 	# Pass 1: Primary Exhibitor Pass
 	pcode1 = rec.get("pass_code") or rec.get("registration_id")
-	qr1 = rec.get("qr_payload") or f"CONNECTFEST2027:EXHIBITOR:{rec.get('stall_number')}:{pcode1}:{rec.get('email')}"
+	raw_qr1 = rec.get("qr_payload")
+	qr1 = pcode1 if (not raw_qr1 or "CONNECTFEST" in str(raw_qr1)) else raw_qr1
 	chk1 = cint(rec.get("checked_in") or 0)
 
 	pass_1 = {
@@ -1354,6 +1365,8 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"payment_mode": rec.get("payment_mode"),
 		"has_paid": is_paid,
 		"qr_payload": qr1 if is_paid else None,
+		"qr_url": f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data={urllib.parse.quote(str(pcode1))}" if is_paid else None,
+		"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pcode1))}" if is_paid else None,
 		"is_assigned": True,
 		"status": "Checked In" if chk1 else ("Confirmed" if is_paid else "Awaiting Payment"),
 		"checked_in": chk1,
@@ -1370,9 +1383,8 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	pcode2 = (rec.get("pass_2_pass_code") or "").strip() if is_p2_assigned else None
 	if is_p2_assigned and not pcode2:
 		pcode2 = f"{rec.get('registration_id')}-P2"
-	qr2 = (rec.get("pass_2_qr_payload") or "").strip() if is_p2_assigned else None
-	if is_p2_assigned and not qr2 and pcode2:
-		qr2 = f"CONNECTFEST2027:EXHIBITOR:{rec.get('stall_number')}:{pcode2}:{rec.get('pass_2_email') or rec.get('email')}"
+	raw_qr2 = rec.get("pass_2_qr_payload")
+	qr2 = pcode2 if (not raw_qr2 or "CONNECTFEST" in str(raw_qr2)) else raw_qr2
 	chk2 = cint(rec.get("pass_2_checked_in") or 0)
 
 	pass_2 = {
@@ -1401,6 +1413,8 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"payment_mode": rec.get("payment_mode"),
 		"has_paid": is_paid,
 		"qr_payload": qr2 if is_paid else None,
+		"qr_url": f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data={urllib.parse.quote(str(pcode2))}" if (is_paid and pcode2) else None,
+		"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pcode2))}" if (is_paid and pcode2) else None,
 		"is_assigned": is_p2_assigned,
 		"status": "Checked In" if chk2 else ("Confirmed" if is_p2_assigned else "Unassigned"),
 		"checked_in": chk2,
@@ -1579,3 +1593,74 @@ set_second_exhibitor_pass = update_co_exhibitor_pass
 assign_co_exhibitor_pass = update_co_exhibitor_pass
 
 
+def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
+	"""
+	Downloads the high-resolution Gate Pass QR Code image directly as a PNG attachment.
+	Supports:
+	  - code / pass_code (e.g. CF-LXHE-JRLL)
+	  - registration_id (e.g. CF-2611-000001, pass_number=1 or 2)
+	Returns HTTP response with Content-Disposition: attachment for direct file download.
+	"""
+	req_data = extract_request_data(kwargs)
+	clean_code = (code or pass_code or req_data.get("code") or req_data.get("pass_code") or "").strip()
+	reg_id = (registration_id or req_data.get("registration_id") or "").strip()
+
+	if not clean_code and reg_id:
+		p_num = cint(pass_number or req_data.get("pass_number") or 1)
+		field = "pass_2_pass_code" if p_num == 2 else "pass_code"
+		clean_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, field) or ""
+		if not clean_code and p_num == 1:
+			clean_code = frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id}, "pass_code") or ""
+		if not clean_code:
+			clean_code = reg_id
+
+	if not clean_code:
+		clean_code = "CONNECTFEST-GATE-PASS"
+
+	safe_filename_code = re.sub(r"[^A-Za-z0-9_-]", "_", clean_code)
+	filename = f"ConnectFest_Pass_QR_{safe_filename_code}.png"
+
+	# Cache check
+	cache_key = f"qr_png_bytes_{safe_filename_code}"
+	png_bytes = None
+	try:
+		png_bytes = frappe.cache().get_value(cache_key)
+	except Exception:
+		pass
+
+	if not png_bytes:
+		try:
+			encoded_data = urllib.parse.quote(str(clean_code))
+			qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=12&format=png&data={encoded_data}"
+			req = urllib.request.Request(qr_url, headers={"User-Agent": "ConnectFest/2.0"})
+			with urllib.request.urlopen(req, timeout=4) as response:
+				png_bytes = response.read()
+			if png_bytes and len(png_bytes) > 50:
+				try:
+					frappe.cache().set_value(cache_key, png_bytes, expires_in_sec=86400)
+				except Exception:
+					pass
+		except Exception:
+			pass
+
+	if not png_bytes:
+		# Fallback to local pyqrcode SVG
+		try:
+			import pyqrcode
+			import io
+			qr = pyqrcode.create(str(clean_code))
+			buf = io.BytesIO()
+			qr.svg(buf, scale=10)
+			svg_bytes = buf.getvalue()
+			frappe.local.response.filename = f"ConnectFest_Pass_QR_{safe_filename_code}.svg"
+			frappe.local.response.filecontent = svg_bytes
+			frappe.local.response.type = "download"
+			frappe.local.response.content_type = "image/svg+xml"
+			return
+		except Exception as e:
+			frappe.throw(f"Unable to generate QR code: {str(e)}")
+
+	frappe.local.response.filename = filename
+	frappe.local.response.filecontent = png_bytes
+	frappe.local.response.type = "download"
+	frappe.local.response.content_type = "image/png"

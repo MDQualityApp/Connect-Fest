@@ -1113,6 +1113,16 @@ def download_invoice(registration_id=None, mobile_no=None, email=None, **kwargs)
 	return _download_stall_allocation_letter(registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
 
 
+@frappe.whitelist(allow_guest=True)
+def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
+	"""
+	Downloads the high-resolution Gate Pass QR Code image directly as a PNG attachment.
+	Accessible publicly so attendees can download it from emails or dashboard links.
+	"""
+	from connectfest.services.passes import download_pass_qr as _download_pass_qr
+	return _download_pass_qr(code=code, pass_code=pass_code, registration_id=registration_id, pass_number=pass_number, **kwargs)
+
+
 
 # ==============================================================================
 # 13. TERMS AND CONDITIONS CRUD APIS

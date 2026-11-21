@@ -963,7 +963,7 @@ def register_sponsor_request(
 
 	if not validate_email_address(c_email, throw=False):
 		frappe.local.response["http_status_code"] = 400
-		return {"status": "error", "message": f"'{c_email}' is not a valid email address"}
+		return {"status": "error", "message": "Invalid email address format. Please enter a valid email."}
 
 	if not c_mobile:
 		frappe.local.response["http_status_code"] = 400

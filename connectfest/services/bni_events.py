@@ -359,7 +359,7 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 			return {
 				"status": "forbidden",
 				"verified": False,
-				"message": f"Access Denied: User '{sess_user}' does not have scanner privileges! Contact Event Administrator to grant scanner access.",
+				"message": "Access Denied: Your account does not have scanner privileges! Contact Event Administrator to grant scanner access.",
 			}
 
 	data = extract_request_data(kwargs)
@@ -622,7 +622,7 @@ def admin_get_bni_event_registrations(**kwargs):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": f"Access Denied: User '{sess_user}' does not have privileges! Only Administrators and authorized Gate Scanners can view event registrations.",
+			"message": "Access Denied: You do not have privileges! Only Administrators and authorized Gate Scanners can view event registrations.",
 		}
 
 	data = extract_request_data(kwargs)

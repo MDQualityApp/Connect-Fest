@@ -1498,15 +1498,10 @@ def admin_confirm_payment(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "on_hold",
-				"message": f"Stall '{chosen_stall}' is currently on HOLD! Attendee '{held_name}' ({held_comp or held_email or 'User'}) is in the middle of completing online payment ({time_str} remaining). Please wait until the 10-minute hold expires or select another stall.",
+				"message": f"Stall '{chosen_stall}' is currently on HOLD! Another attendee is in the middle of completing online payment ({time_str} remaining). Please wait until the 10-minute hold expires or select another stall.",
 				"details": {
 					"stall_number": chosen_stall,
 					"status": "Hold",
-					"held_by_name": held_name,
-					"held_by_company": held_comp,
-					"held_by_registration": held_reg,
-					"held_by_email": held_email,
-					"held_by_mobile": held_mobile,
 					"remaining_seconds": rem_secs,
 					"hold_expires_at": str(getattr(stall_doc, "hold_expires_at", "") or ""),
 				}
@@ -1584,7 +1579,7 @@ def admin_confirm_payment(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! To record payment for this existing user, do not pass 'register_user' (or set 'register_user': 0).",
+					"message": f"This exhibitor is already registered with Registration ID '{ex.registration_id}'! To record payment for this existing user, do not pass 'register_user' (or set 'register_user': 0).",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,
@@ -1663,11 +1658,9 @@ def admin_confirm_payment(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"User account with mobile '{clean_mob}' or email '{clean_email}' already exists in the system! To book a stall for this user, do not pass 'register_user' (or set 'register_user': 0).",
+					"message": "A user account with these contact details already exists in the system! To book a stall for this user, do not pass 'register_user' (or set 'register_user': 0).",
 					"details": {
 						"full_name": found_user.get("full_name"),
-						"email": found_user.get("email"),
-						"mobile_no": clean_mob,
 					}
 				}
 
@@ -1677,7 +1670,7 @@ def admin_confirm_payment(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "user_not_found",
-				"message": f"Exhibitor with mobile number '{clean_mob or clean_email}' was not found in records! To register a new exhibitor, pass 'register_user': 1 with full_name and company_name."
+				"message": "Exhibitor record was not found in records! To register a new exhibitor, pass 'register_user': 1 with full_name and company_name."
 			}
 
 		clean_name = clean_name or (f"Exhibitor {clean_mob[-4:]}" if len(clean_mob) >= 4 else "Exhibitor")

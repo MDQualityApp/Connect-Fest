@@ -950,7 +950,7 @@ def toggle_stall_block(stall_number=None, action=None, reason=None, force=0, **k
 	if act == "block":
 		if stall.status == "Booked":
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": f"Cannot block stall {stall_num} - already paid and booked by {stall.booked_by_name or stall.booked_by_registration}."}
+			return {"status": "error", "message": f"Cannot block stall {stall_num} - already paid and booked."}
 
 		# Guard against blocking stalls currently on active 10-minute Hold (Redis verified)
 		hold_info = check_stall_hold_in_redis(stall_num, stall)
@@ -2596,15 +2596,10 @@ def admin_book_stall(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "on_hold",
-					"message": f"Stall '{st_num}' is currently on HOLD! Attendee '{held_name}' ({held_comp or held_email or 'User'}) is in the middle of completing online payment ({time_str} remaining). Please wait until the 10-minute hold expires or select another stall.",
+					"message": f"Stall '{st_num}' is currently on HOLD! Another attendee is in the middle of completing online payment ({time_str} remaining). Please wait until the 10-minute hold expires or select another stall.",
 					"details": {
 						"stall_number": st_num,
 						"status": "Hold",
-						"held_by_name": held_name,
-						"held_by_company": held_comp,
-						"held_by_registration": held_reg,
-						"held_by_email": held_email,
-						"held_by_mobile": held_mobile,
 						"remaining_seconds": rem_secs,
 						"hold_expires_at": str(getattr(st_doc, "hold_expires_at", "") or ""),
 					}
@@ -2651,7 +2646,7 @@ def admin_book_stall(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"Exhibitor '{ex.full_name}' ({ex.email or ex.mobile_no}) is already registered with Registration ID '{ex.registration_id}'! To book stall for this existing user, do not pass 'register_user'.",
+					"message": f"This exhibitor is already registered with Registration ID '{ex.registration_id}'! To book stall for this existing user, do not pass 'register_user'.",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,
