@@ -26,29 +26,6 @@ from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
 from connectfest.services.queue import trigger_async_flush
 
-_visitor_notification_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
-
-def _dispatch_visitor_notifications(site_name, reg_id, email, pass_code):
-	"""Asynchronously dispatches visitor confirmation email without blocking web HTTP thread."""
-	try:
-		if site_name:
-			sites_path = getattr(getattr(frappe, "local", None), "sites_path", None)
-			frappe.init(site=site_name, sites_path=sites_path)
-			frappe.connect()
-		from connectfest.services.notifications import send_visitor_confirmation_email
-		send_visitor_confirmation_email(registration_id=reg_id, email=email, pass_code=pass_code)
-	except Exception:
-		try:
-			frappe.log_error(title="Async Visitor Notification Error", message=frappe.get_traceback())
-		except Exception:
-			pass
-	finally:
-		try:
-			frappe.destroy()
-		except Exception:
-			pass
-
 
 def validate_registration_email_otp(email, data, expected_type=None):
 	"""
@@ -1420,18 +1397,16 @@ def register_visitor(**kwargs):
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
-		# Asynchronously dispatch visitor confirmation email with PDF badge attached
+		# Dispatch visitor confirmation email directly
 		try:
-			site_name = getattr(frappe.local, "site", None)
-			_visitor_notification_executor.submit(
-				_dispatch_visitor_notifications,
-				site_name,
-				reg_id,
-				email,
-				pass_code,
+			from connectfest.services.notifications import send_visitor_confirmation_email
+			send_visitor_confirmation_email(
+				registration_id=reg_id,
+				email=email,
+				pass_code=pass_code,
 			)
-		except Exception:
-			pass
+		except Exception as notif_err:
+			frappe.log_error(title="ConnectFest Visitor Notification Error", message=frappe.get_traceback())
 
 		# Auto-login behavior:
 		# Exhibitors registering visitor passes MUST NOT be switched to visitor login!
