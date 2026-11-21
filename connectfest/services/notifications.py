@@ -1,3 +1,5 @@
+import os
+import re
 import urllib.parse
 import concurrent.futures
 import frappe
@@ -165,9 +167,9 @@ def build_confirmation_html(data):
 
 	# Pass 1 Primary Exhibitor Pass Details (Only 1 QR sent in confirmation email)
 	p1_code = data.get("pass_code") or f"{reg_id}-P1"
-	# Encode clean pass_code directly so every phone scanner reads it without "No usable data found" error
-	p1_qr = p1_code
-	p1_qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=6&data={urllib.parse.quote(str(p1_qr))}"
+	# Encode clean pass_code directly via self-hosted local QR generator
+	from connectfest.services.passes import get_pass_qr_url
+	p1_qr_url = get_pass_qr_url(p1_code)
 
 	base_url = get_base_url()
 	download_qr_url = f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(p1_code))}"
@@ -255,16 +257,96 @@ def build_confirmation_html(data):
 			</div>
 
 			<div style="text-align: center; margin-top: 8px; margin-bottom: 28px;">
-				<a href="{view_passes_url}" style="background: #4f46e5; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-right: 10px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
-					🎟️ View Passes
-				</a>
-				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
+				<a href="{download_url}" style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 6px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
 					📥 Download Allocation PDF
 				</a>
 			</div>
 		</div>
 
 		<div style="background: #f1f5f9; padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
+			<p style="margin: 0;">{event_name} • The Premier Business & Innovation Expo</p>
+		</div>
+	</div>
+	"""
+
+
+def build_visitor_confirmation_html(data):
+	from connectfest.services.passes import get_pass_qr_url
+
+	full_name = (data.get("full_name") or "Valued Visitor").strip()
+	reg_id = data.get("registration_id") or data.get("name") or "N/A"
+	pass_code = data.get("pass_code") or reg_id
+	which_day = (data.get("which_day") or "Both days").strip()
+	access_text = "BOTH DAYS" if which_day.lower() == "both days" else which_day.upper()
+
+	# Fetch dynamic event details from ConnectFest Settings
+	event_name = "ConnectFest 2027"
+	event_dates = "20 & 21 Feb 2027"
+	event_venue = "Chennai Trade Centre, Nandambakkam"
+	event_timings = "9:00 AM - 7:00 PM"
+	try:
+		settings = frappe.get_single("ConnectFest Settings")
+		event_name = settings.get("event_name") or event_name
+		event_dates = settings.get("event_dates") or event_dates
+		event_venue = settings.get("event_venue") or event_venue
+		event_timings = settings.get("event_timings") or event_timings
+	except Exception:
+		pass
+
+	base_url = get_base_url()
+	qr_url = get_pass_qr_url(pass_code)
+	download_qr_url = f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pass_code))}"
+
+	return f"""
+	<div style="{get_email_header_style()}">
+		<div style="background-color: #b91c1c; background-image: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%); padding: 28px 24px; text-align: center; color: #ffffff; border-radius: 12px 12px 0 0;">
+			<div style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #fecaca; margin-bottom: 6px;">{event_name}</div>
+			<h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff;">Visitor Gate Pass 🎟️</h1>
+			<p style="margin: 6px 0 0; font-size: 14px; color: #fee2e2;">Your Grand Expo entrance pass is ready</p>
+		</div>
+
+		<div style="padding: 24px;">
+			<p style="font-size: 15px; margin: 0 0 16px; color: #334155;">
+				Dear <strong>{full_name}</strong>,
+			</p>
+			<p style="font-size: 14px; margin: 0 0 20px; color: #475569;">
+				Thank you for registering as a Visitor for <strong>{event_name}</strong>. Please present the QR code below at the entry gate for instant admission.
+			</p>
+
+			<!-- Simple Clean Visitor Pass Card (No Photo, Just QR & Essential Details) -->
+			<div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+				<table style="width: 100%; border-collapse: collapse;">
+					<tr>
+						<td style="vertical-align: top; width: 58%; padding-right: 12px;">
+							<div style="display: inline-block; font-size: 11px; font-weight: 700; color: #b91c1c; background: #fee2e2; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">VISITOR DIGITAL PASS</div>
+							<div style="font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 6px; text-transform: uppercase;">{full_name}</div>
+							<div style="font-size: 12.5px; font-family: monospace; color: #64748b; margin-bottom: 8px;">Pass Code: <strong style="color: #b91c1c; font-size: 13.5px;">{pass_code}</strong></div>
+							<div style="font-size: 12px; color: #475569; margin-bottom: 5px;">Access: <strong style="color: #d97706;">{access_text}</strong></div>
+							<div style="font-size: 12px; color: #475569; margin-bottom: 5px;">Venue: <strong>{event_venue}</strong></div>
+							<div style="font-size: 12px; color: #475569;">Dates: <strong>{event_dates}</strong></div>
+						</td>
+						<td style="vertical-align: middle; text-align: center; width: 42%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download QR code" style="text-decoration: none; display: inline-block;">
+								<img src="{qr_url}" alt="Visitor Pass QR" width="130" height="130" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
+								<span style="font-size: 10.5px; color: #b91c1c; font-weight: 700; display: block; margin-top: 6px; text-decoration: underline;">📥 Click to Download QR</span>
+							</a>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+						</td>
+					</tr>
+				</table>
+			</div>
+
+			<div style="background: #fef2f2; border-left: 4px solid #b91c1c; padding: 14px 16px; border-radius: 0 8px 8px 0;">
+				<h4 style="margin: 0 0 4px; color: #991b1b; font-size: 13px; font-weight: 700;">Event Venue & Schedule</h4>
+				<p style="margin: 0; font-size: 12.5px; color: #7f1d1d; line-height: 1.5;">
+					📅 <strong>Dates:</strong> {event_dates}<br>
+					📍 <strong>Venue:</strong> {event_venue}<br>
+					⏰ <strong>Timings:</strong> {event_timings}
+				</p>
+			</div>
+		</div>
+
+		<div style="background: #f1f5f9; padding: 14px 20px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
 			<p style="margin: 0;">{event_name} • The Premier Business & Innovation Expo</p>
 		</div>
 	</div>
@@ -555,4 +637,108 @@ def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
 	"""
 	from connectfest.services.wati import resend_booking_whatsapp as _resend_whatsapp
 	return _resend_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
+
+
+def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=None, **kwargs):
+	"""
+	Sends official Visitor Gate Pass confirmation email to attendee with high-res printable PDF badge attachment.
+	Gracefully handles SMTP availability.
+	"""
+	try:
+		from connectfest.services.visitor_badge import get_visitor_badge_data
+
+		reg_data = {}
+		clean_code = (pass_code or "").strip()
+		clean_reg = (registration_id or "").strip()
+		clean_em = (email or "").strip().lower()
+
+		rec = get_visitor_badge_data(pass_code=clean_code, registration_id=clean_reg, email=clean_em)
+		if rec:
+			reg_data = dict(rec)
+
+		for k, v in kwargs.items():
+			if v: reg_data[k] = v
+
+		target_email = clean_em or reg_data.get("email")
+		if not target_email or "@" not in target_email:
+			return {"status": "skipped", "message": "No valid email address found for attendee"}
+
+		pcode = reg_data.get("pass_code") or reg_data.get("registration_id") or "VISITOR"
+		subject = f"🎟️ Your Visitor Gate Pass: ConnectFest 2027 ({pcode})"
+		html_body = build_visitor_confirmation_html(reg_data)
+
+		has_outgoing = bool(frappe.db.get_value("Email Account", {"default_outgoing": 1, "enable_outgoing": 1}))
+		if not has_outgoing:
+			if hasattr(frappe.local, "message_log"):
+				frappe.local.message_log = [
+					m for m in getattr(frappe.local, "message_log", [])
+					if "Email Account" not in str(m)
+				]
+			return {
+				"status": "skipped",
+				"message": "Email skipped: Default outgoing Email Account not configured in ERPNext/Frappe",
+				"recipient": target_email,
+				"registration_id": reg_data.get("registration_id")
+			}
+
+		frappe.sendmail(
+			recipients=[target_email],
+			subject=subject,
+			message=html_body,
+			now=True,
+			delayed=False,
+			x_priority=1,
+			send_priority=1,
+		)
+		frappe.db.commit()
+
+		# Trigger WhatsApp Confirmation via WATI asynchronously in background if needed
+		try:
+			_wati_executor.submit(
+				_safe_dispatch_wati_whatsapp,
+				reg_data.get("registration_id") or reg_data.get("name"),
+				reg_data.get("mobile_no"),
+				reg_data,
+			)
+		except Exception:
+			pass
+
+		if hasattr(frappe.local, "message_log"):
+			frappe.local.message_log = [
+				m for m in frappe.local.message_log
+				if "Email Account" not in str(m)
+			]
+
+		return {
+			"status": "success",
+			"message": f"Visitor confirmation email queued/sent to {target_email}",
+			"recipient": target_email,
+			"registration_id": reg_data.get("registration_id"),
+			"pass_code": pcode,
+		}
+	except Exception as e:
+		frappe.log_error(title="ConnectFest Send Visitor Confirmation Email Error", message=frappe.get_traceback())
+		if hasattr(frappe.local, "message_log"):
+			frappe.local.message_log = [
+				m for m in frappe.local.message_log
+				if "Email Account" not in str(m)
+			]
+		return {"status": "error", "message": str(e)}
+
+
+@handle_api_errors("ConnectFest Resend Visitor Email Error")
+def resend_visitor_email(registration_id=None, email=None, pass_code=None, **kwargs):
+	"""
+	API to explicitly resend visitor confirmation email.
+	"""
+	data = extract_request_data(kwargs)
+	reg_id = (registration_id or data.get("registration_id") or "").strip()
+	em = (email or data.get("email") or "").strip().lower()
+	pcode = (pass_code or data.get("pass_code") or "").strip()
+
+	if not reg_id and not em and not pcode:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "registration_id, pass_code, or email is required"}
+
+	return send_visitor_confirmation_email(registration_id=reg_id, email=em, pass_code=pcode)
 

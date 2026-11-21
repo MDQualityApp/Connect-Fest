@@ -1,5 +1,7 @@
 import json
 import time
+import urllib.parse
+import concurrent.futures
 import frappe
 from frappe.utils import now_datetime, flt, cint
 from connectfest.services.common import (
@@ -17,11 +19,29 @@ from connectfest.services.common import (
 	generate_visitor_id,
 	generate_secure_pass_code,
 	save_image_from_base64_or_url,
+	format_full_url,
 	handle_api_errors,
 )
 from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
 from connectfest.services.queue import trigger_async_flush
+
+_visitor_notification_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _dispatch_visitor_notifications(site_name, reg_id, email, pass_code):
+	"""Asynchronously dispatches visitor confirmation email with PDF badge without blocking web HTTP thread."""
+	try:
+		if site_name:
+			frappe.init(site=site_name)
+			frappe.connect()
+		from connectfest.services.notifications import send_visitor_confirmation_email
+		send_visitor_confirmation_email(registration_id=reg_id, email=email, pass_code=pass_code)
+	except Exception:
+		try:
+			frappe.log_error(title="Async Visitor Notification Error", message=frappe.get_traceback())
+		except Exception:
+			pass
 
 
 def validate_registration_email_otp(email, data, expected_type=None):
@@ -1289,9 +1309,23 @@ def register_visitor(**kwargs):
 			except Exception:
 				pass
 
+		base_url = "https://api.connectfesttn.in"
+		try:
+			from connectfest.services.notifications import get_base_url
+			base_url = get_base_url()
+		except Exception:
+			pass
+
+		from connectfest.services.passes import get_pass_qr_url
+		existing_code = rec.get("pass_code") or rec.get("registration_id")
 		return {
 			"status": "already_registered",
 			"message": "You are already registered for ConnectFest 2027! Maximum 1 visitor pass is allowed per attendee. Please log in using Email OTP to access your entrance pass.",
+			"registration_id": rec.get("registration_id"),
+			"pass_code": existing_code,
+			"qr_url": get_pass_qr_url(existing_code),
+			"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(existing_code))}",
+			"badge_download_url": f"{base_url}/api/method/connectfest.api.download_visitor_badge?code={urllib.parse.quote(str(existing_code))}",
 		}
 
 	# Check if mobile_no is bound to another active User
@@ -1307,7 +1341,7 @@ def register_visitor(**kwargs):
 	cache = frappe.cache()
 	reg_id = generate_visitor_id(cache)
 	while True:
-		pass_code = generate_secure_pass_code("CF27")
+		pass_code = generate_secure_pass_code("CF")
 		if not frappe.db.exists("ConnectFest Visitor Registration", {"pass_code": pass_code}):
 			break
 	qr_payload = pass_code
@@ -1336,18 +1370,37 @@ def register_visitor(**kwargs):
 		"idx": 0,
 	}
 
+	base_url = "https://api.connectfesttn.in"
+	try:
+		from connectfest.services.notifications import get_base_url
+		base_url = get_base_url()
+	except Exception:
+		pass
+
+	from connectfest.services.passes import get_pass_qr_url
+	qr_url = get_pass_qr_url(pass_code)
+	qr_download_url = f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pass_code))}"
+	badge_download_url = f"{base_url}/api/method/connectfest.api.download_visitor_badge?code={urllib.parse.quote(str(pass_code))}"
+
 	pass_info = {
 		"pass_code": pass_code,
+		"registration_id": reg_id,
+		"pass_type": "visitor_pass",
+		"pass_title": "Visitor Gate Pass",
 		"full_name": full_name,
-		"visitor_image": visitor_image,
+		"image": format_full_url(visitor_image),
+		"visitor_image": format_full_url(visitor_image),
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
 		"which_day": which_day,
-		"access": "BOTH DAYS" if which_day == "Both days" else which_day.upper(),
+		"access": "VISITOR - BOTH DAYS" if (not which_day or which_day.lower() == "both days") else f"VISITOR - {which_day.upper()}",
 		"venue": "Chennai Trade Centre, Nandambakkam",
 		"dates": "20 & 21 Feb 2027",
 		"qr_payload": qr_payload,
+		"qr_url": qr_url,
+		"qr_download_url": qr_download_url,
+		"badge_download_url": badge_download_url,
 		"status": "Registered",
 		"checked_in": 0,
 	}
@@ -1360,6 +1413,19 @@ def register_visitor(**kwargs):
 		doc.insert()
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
+
+		# Asynchronously dispatch visitor confirmation email with PDF badge attached
+		try:
+			site_name = getattr(frappe.local, "site", None)
+			_visitor_notification_executor.submit(
+				_dispatch_visitor_notifications,
+				site_name,
+				reg_id,
+				email,
+				pass_code,
+			)
+		except Exception:
+			pass
 
 		# Auto-login behavior:
 		# Exhibitors registering visitor passes MUST NOT be switched to visitor login!
@@ -1396,6 +1462,9 @@ def register_visitor(**kwargs):
 			"status": "success",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
+			"qr_url": qr_url,
+			"qr_download_url": qr_download_url,
+			"badge_download_url": badge_download_url,
 			"message": "Visitor registration successful!" if not is_exhibitor else "Visitor pass generated successfully!",
 			"logged_in": logged_in,
 			"is_exhibitor": is_exhibitor,

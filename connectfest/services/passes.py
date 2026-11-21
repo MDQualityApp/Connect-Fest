@@ -1,3 +1,5 @@
+import os
+import io
 import re
 import urllib.parse
 import urllib.request
@@ -156,7 +158,30 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			return {
 				"status": "duplicate_entry",
 				"verified": False,
-				"message": f"⚠️ ALREADY SCANNED! Visitor pass ({rec.pass_code}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass_type": "visitor_pass",
+				"pass_title": "Visitor Gate Pass",
+				"message": f"⚠️ ALREADY SCANNED! Visitor pass ({rec.pass_code} - {rec.full_name}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass": {
+					"pass_code": rec.pass_code,
+					"registration_id": rec.registration_id or rec.name,
+					"pass_type": "visitor_pass",
+					"pass_title": "Visitor Gate Pass",
+					"full_name": rec.full_name,
+					"image": format_full_url(rec.visitor_image),
+					"visitor_image": format_full_url(rec.visitor_image),
+					"which_day": rec.which_day or "Both days",
+					"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
+					"email": rec.email,
+					"mobile_no": rec.mobile_no,
+					"area_of_interest": rec.get("area_of_interest") or "",
+					"checked_in": 1,
+					"checked_in_at": str(rec.checked_in_at or ""),
+					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
+					"venue": "Chennai Trade Centre, Nandambakkam",
+					"dates": "20 & 21 Feb 2027",
+					"qr_payload": rec.get("qr_payload") or rec.pass_code,
+					"status": "Checked In",
+				},
 			}
 
 		frappe.db.set_value("ConnectFest Visitor Registration", rec.name, {
@@ -171,19 +196,28 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			"status": "success",
 			"verified": True,
 			"pass_type": "visitor_pass",
-			"message": "✅ VISITOR PASS VERIFIED - WELCOME TO CONNECTFEST 2027!",
+			"pass_title": "Visitor Gate Pass",
+			"message": f"✅ VISITOR PASS VERIFIED - WELCOME {rec.full_name.upper()} TO CONNECTFEST 2027!",
 			"pass": {
 				"pass_code": rec.pass_code,
 				"registration_id": rec.registration_id or rec.name,
+				"pass_type": "visitor_pass",
+				"pass_title": "Visitor Gate Pass",
 				"full_name": rec.full_name,
+				"image": format_full_url(rec.visitor_image),
 				"visitor_image": format_full_url(rec.visitor_image),
-				"which_day": rec.which_day,
+				"which_day": rec.which_day or "Both days",
+				"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
 				"email": rec.email,
 				"mobile_no": rec.mobile_no,
 				"area_of_interest": rec.get("area_of_interest") or "",
+				"checked_in": 1,
 				"checked_in_at": now_str,
 				"checked_in_by": sess_user,
 				"venue": "Chennai Trade Centre, Nandambakkam",
+				"dates": "20 & 21 Feb 2027",
+				"qr_payload": rec.get("qr_payload") or rec.pass_code,
+				"status": "Checked In",
 			},
 		}
 
@@ -1176,19 +1210,25 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 				all_visitor_passes.append({
 					"registration_id": v.registration_id,
 					"pass_code": v.pass_code,
+					"pass_type": "visitor_pass",
+					"pass_title": "Visitor Gate Pass",
 					"full_name": clean_v_fn,
+					"image": format_full_url(v.visitor_image),
 					"visitor_image": format_full_url(v.visitor_image),
 					"email": v.email if is_authorized else mask_email(v.email),
 					"mobile_no": v.mobile_no if is_authorized else mask_phone(v.mobile_no),
 					"which_day": v.which_day,
 					"area_of_interest": v.get("area_of_interest") or "",
-					"access": "BOTH DAYS" if v.which_day == "Both days" else v.which_day.upper(),
+					"access": "VISITOR - BOTH DAYS" if (not v.which_day or v.which_day == "Both days") else f"VISITOR - {v.which_day.upper()}",
 					"status": v.status,
 					"checked_in": v.checked_in,
 					"checked_in_at": str(v.checked_in_at or ""),
 					"qr_payload": (v.qr_payload or f"CONNECTFEST2027:{v.pass_code}:{v.email}") if is_authorized else None,
 					"venue": "Chennai Trade Centre, Nandambakkam",
 					"dates": "20 & 21 Feb 2027",
+					"qr_url": get_pass_qr_url(v.pass_code),
+					"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(v.pass_code))}",
+					"badge_download_url": f"{base_url}/api/method/connectfest.api.download_visitor_badge?code={urllib.parse.quote(str(v.pass_code))}",
 				})
 			visitor_pass = all_visitor_passes[0] if all_visitor_passes else None
 
@@ -1365,7 +1405,7 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"payment_mode": rec.get("payment_mode"),
 		"has_paid": is_paid,
 		"qr_payload": qr1 if is_paid else None,
-		"qr_url": f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data={urllib.parse.quote(str(pcode1))}" if is_paid else None,
+		"qr_url": get_pass_qr_url(pcode1) if is_paid else None,
 		"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pcode1))}" if is_paid else None,
 		"is_assigned": True,
 		"status": "Checked In" if chk1 else ("Confirmed" if is_paid else "Awaiting Payment"),
@@ -1413,7 +1453,7 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"payment_mode": rec.get("payment_mode"),
 		"has_paid": is_paid,
 		"qr_payload": qr2 if is_paid else None,
-		"qr_url": f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data={urllib.parse.quote(str(pcode2))}" if (is_paid and pcode2) else None,
+		"qr_url": get_pass_qr_url(pcode2) if (is_paid and pcode2) else None,
 		"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pcode2))}" if (is_paid and pcode2) else None,
 		"is_assigned": is_p2_assigned,
 		"status": "Checked In" if chk2 else ("Confirmed" if is_p2_assigned else "Unassigned"),
@@ -1593,6 +1633,107 @@ set_second_exhibitor_pass = update_co_exhibitor_pass
 assign_co_exhibitor_pass = update_co_exhibitor_pass
 
 
+def generate_local_qr_png_bytes(data_str, scale=10, border=2):
+	"""
+	Generates a crisp, high-contrast QR code PNG entirely in-memory using pyqrcode and Pillow.
+	Completely local: zero external API calls, zero rate-limits, works 100% offline.
+	"""
+	import pyqrcode
+	from PIL import Image, ImageDraw
+
+	qr = pyqrcode.create(str(data_str))
+	matrix = qr.code
+	size = (len(matrix) + 2 * border) * scale
+	img = Image.new("RGB", (size, size), "white")
+	draw = ImageDraw.Draw(img)
+
+	for r_idx, row in enumerate(matrix):
+		for c_idx, val in enumerate(row):
+			if val == 1:
+				x0 = (c_idx + border) * scale
+				y0 = (r_idx + border) * scale
+				draw.rectangle([x0, y0, x0 + scale, y0 + scale], fill="black")
+
+	buf = io.BytesIO()
+	img.save(buf, format="PNG", optimize=True)
+	return buf.getvalue()
+
+
+def get_pass_qr_url(code_str):
+	"""
+	Returns a reliable public HTTPS QR code image URL for emails and web.
+	Also generates and saves the local PNG file to public files for downloads.
+	Uses QuickChart (Cloudflare Global CDN) to guarantee instant rendering in Gmail proxy,
+	Outlook SafeLinks, Yahoo, Apple Mail, and mobile inboxes without firewall or localhost issues.
+	"""
+	clean_code = str(code_str or "").strip()
+	if not clean_code:
+		clean_code = "CONNECTFEST-GATE-PASS"
+
+	safe_code = re.sub(r"[^A-Za-z0-9_-]", "_", clean_code)
+	filename = f"ConnectFest_Pass_QR_{safe_code}.png"
+
+	# Save local PNG file for downloadable attachment / direct download
+	try:
+		public_dir = frappe.get_site_path("public", "files")
+		filepath = os.path.join(public_dir, filename)
+		if not os.path.exists(filepath):
+			png_bytes = generate_local_qr_png_bytes(clean_code, scale=8, border=2)
+			with open(filepath, "wb") as f:
+				f.write(png_bytes)
+	except Exception:
+		pass
+
+	return f"https://quickchart.io/qr?text={urllib.parse.quote(clean_code)}&size=180&margin=2"
+
+
+def get_pass_qr_image(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
+	"""
+	Public inline image API returning the Gate Pass QR Code directly as image/png.
+	Cache-friendly so email clients and web apps display it instantly.
+	"""
+	req_data = extract_request_data(kwargs)
+	clean_code = (code or pass_code or req_data.get("code") or req_data.get("pass_code") or "").strip()
+	reg_id = (registration_id or req_data.get("registration_id") or "").strip()
+
+	if not clean_code and reg_id:
+		p_num = cint(pass_number or req_data.get("pass_number") or 1)
+		field = "pass_2_pass_code" if p_num == 2 else "pass_code"
+		clean_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, field) or ""
+		if not clean_code and p_num == 1:
+			clean_code = frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id}, "pass_code") or ""
+		if not clean_code:
+			clean_code = reg_id
+
+	if not clean_code:
+		clean_code = "CONNECTFEST-GATE-PASS"
+
+	safe_filename_code = re.sub(r"[^A-Za-z0-9_-]", "_", clean_code)
+	filename = f"ConnectFest_Pass_QR_{safe_filename_code}.png"
+
+	png_bytes = None
+	try:
+		public_dir = frappe.get_site_path("public", "files")
+		filepath = os.path.join(public_dir, filename)
+		if os.path.exists(filepath):
+			with open(filepath, "rb") as f:
+				png_bytes = f.read()
+	except Exception:
+		pass
+
+	if not png_bytes:
+		png_bytes = generate_local_qr_png_bytes(clean_code, scale=10, border=2)
+
+	frappe.local.response.filename = filename
+	frappe.local.response.filecontent = png_bytes
+	frappe.local.response.type = "binary"
+	frappe.local.response.content_type = "image/png"
+	frappe.local.response.headers = {
+		"Cache-Control": "public, max-age=31536000",
+		"Content-Disposition": f'inline; filename="{filename}"'
+	}
+
+
 def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
 	"""
 	Downloads the high-resolution Gate Pass QR Code image directly as a PNG attachment.
@@ -1630,12 +1771,8 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 
 	if not png_bytes:
 		try:
-			encoded_data = urllib.parse.quote(str(clean_code))
-			qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=12&format=png&data={encoded_data}"
-			req = urllib.request.Request(qr_url, headers={"User-Agent": "ConnectFest/2.0"})
-			with urllib.request.urlopen(req, timeout=4) as response:
-				png_bytes = response.read()
-			if png_bytes and len(png_bytes) > 50:
+			png_bytes = generate_local_qr_png_bytes(clean_code, scale=12, border=2)
+			if png_bytes:
 				try:
 					frappe.cache().set_value(cache_key, png_bytes, expires_in_sec=86400)
 				except Exception:
@@ -1647,7 +1784,6 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 		# Fallback to local pyqrcode SVG
 		try:
 			import pyqrcode
-			import io
 			qr = pyqrcode.create(str(clean_code))
 			buf = io.BytesIO()
 			qr.svg(buf, scale=10)

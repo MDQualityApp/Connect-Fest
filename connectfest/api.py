@@ -168,6 +168,12 @@ from connectfest.services.notifications import (
 	send_booking_confirmation_email as _send_booking_confirmation_email,
 	send_payment_failure_email as _send_payment_failure_email,
 	resend_booking_email as _resend_booking_email,
+	send_visitor_confirmation_email as _send_visitor_confirmation_email,
+	resend_visitor_email as _resend_visitor_email,
+)
+from connectfest.services.visitor_badge import (
+	download_visitor_badge as _download_visitor_badge,
+	get_visitor_badge as _get_visitor_badge,
 )
 from connectfest.services.wati import (
 	resend_booking_whatsapp as _resend_booking_whatsapp,
@@ -1034,6 +1040,18 @@ def admin_resend_booking_email(registration_id=None, email=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=None, **kwargs):
+	"""Sends visitor gate pass confirmation email with high-res printable PDF badge attachment."""
+	return _send_visitor_confirmation_email(registration_id=registration_id, email=email, pass_code=pass_code, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def resend_visitor_email(registration_id=None, email=None, pass_code=None, **kwargs):
+	"""Public / Attendee API: Resend visitor gate pass confirmation email."""
+	return _resend_visitor_email(registration_id=registration_id, email=email, pass_code=pass_code, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
 	"""Public / Attendee API: Resend booking confirmation WhatsApp message via WATI."""
 	return _resend_booking_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
@@ -1121,6 +1139,34 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 	"""
 	from connectfest.services.passes import download_pass_qr as _download_pass_qr
 	return _download_pass_qr(code=code, pass_code=pass_code, registration_id=registration_id, pass_number=pass_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_pass_qr_image(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
+	"""Public API: Serves Gate Pass QR code directly as image/png inline."""
+	from connectfest.services.passes import get_pass_qr_image as _get_pass_qr_image
+	return _get_pass_qr_image(code=code, pass_code=pass_code, registration_id=registration_id, pass_number=pass_number, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""
+	Downloads the official vertical Visitor Gate Pass Badge Card as a printable PDF.
+	Accessible publicly by pass_code, registration_id, mobile_no, or email.
+	"""
+	return _download_visitor_badge(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_visitor_pass(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for download_visitor_badge."""
+	return _download_visitor_badge(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Public API: Get structured visitor pass badge data with direct QR and PDF download URLs."""
+	return _get_visitor_badge(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
 
 
 
