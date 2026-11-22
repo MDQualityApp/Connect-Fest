@@ -7,6 +7,7 @@ from connectfest.services.common import (
 	parse_boolean,
 	handle_api_errors,
 	save_image_from_base64_or_url,
+	format_full_url,
 )
 from connectfest.services.auth import check_admin_permission
 

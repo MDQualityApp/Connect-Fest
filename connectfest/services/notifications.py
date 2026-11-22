@@ -223,7 +223,7 @@ def build_confirmation_html(data):
 						</td>
 						<td style="vertical-align: middle; text-align: center; width: 38%; padding-left: 12px; border-left: 1px solid #f1f5f9;">
 							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass Card" style="text-decoration: none; display: inline-block;">
-								<img embed="files/ConnectFest_Pass_QR_{p1_code}.png" src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
+								<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
 								<span style="font-size: 10px; color: #4f46e5; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
 							</a>
 							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
@@ -312,7 +312,7 @@ def build_visitor_confirmation_html(data):
 						</td>
 						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
 							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Visitor Pass Card" style="text-decoration: none; display: inline-block;">
-								<img embed="files/ConnectFest_Pass_QR_{pass_code}.png" src="{qr_url}" alt="Visitor Pass QR" width="120" height="120" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
+								<img src="{qr_url}" alt="Visitor Pass QR" width="120" height="120" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
 								<span style="font-size: 10px; color: #b91c1c; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
 							</a>
 							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
@@ -498,7 +498,6 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 			subject=subject,
 			message=html_body,
 			attachments=attachments if attachments else None,
-			inline_images=inline_images if inline_images else None,
 			add_css=False,
 			now=True,
 			delayed=False,
@@ -703,7 +702,6 @@ def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=
 			recipients=[target_email],
 			subject=subject,
 			message=html_body,
-			inline_images=inline_images if inline_images else None,
 			add_css=False,
 			now=True,
 			delayed=False,

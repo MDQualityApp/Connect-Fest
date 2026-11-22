@@ -1029,18 +1029,6 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid) if is_reg else []
 	is_scanner = bool(is_scanner_user(uid)) if is_reg else False
 
-	# If attendee is verifying for a registration type they have NOT completed yet:
-	if is_reg_for_type is False or not is_reg:
-		frappe.local.response["http_status_code"] = 200
-		return {
-			"status": "success",
-			"is_verified": True,
-			"is_registered": False,
-			"message": "Email address verified successfully! You may now proceed with registration.",
-			"roles": roles_arr,
-			"is_scanner": is_scanner,
-		}
-
 	# Admin login strictly requires password via Admin Portal
 	from connectfest.services.auth import is_admin_user
 	if is_admin_user(target_email) or is_admin_user(uid):
@@ -1063,26 +1051,54 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 
 	ensure_frappe_user(target_email, user_record_name, user_mob, role="Website User")
 
+	active_sid = None
 	if frappe.db.exists("User", target_email):
 		try:
-			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-				frappe.local.login_manager.login_as(target_email)
-			else:
-				from frappe.auth import LoginManager
+			from frappe.auth import LoginManager
+			if not getattr(frappe.local, "login_manager", None):
 				frappe.local.login_manager = LoginManager()
-				frappe.local.login_manager.login_as(target_email)
+			frappe.local.login_manager.login_as(target_email)
+			active_sid = getattr(frappe.session, "sid", None)
 		except Exception:
 			pass
 		frappe.set_user(target_email)
+
+	# Ensure a valid Active session exists in tabSessions
+	if not active_sid or active_sid == "Guest":
+		active_sid = frappe.generate_hash()
+		now_dt = frappe.utils.now()
+		try:
+			frappe.db.sql("""
+				INSERT INTO `tabSessions` (sessiondata, user, lastupdate, sid, status)
+				VALUES (%s, %s, %s, %s, 'Active')
+				ON DUPLICATE KEY UPDATE status = 'Active', lastupdate = %s
+			""", (f'{{"user":"{target_email}"}}', target_email, now_dt, active_sid, now_dt))
+			frappe.db.commit()
+		except Exception:
+			pass
+
+	if hasattr(frappe.local, "cookie_manager"):
+		try:
+			frappe.local.cookie_manager.set_cookie("sid", active_sid, samesite="None", secure=True)
+			frappe.local.cookie_manager.set_cookie("user_id", target_email, samesite="None", secure=True)
+			frappe.local.cookie_manager.set_cookie("system_user", "no", samesite="None", secure=True)
+		except Exception:
+			pass
 
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"is_verified": True,
-		"is_registered": True,
-		"message": "Email verification successful! You are logged in.",
+		"is_registered": bool(is_reg),
+		"message": "Email verification successful! You are logged in." if is_reg else "Email address verified successfully! You may now proceed with registration.",
 		"roles": roles_arr,
 		"is_scanner": is_scanner,
+		"sid": active_sid,
+		"token": active_sid,
+		"user": target_email,
+		"email": target_email,
+		"full_name": user_record_name,
+		"home_page": "/me" if is_reg else "/floorplan",
 	}
 
 
