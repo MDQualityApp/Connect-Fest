@@ -473,6 +473,48 @@ def before_request():
 				frappe.local.conf.ignore_csrf = True
 
 
+def after_request(response=None, request=None):
+	"""
+	Runtime hook executed after processing any HTTP request.
+	1. Rewrites Set-Cookie headers to SameSite=None; Secure; Domain=.connectfesttn.in on production
+	   so cross-subdomain API calls (connectfesttn.in -> api.connectfesttn.in) persist authenticated sessions.
+	2. Adds robust CORS headers matching the caller origin.
+	"""
+	if not response or not hasattr(response, "headers"):
+		return
+
+	req = request or getattr(frappe, "request", None)
+	origin = (req.headers.get("Origin") if req and hasattr(req, "headers") else "") or ""
+	req_host = (req.host if req and hasattr(req, "host") else "") or ""
+	is_prod = "connectfesttn.in" in req_host or "connectfesttn.in" in origin
+
+	# 1. Update Set-Cookie headers
+	try:
+		cookies = response.headers.getlist("Set-Cookie")
+		if cookies:
+			updated_cookies = []
+			for c in cookies:
+				# Convert SameSite=Lax / SameSite=Strict to SameSite=None
+				c = c.replace("SameSite=Lax", "SameSite=None").replace("SameSite=Strict", "SameSite=None")
+				if "SameSite=None" in c and "Secure" not in c:
+					c += "; Secure"
+				if is_prod and "Domain=" not in c:
+					c += "; Domain=.connectfesttn.in"
+				updated_cookies.append(c)
+			response.headers.setlist("Set-Cookie", updated_cookies)
+	except Exception:
+		pass
+
+	# 2. Dynamic CORS headers for frontend
+	if origin and ("connectfesttn.in" in origin or "localhost" in origin):
+		try:
+			response.headers["Access-Control-Allow-Origin"] = origin
+			response.headers["Access-Control-Allow-Credentials"] = "true"
+			response.headers["Vary"] = "Origin"
+		except Exception:
+			pass
+
+
 import secrets
 
 PASS_CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"  # 32 chars: excludes 0, O, 1, I to eliminate human confusion

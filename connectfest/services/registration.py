@@ -548,6 +548,27 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 				or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
 				or frappe.db.get_value("User", {"phone": candidate_mob}, "name")
 			)
+		if not candidate_email and reg_id:
+			candidate_email = (
+				frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")
+				or frappe.db.get_value("ConnectFest Registration", reg_id, "email")
+			)
+		if not candidate_email and stall_num and frappe.db.exists("ConnectFest Stall", stall_num):
+			stall_holder_email = frappe.db.get_value("ConnectFest Stall", stall_num, "booked_by_email")
+			if stall_holder_email:
+				candidate_email = stall_holder_email
+		if not candidate_email:
+			try:
+				active_sessions = frappe.db.sql("""
+					SELECT user FROM `tabSessions`
+					WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
+					ORDER BY lastupdate DESC LIMIT 1
+				""", as_dict=True)
+				if active_sessions and active_sessions[0].get("user"):
+					candidate_email = active_sessions[0]["user"]
+			except Exception:
+				pass
+
 		if candidate_email:
 			sess_user = candidate_email
 			try:
@@ -561,6 +582,11 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 			or frappe.db.get_value("ConnectFest Registration", {"email": sess_user, "payment_status": ("!=", "Paid")}, "registration_id", order_by="creation desc")
 			or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id", order_by="creation desc")
 		)
+
+	if not reg_id and stall_num and frappe.db.exists("ConnectFest Stall", stall_num):
+		stall_reg = frappe.db.get_value("ConnectFest Stall", stall_num, "booked_by_registration")
+		if stall_reg:
+			reg_id = stall_reg
 
 	if not reg_id and (not sess_user or sess_user == "Guest"):
 		frappe.local.response["http_status_code"] = 401
