@@ -372,13 +372,22 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	stall_num = safe_str(kwargs.get("stall_number") or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
 
-	sess_user = getattr(frappe.session, "user", None)
-	if not is_internal and (not sess_user or sess_user == "Guest"):
-		frappe.local.response["http_status_code"] = 401
-		return {
-			"status": "unauthorized",
-			"message": "Login required to initiate stall payment. Please log in with your registered mobile or email via OTP.",
-		}
+	from connectfest.services.auth import get_authenticated_user
+	sess_user = get_authenticated_user(data, **kwargs) or getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		candidate_email = (data.get("email") or data.get("user_email") or "").strip().lower()
+		candidate_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
+		if not candidate_email and candidate_mob:
+			candidate_email = (
+				frappe.db.get_value("ConnectFest Registration", {"mobile_no": candidate_mob}, "email")
+				or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
+			)
+		if candidate_email:
+			sess_user = candidate_email
+			try:
+				frappe.set_user(sess_user)
+			except Exception:
+				pass
 
 	# Auto-resolve registration_id for logged-in exhibitor if not explicitly provided
 	if not reg_id and sess_user and sess_user != "Guest":
@@ -392,6 +401,13 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 				frappe.db.get_value("ConnectFest Registration", {"email": sess_user, "payment_status": ("!=", "Paid")}, "registration_id", order_by="creation desc")
 				or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id", order_by="creation desc")
 			)
+
+	if not is_internal and not reg_id and (not sess_user or sess_user == "Guest"):
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to initiate stall payment. Please log in with your registered mobile or email via OTP.",
+		}
 
 	# Check visitor restriction
 	if (reg_id and str(reg_id).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": reg_id}) or frappe.db.exists("ConnectFest Visitor Registration", reg_id):
@@ -1028,13 +1044,22 @@ def preview_payment(**kwargs):
 	doctype = safe_str(data.get("reference_doctype") or data.get("doctype"), "ConnectFest Registration")
 	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number"))
 
-	sess_user = getattr(frappe.session, "user", None)
-	if not docname and (not sess_user or sess_user == "Guest"):
-		frappe.local.response["http_status_code"] = 401
-		return {
-			"status": "unauthorized",
-			"message": "Login required to preview stall payment. Please log in with your registered mobile or email via OTP.",
-		}
+	from connectfest.services.auth import get_authenticated_user
+	sess_user = get_authenticated_user(data, **kwargs) or getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		candidate_email = (data.get("email") or data.get("user_email") or "").strip().lower()
+		candidate_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
+		if not candidate_email and candidate_mob:
+			candidate_email = (
+				frappe.db.get_value("ConnectFest Registration", {"mobile_no": candidate_mob}, "email")
+				or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
+			)
+		if candidate_email:
+			sess_user = candidate_email
+			try:
+				frappe.set_user(sess_user)
+			except Exception:
+				pass
 
 	# Auto-resolve reference_docname / registration_id for logged-in exhibitor if not explicitly provided
 	if not docname and sess_user and sess_user != "Guest":
@@ -1050,6 +1075,13 @@ def preview_payment(**kwargs):
 				or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id", order_by="creation desc")
 				or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "name", order_by="creation desc")
 			)
+
+	if not is_internal and not docname and (not sess_user or sess_user == "Guest"):
+		frappe.local.response["http_status_code"] = 401
+		return {
+			"status": "unauthorized",
+			"message": "Login required to preview stall payment. Please log in with your registered mobile or email via OTP.",
+		}
 
 	# Check visitor restriction
 	if (docname and str(docname).startswith("VIS-")) or frappe.db.exists("ConnectFest Visitor Registration", {"registration_id": docname}) or frappe.db.exists("ConnectFest Visitor Registration", docname):
