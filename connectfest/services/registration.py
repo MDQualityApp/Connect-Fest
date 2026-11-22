@@ -47,23 +47,14 @@ def validate_registration_email_otp(email, data, expected_type=None):
 	type_labels = {"stall": "Stall Booking", "visitor": "Visitor Pass", "event": "Event Registration"}
 	exp_label = type_labels.get(expected_type, "registration")
 
-	# Check if pre-verified in Redis with role-scoped type check
+	# Check if pre-verified in Redis (valid for any registration flow once email ownership is proven)
 	cache = frappe.cache()
 	verified_key = cache.make_key(f"{EMAIL_VERIFIED_CACHE_PREFIX}{target_email}")
 	cached_val = cache.get(verified_key)
 	if cached_val:
-		if isinstance(cached_val, bytes):
-			cached_val = cached_val.decode("utf-8")
-		stored_type = str(cached_val).strip().lower()
-		if expected_type and stored_type not in ("1", "any", "all", expected_type.lower()):
-			stored_label = type_labels.get(stored_type, stored_type.title())
-			return {
-				"status": "error",
-				"message": f"This verification code was issued for {stored_label}! Please verify your email specifically for {exp_label}."
-			}
 		return None
 
-	if is_email_verified(target_email, expected_type=expected_type):
+	if is_email_verified(target_email, expected_type=expected_type) or is_email_verified(target_email):
 		return None
 
 	# Check if OTP passed inline
@@ -1136,7 +1127,8 @@ def register_visitor(**kwargs):
 	data = extract_request_data(kwargs)
 
 	# Determine session user
-	sess_user = getattr(frappe.session, "user", None) if hasattr(frappe, "session") else None
+	from connectfest.services.auth import get_authenticated_user
+	sess_user = get_authenticated_user(data, **kwargs) or (getattr(frappe.session, "user", None) if hasattr(frappe, "session") else None)
 	is_session_logged_in = bool(sess_user and sess_user != "Guest")
 
 	booked_by_email = (data.get("booked_by") or data.get("exhibitor_email") or data.get("created_by") or "").strip().lower()
