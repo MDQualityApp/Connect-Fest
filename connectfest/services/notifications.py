@@ -665,6 +665,15 @@ def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=
 		for k, v in kwargs.items():
 			if v: reg_data[k] = v
 
+		if clean_code and not reg_data.get("pass_code"):
+			reg_data["pass_code"] = clean_code
+		if clean_reg and not reg_data.get("registration_id"):
+			reg_data["registration_id"] = clean_reg
+		if clean_em and not reg_data.get("email"):
+			reg_data["email"] = clean_em
+		if not reg_data.get("full_name"):
+			reg_data["full_name"] = (clean_em.split("@")[0] if clean_em else "Visitor").replace(".", " ").replace("_", " ").title()
+
 		target_email = clean_em or reg_data.get("email")
 		if not target_email or "@" not in target_email:
 			return {"status": "skipped", "message": "No valid email address found for attendee"}
