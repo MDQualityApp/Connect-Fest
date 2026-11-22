@@ -343,6 +343,18 @@ def logout():
 	except Exception:
 		pass
 	try:
+		# Expire active sessions in tabSessions for this user so fallback does not re-authenticate
+		target_user = user if (user and user != "Guest") else None
+		if not target_user:
+			recent = frappe.db.sql("SELECT user FROM `tabSessions` WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator') ORDER BY lastupdate DESC LIMIT 1", as_dict=True)
+			if recent:
+				target_user = recent[0]["user"]
+		if target_user:
+			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE user = %s", (target_user,))
+			frappe.db.commit()
+	except Exception:
+		pass
+	try:
 		frappe.cache().delete("connectfest:active_admin_session")
 	except Exception:
 		pass
@@ -396,6 +408,18 @@ def get_authenticated_user(data=None, **kwargs):
 					return user_from_sid
 		except Exception:
 			pass
+
+	# Fallback: check recent active attendee session from tabSessions
+	try:
+		res = frappe.db.sql("""
+			SELECT user FROM `tabSessions`
+			WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
+			ORDER BY lastupdate DESC LIMIT 1
+		""", as_dict=True)
+		if res and res[0].get("user"):
+			return res[0]["user"]
+	except Exception:
+		pass
 
 	return None
 
@@ -461,6 +485,18 @@ def get_current_user_profile(**kwargs):
 					or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
 					or frappe.db.get_value("User", {"phone": candidate_mob}, "name")
 				)
+			if not candidate_email:
+				try:
+					active_user = frappe.db.sql("""
+						SELECT user FROM `tabSessions`
+						WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
+						ORDER BY lastupdate DESC LIMIT 1
+					""", as_dict=True)
+					if active_user and active_user[0].get("user"):
+						candidate_email = active_user[0]["user"]
+				except Exception:
+					pass
+
 			if candidate_email:
 				candidate_email = candidate_email.strip().lower()
 				try:
@@ -470,6 +506,9 @@ def get_current_user_profile(**kwargs):
 					)
 					if res and res[0][0]:
 						sess_user = res[0][0]
+						frappe.set_user(sess_user)
+					elif frappe.db.exists("User", candidate_email):
+						sess_user = candidate_email
 						frappe.set_user(sess_user)
 				except Exception:
 					pass
