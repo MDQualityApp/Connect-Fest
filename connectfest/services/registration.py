@@ -1266,31 +1266,6 @@ def register_visitor(**kwargs):
 			has_bought_stall = True
 			is_exhibitor = True
 
-	# Email OTP Verification:
-	# If caller is NOT logged in, visitor registration strictly requires Email OTP verification!
-	# If caller is logged in (e.g. Exhibitor logged in), Email OTP is bypassed because session is already authenticated.
-	if not is_session_logged_in:
-		email_val_err = validate_registration_email_otp(email, data, expected_type="visitor")
-		if email_val_err:
-			frappe.local.response["http_status_code"] = 400
-			return email_val_err
-
-	cache = frappe.cache()
-	lock_email_key = cache.make_key(f"connectfest:lock_vreg:{email}") if email else None
-	lock_mob_key = cache.make_key(f"connectfest:lock_vreg:{mobile_no}") if mobile_no else None
-	has_lock = False
-	if lock_email_key or lock_mob_key:
-		try:
-			acq_e = cache.set(lock_email_key, "1", nx=True, ex=10) if lock_email_key else True
-			acq_m = cache.set(lock_mob_key, "1", nx=True, ex=10) if lock_mob_key else True
-			if not (acq_e and acq_m):
-				# Another concurrent thread is currently creating this registration!
-				time.sleep(0.05)
-			else:
-				has_lock = True
-		except Exception:
-			has_lock = True
-
 	# Enforce strict 1-visitor-pass maximum limit per email and mobile (applies to everyone including exhibitors)
 	existing = frappe.db.sql("""
 		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
@@ -1353,6 +1328,15 @@ def register_visitor(**kwargs):
 			"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(existing_code))}",
 			"badge_download_url": f"{base_url}/api/method/connectfest.api.download_visitor_badge?code={urllib.parse.quote(str(existing_code))}",
 		}
+
+	# Email OTP Verification:
+	# If caller is NOT logged in, visitor registration strictly requires Email OTP verification!
+	# If caller is logged in (e.g. Exhibitor logged in), Email OTP is bypassed because session is already authenticated.
+	if not is_session_logged_in:
+		email_val_err = validate_registration_email_otp(email, data, expected_type="visitor")
+		if email_val_err:
+			frappe.local.response["http_status_code"] = 400
+			return email_val_err
 
 	# Check if mobile_no is bound to another active User
 	if mobile_no:
