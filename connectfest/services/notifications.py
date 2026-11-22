@@ -221,11 +221,12 @@ def build_confirmation_html(data):
 							<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
 							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 35%; padding-left: 12px; border-left: 1px solid #f1f5f9;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Download Gate Pass QR" style="text-decoration: none; display: inline-block; background: #4f46e5; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; white-space: nowrap;">
-								📥 Download QR
+						<td style="vertical-align: middle; text-align: center; width: 38%; padding-left: 12px; border-left: 1px solid #f1f5f9;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass Card" style="text-decoration: none; display: inline-block;">
+								<img embed="files/ConnectFest_Pass_QR_{p1_code}.png" src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
+								<span style="font-size: 10px; color: #4f46e5; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
 							</a>
-							<div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Scan at Entry</div>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
 						</td>
 					</tr>
 				</table>
@@ -309,11 +310,12 @@ def build_visitor_confirmation_html(data):
 							<div style="font-size: 12px; color: #475569; margin-bottom: 5px;">Venue: <strong>{event_venue}</strong></div>
 							<div style="font-size: 12px; color: #475569;">Dates: <strong>{event_dates}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 35%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Download Visitor Pass QR" style="text-decoration: none; display: inline-block; background: #b91c1c; color: #ffffff; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; white-space: nowrap;">
-								📥 Download QR
+						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Visitor Pass Card" style="text-decoration: none; display: inline-block;">
+								<img embed="files/ConnectFest_Pass_QR_{pass_code}.png" src="{qr_url}" alt="Visitor Pass QR" width="120" height="120" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
+								<span style="font-size: 10px; color: #b91c1c; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
 							</a>
-							<div style="font-size: 10px; color: #94a3b8; margin-top: 5px;">Scan at Entry</div>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
 						</td>
 					</tr>
 				</table>
@@ -474,12 +476,29 @@ def send_booking_confirmation_email(registration_id=None, email=None, **kwargs):
 		except Exception:
 			frappe.log_error(title="Failed to process allocation PDF attachment", message=frappe.get_traceback())
 
+		# Prepare Inline CID QR Image for Outlook / Gmail automatic display
+		inline_images = []
+		try:
+			from connectfest.services.passes import generate_local_qr_png_bytes
+			p1_code = reg_data.get("pass_code") or f"{reg_data.get('registration_id') or reg_data.get('name')}-P1"
+			p1_qr_bytes = generate_local_qr_png_bytes(p1_code, scale=8, border=2)
+			qr_filename = f"files/ConnectFest_Pass_QR_{p1_code}.png"
+			inline_images.append({"filename": qr_filename, "filecontent": p1_qr_bytes})
+			import os
+			public_dir = frappe.get_site_path("public", "files")
+			os.makedirs(public_dir, exist_ok=True)
+			with open(os.path.join(public_dir, f"ConnectFest_Pass_QR_{p1_code}.png"), "wb") as f:
+				f.write(p1_qr_bytes)
+		except Exception:
+			pass
+
 		# Fast, High-Priority Email Dispatch (never blocked behind external API calls)
 		frappe.sendmail(
 			recipients=[target_email],
 			subject=subject,
 			message=html_body,
 			attachments=attachments if attachments else None,
+			inline_images=inline_images if inline_images else None,
 			add_css=False,
 			now=True,
 			delayed=False,
@@ -665,10 +684,26 @@ def send_visitor_confirmation_email(registration_id=None, email=None, pass_code=
 				"registration_id": reg_data.get("registration_id")
 			}
 
+		# Prepare Inline CID QR Image for Outlook / Gmail automatic display
+		inline_images = []
+		try:
+			from connectfest.services.passes import generate_local_qr_png_bytes
+			vis_qr_bytes = generate_local_qr_png_bytes(pcode, scale=8, border=2)
+			qr_filename = f"files/ConnectFest_Pass_QR_{pcode}.png"
+			inline_images.append({"filename": qr_filename, "filecontent": vis_qr_bytes})
+			import os
+			public_dir = frappe.get_site_path("public", "files")
+			os.makedirs(public_dir, exist_ok=True)
+			with open(os.path.join(public_dir, f"ConnectFest_Pass_QR_{pcode}.png"), "wb") as f:
+				f.write(vis_qr_bytes)
+		except Exception:
+			pass
+
 		frappe.sendmail(
 			recipients=[target_email],
 			subject=subject,
 			message=html_body,
+			inline_images=inline_images if inline_images else None,
 			add_css=False,
 			now=True,
 			delayed=False,

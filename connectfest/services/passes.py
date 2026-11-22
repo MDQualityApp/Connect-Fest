@@ -1734,13 +1734,152 @@ def get_pass_qr_image(code=None, pass_code=None, registration_id=None, pass_numb
 	}
 
 
+def generate_pass_card_png_bytes(code_str, pass_type='EXHIBITOR PASS', name='', subtitle='', dates='20 & 21 Feb 2027 • Rajapalayam'):
+	"""
+	Generates a high-resolution, branded digital Gate Pass Card PNG image.
+	Perfect vertical card layout with:
+	  - Event Title Header: CONNECTFEST 2027
+	  - Category Banner: EXHIBITOR PASS / VISITOR PASS / BNI EVENT PASS
+	  - Attendee Name & Subtitle (Stall / Access / Chapter info)
+	  - High-contrast, scannable QR Code container
+	  - Clean Pass Code box (e.g. CF-XXXX-XXXX)
+	  - Scan instruction & Event Schedule
+	  - Bottom footer bar
+	"""
+	import io
+	import pyqrcode
+	from PIL import Image, ImageDraw, ImageFont
+
+	W, H = 480, 640
+	img = Image.new('RGB', (W, H), '#ffffff')
+	draw = ImageDraw.Draw(img)
+
+	try:
+		font_tag = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
+		font_title = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 20)
+		font_name = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 20)
+		font_sub = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 13)
+		font_code = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 17)
+		font_scan = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 11)
+		font_info = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 12)
+		font_footer = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 10)
+	except Exception:
+		font_tag = font_title = font_name = font_sub = font_code = font_scan = font_info = font_footer = ImageFont.load_default()
+
+	is_visitor = 'VISITOR' in (pass_type or '').upper()
+	is_event = 'EVENT' in (pass_type or '').upper() or 'BNI' in (pass_type or '').upper()
+
+	if is_visitor:
+		header_bg = '#b91c1c'
+		tag_color = '#fecaca'
+		badge_bg = '#fef2f2'
+		badge_border = '#fca5a5'
+		code_color = '#b91c1c'
+	elif is_event:
+		header_bg = '#0f766e'
+		tag_color = '#ccfbf1'
+		badge_bg = '#f0fdfa'
+		badge_border = '#99f6e4'
+		code_color = '#0f766e'
+	else:
+		header_bg = '#4338ca'
+		tag_color = '#c7d2fe'
+		badge_bg = '#eef2ff'
+		badge_border = '#c7d2fe'
+		code_color = '#4338ca'
+
+	# Top header banner (105px height)
+	draw.rectangle([0, 0, W, 105], fill=header_bg)
+
+	tag_text = '✦  CONNECTFEST 2027  ✦'
+	bbox_tag = draw.textbbox((0, 0), tag_text, font=font_tag)
+	draw.text(((W - (bbox_tag[2] - bbox_tag[0])) / 2, 22), tag_text, fill=tag_color, font=font_tag)
+
+	title_text = pass_type or ('VISITOR PASS' if is_visitor else ('BNI EVENT PASS' if is_event else 'EXHIBITOR PASS'))
+	bbox_title = draw.textbbox((0, 0), title_text, font=font_title)
+	draw.text(((W - (bbox_title[2] - bbox_title[0])) / 2, 50), title_text, fill='#ffffff', font=font_title)
+
+	# Attendee Info Section
+	curr_y = 125
+	name_display = name or 'Valued Attendee'
+	bbox_name = draw.textbbox((0, 0), name_display, font=font_name)
+	draw.text(((W - (bbox_name[2] - bbox_name[0])) / 2, curr_y), name_display, fill='#0f172a', font=font_name)
+	curr_y += 30
+
+	sub_display = subtitle or 'Official Digital Pass'
+	bbox_sub = draw.textbbox((0, 0), sub_display, font=font_sub)
+	draw.text(((W - (bbox_sub[2] - bbox_sub[0])) / 2, curr_y), sub_display, fill='#475569', font=font_sub)
+	curr_y += 28
+
+	# Subtle separator line
+	draw.line([(35, curr_y), (W - 35, curr_y)], fill='#f1f5f9', width=1)
+	curr_y += 12
+
+	# Generate crisp local QR code
+	qr = pyqrcode.create(str(code_str))
+	matrix = qr.code
+	scale = 7
+	border = 2
+	qr_size = (len(matrix) + 2 * border) * scale
+	qr_img = Image.new('RGB', (qr_size, qr_size), '#ffffff')
+	qr_draw = ImageDraw.Draw(qr_img)
+	for r_idx, row in enumerate(matrix):
+		for c_idx, val in enumerate(row):
+			if val == 1:
+				x0 = (c_idx + border) * scale
+				y0 = (r_idx + border) * scale
+				qr_draw.rectangle([x0, y0, x0 + scale, y0 + scale], fill='black')
+
+	box_padding = 10
+	qr_box_size = qr_size + box_padding * 2
+	qr_box_x = int((W - qr_box_size) / 2)
+	qr_box_y = curr_y
+	draw.rounded_rectangle([qr_box_x, qr_box_y, qr_box_x + qr_box_size, qr_box_y + qr_box_size], radius=8, fill='#ffffff', outline='#e2e8f0', width=1)
+	img.paste(qr_img, (qr_box_x + box_padding, qr_box_y + box_padding))
+	curr_y += qr_box_size + 14
+
+	# Prominent Pass Code badge box
+	code_box_w = 360
+	code_box_h = 44
+	code_box_x = int((W - code_box_w) / 2)
+	draw.rounded_rectangle([code_box_x, curr_y, code_box_x + code_box_w, curr_y + code_box_h], radius=6, fill=badge_bg, outline=badge_border, width=1)
+
+	code_label = f'PASS CODE: {code_str}'
+	bbox_code = draw.textbbox((0, 0), code_label, font=font_code)
+	draw.text(((W - (bbox_code[2] - bbox_code[0])) / 2, curr_y + 11), code_label, fill=code_color, font=font_code)
+	curr_y += code_box_h + 10
+
+	# Scan Instruction
+	scan_text = 'SCAN AT ENTRY GATE FOR ADMISSION'
+	bbox_scan = draw.textbbox((0, 0), scan_text, font=font_scan)
+	draw.text(((W - (bbox_scan[2] - bbox_scan[0])) / 2, curr_y), scan_text, fill='#64748b', font=font_scan)
+	curr_y += 24
+
+	# Event dates and venue footer
+	bbox_dates = draw.textbbox((0, 0), dates, font=font_info)
+	draw.text(((W - (bbox_dates[2] - bbox_dates[0])) / 2, curr_y), dates, fill='#334155', font=font_info)
+	curr_y += 26
+
+	# Bottom footer bar
+	footer_h = 32
+	draw.rectangle([0, H - footer_h, W, H], fill='#f8fafc')
+	draw.line([(0, H - footer_h), (W, H - footer_h)], fill='#e2e8f0', width=1)
+	footer_text = 'ConnectFest 2027 • The Premier Business & Innovation Expo'
+	bbox_foot = draw.textbbox((0, 0), footer_text, font=font_footer)
+	draw.text(((W - (bbox_foot[2] - bbox_foot[0])) / 2, H - footer_h + 9), footer_text, fill='#94a3b8', font=font_footer)
+
+	# Outer card border
+	draw.rectangle([0, 0, W - 1, H - 1], outline='#cbd5e1', width=1)
+
+	buf = io.BytesIO()
+	img.save(buf, format='PNG', optimize=True)
+	return buf.getvalue()
+
+
 def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_number=1, **kwargs):
 	"""
-	Downloads the high-resolution Gate Pass QR Code image directly as a PNG attachment.
-	Supports:
-	  - code / pass_code (e.g. CF-LXHE-JRLL)
-	  - registration_id (e.g. CF-2611-000001, pass_number=1 or 2)
-	Returns HTTP response with Content-Disposition: attachment for direct file download.
+	Downloads the high-resolution branded Gate Pass Card directly as a PNG attachment.
+	Includes ConnectFest 2027 header, Pass Code, Pass Type (Exhibitor / Visitor / BNI Event), and QR Code.
 	"""
 	req_data = extract_request_data(kwargs)
 	clean_code = (code or pass_code or req_data.get("code") or req_data.get("pass_code") or "").strip()
@@ -1753,16 +1892,115 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 		if not clean_code and p_num == 1:
 			clean_code = frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id}, "pass_code") or ""
 		if not clean_code:
+			clean_code = frappe.db.get_value("ConnectFest BNI Event Registration", {"registration_id": reg_id}, "pass_code") or ""
+		if not clean_code:
 			clean_code = reg_id
 
 	if not clean_code:
 		clean_code = "CONNECTFEST-GATE-PASS"
 
 	safe_filename_code = re.sub(r"[^A-Za-z0-9_-]", "_", clean_code)
-	filename = f"ConnectFest_Pass_QR_{safe_filename_code}.png"
+	filename = f"ConnectFest_Pass_{safe_filename_code}.png"
+
+	# Determine pass type and details for branding the downloaded pass card
+	pass_type = None
+	attendee_name = ""
+	attendee_subtitle = ""
+	try:
+		# 1. Visitor Registration Check
+		vis = frappe.db.get_value(
+			"ConnectFest Visitor Registration",
+			{"pass_code": clean_code},
+			["full_name", "which_day"],
+			as_dict=True,
+		)
+		if not vis and reg_id:
+			vis = frappe.db.get_value(
+				"ConnectFest Visitor Registration",
+				{"registration_id": reg_id},
+				["full_name", "which_day"],
+				as_dict=True,
+			)
+		if vis:
+			pass_type = "VISITOR PASS"
+			attendee_name = vis.full_name or "Visitor"
+			which = vis.which_day or "Both days"
+			attendee_subtitle = f"Access: {which}"
+		else:
+			# 2. Exhibitor Registration Check (correct field: stall_number)
+			ex = frappe.db.get_value(
+				"ConnectFest Registration",
+				{"pass_code": clean_code},
+				["full_name", "company_name", "stall_number", "stall_category"],
+				as_dict=True,
+			)
+			if not ex:
+				ex = frappe.db.get_value(
+					"ConnectFest Registration",
+					{"pass_2_pass_code": clean_code},
+					["full_name", "company_name", "stall_number", "stall_category"],
+					as_dict=True,
+				)
+			if not ex and reg_id:
+				ex = frappe.db.get_value(
+					"ConnectFest Registration",
+					{"registration_id": reg_id},
+					["full_name", "company_name", "stall_number", "stall_category"],
+					as_dict=True,
+				)
+			if ex:
+				pass_type = "EXHIBITOR PASS"
+				attendee_name = ex.full_name or "Exhibitor"
+				stalls = ex.stall_number or "Assigned"
+				cat = ex.stall_category or "Regular"
+				comp = ex.company_name or ""
+				attendee_subtitle = f"{comp} • Stall: {stalls} ({cat})" if comp else f"Stall: {stalls} ({cat})"
+			else:
+				# 3. BNI Event Registration Check
+				bni = frappe.db.get_value(
+					"ConnectFest BNI Event Registration",
+					{"pass_code": clean_code},
+					["full_name", "company_name", "chapter_name", "event_name"],
+					as_dict=True,
+				)
+				if not bni and reg_id:
+					bni = frappe.db.get_value(
+						"ConnectFest BNI Event Registration",
+						{"registration_id": reg_id},
+						["full_name", "company_name", "chapter_name", "event_name"],
+						as_dict=True,
+					)
+				if bni:
+					pass_type = "BNI EVENT PASS"
+					attendee_name = bni.full_name or "Event Attendee"
+					comp = bni.company_name or ""
+					chap = bni.chapter_name or "BNI Member"
+					attendee_subtitle = f"{comp} • Chapter: {chap}" if comp else f"Chapter: {chap}"
+	except Exception:
+		pass
+
+	if not pass_type:
+		if "VIS" in clean_code.upper():
+			pass_type = "VISITOR PASS"
+			attendee_subtitle = "Visitor Access"
+		elif "BNI" in clean_code.upper() or "EVT" in clean_code.upper():
+			pass_type = "BNI EVENT PASS"
+			attendee_subtitle = "BNI Member Access"
+		else:
+			pass_type = "EXHIBITOR PASS"
+			attendee_subtitle = "Exhibitor Gate Pass"
+
+	event_dates_venue = "20 & 21 Feb 2027 • Rajapalayam"
+	try:
+		settings = frappe.get_single("ConnectFest Settings")
+		ed = settings.get("event_dates") or "20 & 21 Feb 2027"
+		ev = settings.get("event_venue") or "Rajapalayam"
+		event_dates_venue = f"{ed} • {ev}"
+	except Exception:
+		pass
 
 	# Cache check
-	cache_key = f"qr_png_bytes_{safe_filename_code}"
+	cache_key = f"pass_card_png_{safe_filename_code}"
 	png_bytes = None
 	try:
 		png_bytes = frappe.cache().get_value(cache_key)
@@ -1771,12 +2009,24 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 
 	if not png_bytes:
 		try:
-			png_bytes = generate_local_qr_png_bytes(clean_code, scale=12, border=2)
+			png_bytes = generate_pass_card_png_bytes(
+				clean_code,
+				pass_type=pass_type,
+				name=attendee_name,
+				subtitle=attendee_subtitle,
+				dates=event_dates_venue,
+			)
 			if png_bytes:
 				try:
 					frappe.cache().set_value(cache_key, png_bytes, expires_in_sec=86400)
 				except Exception:
 					pass
+		except Exception:
+			pass
+
+	if not png_bytes:
+		try:
+			png_bytes = generate_local_qr_png_bytes(clean_code, scale=12, border=2)
 		except Exception:
 			pass
 

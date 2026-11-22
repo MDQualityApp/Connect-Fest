@@ -261,41 +261,135 @@ def register_bni_event(**kwargs):
 
 	# 6. Send Email Pass Confirmation
 	try:
-		subject = f"🎟️ Your BNI Event Pass: {event_name}"
-		email_body = f"""
-		<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 24px auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-			<div style="background-color: #4f46e5; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 26px 24px; text-align: center;">
-				<div style="font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #e0e7ff; margin-bottom: 6px;">✦ BNI EVENTS ✦</div>
-				<h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #ffffff;">BNI Event Pass Confirmed</h1>
-			</div>
-			<div style="padding: 24px;">
-				<p style="font-size: 15px; color: #0f172a; margin: 0 0 10px; font-weight: 600;">Hello {full_name},</p>
-				<p style="font-size: 14px; color: #475569; margin: 0 0 20px;">Your registration for <strong>{event_name}</strong> is confirmed! Please show this pass code at the gate for check-in:</p>
-				<div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 18px; text-align: center; margin: 0 0 20px;">
-					<div style="font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">DIGITAL PASS CODE</div>
-					<div style="font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 4px; color: #4f46e5;">{pass_code}</div>
-				</div>
-				<table style="width: 100%; font-size: 13px; color: #475569; margin-bottom: 20px;">
-					<tr><td style="padding: 4px 0; color: #94a3b8;">Registration ID:</td><td style="text-align: right; font-weight: 600;">{doc.name}</td></tr>
-					<tr><td style="padding: 4px 0; color: #94a3b8;">Company:</td><td style="text-align: right; font-weight: 600;">{company_name or 'N/A'}</td></tr>
-					<tr><td style="padding: 4px 0; color: #94a3b8;">BNI Chapter:</td><td style="text-align: right; font-weight: 600;">{chapter_name or 'N/A'}</td></tr>
-					<tr><td style="padding: 4px 0; color: #94a3b8;">Mobile:</td><td style="text-align: right; font-weight: 600;">+91-{mobile_no}</td></tr>
-				</table>
-				<hr style="border: none; border-top: 1px solid #f1f5f9; margin: 0 0 16px;" />
-				<p style="font-size: 12px; color: #94a3b8; margin: 0; text-align: center;">ConnectFest BNI Events Team</p>
-			</div>
-		</div>
-		"""
-		frappe.sendmail(
-			recipients=[email],
-			subject=subject,
-			message=email_body,
-			now=False,
-			delayed=True,
-		)
-		frappe.db.commit()
+		send_bni_event_confirmation_email(registration_id=doc.name, email=email)
 	except Exception as e:
 		frappe.logger("connectfest").warning(f"[BNI Event] Failed to send confirmation email to {email}: {str(e)}")
+
+	frappe.local.response["http_status_code"] = 200
+	return {
+		"status": "success",
+		"registration_id": doc.name,
+		"pass_code": pass_code,
+		"message": "Event registration successful!",
+		"logged_in": True,
+	}
+
+
+def send_bni_event_confirmation_email(registration_id=None, email=None, **kwargs):
+	"""
+	Sends official BNI Event Pass confirmation email with:
+	  - Digital pass code
+	  - Embedded inline CID QR Code (renders automatically in Outlook & Gmail)
+	  - Direct link to download the high-resolution branded Pass Card PNG
+	"""
+	doc = None
+	if registration_id:
+		doc = frappe.db.get_value(
+			"ConnectFest BNI Event Registration",
+			{"registration_id": registration_id},
+			["name", "registration_id", "full_name", "email", "mobile_no", "company_name", "chapter_name", "pass_code", "event_name"],
+			as_dict=True,
+		)
+		if not doc:
+			doc = frappe.db.get_value(
+				"ConnectFest BNI Event Registration",
+				{"name": registration_id},
+				["name", "registration_id", "full_name", "email", "mobile_no", "company_name", "chapter_name", "pass_code", "event_name"],
+				as_dict=True,
+			)
+	elif email:
+		doc = frappe.db.get_value(
+			"ConnectFest BNI Event Registration",
+			{"email": email},
+			["name", "registration_id", "full_name", "email", "mobile_no", "company_name", "chapter_name", "pass_code", "event_name"],
+			as_dict=True,
+		)
+
+	if not doc:
+		return {"status": "error", "message": f"No BNI Event registration found for {registration_id or email}"}
+
+	full_name = doc.full_name or "BNI Member"
+	target_email = email or doc.email
+	mobile_no = doc.mobile_no or ""
+	company_name = doc.company_name or ""
+	chapter_name = doc.chapter_name or ""
+	pass_code = doc.pass_code or doc.name
+	event_name = doc.event_name or "ConnectFest BNI Events 2027"
+
+	subject = f"🎟️ Your BNI Event Pass: {event_name}"
+	base_url = "https://api.connectfesttn.in"
+	try:
+		from connectfest.services.notifications import get_base_url
+		base_url = get_base_url()
+	except Exception:
+		pass
+
+	from connectfest.services.passes import get_pass_qr_url, generate_local_qr_png_bytes
+	import urllib.parse
+	qr_url = get_pass_qr_url(pass_code)
+	download_qr_url = f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(pass_code))}"
+	qr_filename = f"files/ConnectFest_Pass_QR_{pass_code}.png"
+	inline_images = []
+	try:
+		event_qr_bytes = generate_local_qr_png_bytes(pass_code, scale=8, border=2)
+		inline_images.append({"filename": qr_filename, "filecontent": event_qr_bytes})
+		public_dir = frappe.get_site_path("public", "files")
+		import os
+		os.makedirs(public_dir, exist_ok=True)
+		with open(os.path.join(public_dir, f"ConnectFest_Pass_QR_{pass_code}.png"), "wb") as f:
+			f.write(event_qr_bytes)
+	except Exception:
+		pass
+
+	email_body = f"""
+	<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 24px auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+		<div style="background-color: #0f766e; background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%); padding: 26px 24px; text-align: center;">
+			<div style="font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #ccfbf1; margin-bottom: 6px;">✦ BNI EVENTS ✦</div>
+			<h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #ffffff;">BNI Event Pass Confirmed</h1>
+		</div>
+		<div style="padding: 24px;">
+			<p style="font-size: 15px; color: #0f172a; margin: 0 0 10px; font-weight: 600;">Hello {full_name},</p>
+			<p style="font-size: 14px; color: #475569; margin: 0 0 20px;">Your registration for <strong>{event_name}</strong> is confirmed! Please show this pass at the gate for instant admission:</p>
+			<div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; margin-bottom: 20px;">
+				<table style="width: 100%; border-collapse: collapse;">
+					<tr>
+						<td style="vertical-align: top; width: 60%;">
+							<div style="display: inline-block; font-size: 10.5px; font-weight: 700; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; margin-bottom: 6px;">BNI Event Pass</div>
+							<div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">{full_name}</div>
+							<div style="font-size: 12.5px; color: #475569; margin-bottom: 4px;">{company_name or 'BNI Member'}</div>
+							<div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Chapter: <strong>{chapter_name or 'N/A'}</strong></div>
+							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #0f766e;">{pass_code}</strong></div>
+						</td>
+						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
+							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Event Pass Card" style="text-decoration: none; display: inline-block;">
+								<img embed="{qr_filename}" src="{qr_url}" alt="Event Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
+								<span style="font-size: 10px; color: #0f766e; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
+							</a>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+						</td>
+					</tr>
+				</table>
+			</div>
+			<p style="font-size: 12px; color: #94a3b8; margin: 0; text-align: center;">ConnectFest BNI Events Team</p>
+		</div>
+	</div>
+	"""
+	frappe.sendmail(
+		recipients=[target_email],
+		subject=subject,
+		message=email_body,
+		inline_images=inline_images if inline_images else None,
+		add_css=False,
+		now=True,
+		delayed=False,
+	)
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"message": f"BNI Event confirmation email sent to {target_email}",
+		"registration_id": doc.name,
+		"pass_code": pass_code,
+	}
 
 	frappe.local.response["http_status_code"] = 200
 	return {

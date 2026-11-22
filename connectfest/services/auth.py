@@ -515,7 +515,7 @@ def get_current_user_profile(**kwargs):
 	# Fetch all stall booking details (Exhibitor)
 	stalls_raw = frappe.db.sql("""
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
-		       is_bni_member, claimed_bni_member, region_name, chapter_name, industry, segment, source_of_info,
+		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
 		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation,
 		       bill, gst, pass_code, qr_payload, checked_in, checked_in_at, checked_in_by,
@@ -2210,7 +2210,8 @@ def update_profile(**kwargs):
 		# BNI Details - Strictly verified ONLY against 'ConnectFest BNI Member' DocType!
 		if "is_bni_member" in data:
 			raw_val = 1 if parse_boolean(data.get("is_bni_member")) else 0
-			updates_exhibitor["claimed_bni_member"] = raw_val
+			if frappe.db.has_column("ConnectFest Registration", "claimed_bni_member"):
+				updates_exhibitor["claimed_bni_member"] = raw_val
 			updated_fields["claimed_bni_member"] = bool(raw_val)
 
 			from connectfest.services.bni_members import is_valid_bni_member
