@@ -360,12 +360,14 @@ def send_bni_event_confirmation_email(registration_id=None, email=None, **kwargs
 							<div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Chapter: <strong>{chapter_name or 'N/A'}</strong></div>
 							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #0f766e;">{pass_code}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Event Pass Card" style="text-decoration: none; display: inline-block;">
-								<img src="{qr_url}" alt="Event Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
-								<span style="font-size: 10px; color: #0f766e; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
-							</a>
-							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 16px;">
+							<div style="background: #f0fdfa; border: 1.5px dashed #5eead4; border-radius: 8px; padding: 16px 10px; margin-bottom: 8px;">
+								<div style="font-size: 24px; margin-bottom: 6px;">🎟️</div>
+								<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Event Pass Card" style="text-decoration: none; display: inline-block; background: #0f766e; color: #ffffff; padding: 9px 15px; border-radius: 6px; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.2); white-space: nowrap;">
+									📥 Download QR Pass
+								</a>
+							</div>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 4px; text-transform: uppercase;">SCAN AT ENTRY</div>
 						</td>
 					</tr>
 				</table>

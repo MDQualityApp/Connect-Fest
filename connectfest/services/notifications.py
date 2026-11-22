@@ -221,12 +221,14 @@ def build_confirmation_html(data):
 							<div style="font-size: 12px; color: #64748b;">Stall: <strong style="color: #0f172a;">{stall_numbers}</strong> ({stall_category})</div>
 							<div style="font-size: 12px; font-family: monospace; color: #64748b; margin-top: 6px;">Pass Code: <strong style="color: #4f46e5;">{p1_code}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 38%; padding-left: 12px; border-left: 1px solid #f1f5f9;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass Card" style="text-decoration: none; display: inline-block;">
-								<img src="{p1_qr_url}" alt="Gate Pass QR" width="115" height="115" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #ffffff; padding: 4px;" />
-								<span style="font-size: 10px; color: #4f46e5; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
-							</a>
-							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+						<td style="vertical-align: middle; text-align: center; width: 38%; padding-left: 16px; border-left: 1px solid #f1f5f9;">
+							<div style="background: #eef2ff; border: 1.5px dashed #a5b4fc; border-radius: 8px; padding: 16px 10px; margin-bottom: 8px;">
+								<div style="font-size: 24px; margin-bottom: 6px;">🎟️</div>
+								<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{p1_code}.png" title="Click to download Gate Pass Card" style="text-decoration: none; display: inline-block; background: #4f46e5; color: #ffffff; padding: 9px 15px; border-radius: 6px; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2); white-space: nowrap;">
+									📥 Download QR Pass
+								</a>
+							</div>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 4px; text-transform: uppercase;">SCAN AT ENTRY</div>
 						</td>
 					</tr>
 				</table>
@@ -310,12 +312,14 @@ def build_visitor_confirmation_html(data):
 							<div style="font-size: 12px; color: #475569; margin-bottom: 5px;">Venue: <strong>{event_venue}</strong></div>
 							<div style="font-size: 12px; color: #475569;">Dates: <strong>{event_dates}</strong></div>
 						</td>
-						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 12px;">
-							<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Visitor Pass Card" style="text-decoration: none; display: inline-block;">
-								<img src="{qr_url}" alt="Visitor Pass QR" width="120" height="120" style="display: block; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; padding: 4px;" />
-								<span style="font-size: 10px; color: #b91c1c; font-weight: 600; display: block; margin-top: 5px; text-decoration: underline;">📥 Click to Download Card</span>
-							</a>
-							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 5px; text-transform: uppercase;">SCAN AT ENTRY</div>
+						<td style="vertical-align: middle; text-align: center; width: 40%; border-left: 1px solid #f1f5f9; padding-left: 16px;">
+							<div style="background: #fff5f5; border: 1.5px dashed #fca5a5; border-radius: 8px; padding: 16px 10px; margin-bottom: 8px;">
+								<div style="font-size: 24px; margin-bottom: 6px;">🎟️</div>
+								<a href="{download_qr_url}" target="_blank" download="ConnectFest_Pass_QR_{pass_code}.png" title="Click to download Visitor Pass Card" style="text-decoration: none; display: inline-block; background: #b91c1c; color: #ffffff; padding: 9px 15px; border-radius: 6px; font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px; box-shadow: 0 2px 4px rgba(185, 28, 28, 0.2); white-space: nowrap;">
+									📥 Download QR Pass
+								</a>
+							</div>
+							<div style="font-size: 8.5px; font-weight: 800; color: #64748b; letter-spacing: 1px; margin-top: 4px; text-transform: uppercase;">SCAN AT ENTRY</div>
 						</td>
 					</tr>
 				</table>
