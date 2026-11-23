@@ -356,49 +356,7 @@ def check_admin_permission(resource_name="this administrative resource", **kwarg
 				"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
 			}
 
-	# 3. Fallback resolution for cross-origin SPA requests where cookies/headers might be omitted
-	# Check Redis active admin session cache
-	try:
-		cached_admin = frappe.cache().get("connectfest:active_admin_session")
-		if isinstance(cached_admin, bytes):
-			cached_admin = cached_admin.decode("utf-8")
-		if cached_admin and cached_admin != "Guest" and is_admin_user(cached_admin):
-			frappe.set_user(cached_admin)
-			return None
-	except Exception:
-		pass
-
-	# Check tabSessions for active Administrator session
-	try:
-		active_admin = frappe.db.sql("""
-			SELECT user, sid FROM `tabSessions`
-			WHERE status = 'Active' AND user IN ('Administrator', 'admin@example.com')
-			ORDER BY lastupdate DESC LIMIT 1
-		""", as_dict=True)
-		if active_admin and active_admin[0].get("user"):
-			admin_usr = active_admin[0]["user"]
-			if is_admin_user(admin_usr):
-				frappe.set_user(admin_usr)
-				return None
-	except Exception:
-		pass
-
-	# Check tabSessions for any recently active user with Admin privileges
-	try:
-		recent_sessions = frappe.db.sql("""
-			SELECT user, sid FROM `tabSessions`
-			WHERE status = 'Active' AND user NOT IN ('Guest')
-			ORDER BY lastupdate DESC LIMIT 10
-		""", as_dict=True)
-		for s in (recent_sessions or []):
-			u = s.get("user")
-			if u and is_admin_user(u):
-				frappe.set_user(u)
-				return None
-	except Exception:
-		pass
-
-	# 4. If logged in as non-admin attendee (e.g. attendee session active), return 403 Forbidden
+	# 3. If logged in as non-admin attendee (e.g. attendee session active), return 403 Forbidden
 	if sess_user and sess_user != "Guest":
 		frappe.local.response["http_status_code"] = 403
 		return {
@@ -406,7 +364,7 @@ def check_admin_permission(resource_name="this administrative resource", **kwarg
 			"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
 		}
 
-	# 5. If still Guest or not authorized
+	# 4. If still Guest or not authorized
 	frappe.local.response["http_status_code"] = 401
 	return {
 		"status": "unauthorized",
@@ -416,44 +374,71 @@ def check_admin_permission(resource_name="this administrative resource", **kwarg
 	}
 
 
-def logout():
+def logout(**kwargs):
 	"""
 	Logs out the current session user and clears authentication cookies.
 	"""
-	user = getattr(frappe.session, "user", "Guest")
+	data = extract_request_data(kwargs) if hasattr(frappe, "local") else {}
+	sess_user = getattr(frappe.session, "user", "Guest")
+
+	req_sid = (
+		data.get("sid")
+		or data.get("token")
+		or (frappe.local.form_dict.get("sid") if hasattr(frappe.local, "form_dict") else None)
+	)
+	if not req_sid and hasattr(frappe, "request") and frappe.request:
+		req_sid = (
+			frappe.get_request_header("sid")
+			or frappe.get_request_header("X-Frappe-Session-Id")
+			or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") else None)
+		)
+		if not req_sid:
+			auth_hdr = frappe.get_request_header("Authorization", "")
+			if auth_hdr.startswith("Bearer "):
+				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+
+	target_user = sess_user if (sess_user and sess_user != "Guest") else None
+
+	try:
+		if req_sid:
+			res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
+			if res and res[0][0] and res[0][0] != "Guest":
+				target_user = res[0][0]
+			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE sid = %s", (req_sid,))
+			try:
+				frappe.cache().hdel("session", req_sid)
+			except Exception:
+				pass
+	except Exception:
+		pass
+
 	try:
 		frappe.local.login_manager.logout()
 	except Exception:
 		pass
+
 	try:
-		# Expire active sessions in tabSessions for this user so fallback does not re-authenticate
-		target_user = user if (user and user != "Guest") else None
-		if not target_user:
-			recent = frappe.db.sql("SELECT user FROM `tabSessions` WHERE status = 'Active' ORDER BY lastupdate DESC LIMIT 1", as_dict=True)
-			if recent:
-				target_user = recent[0]["user"]
-		if target_user:
+		if target_user and target_user != "Guest":
 			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE user = %s", (target_user,))
-		# Always expire Administrator session on logout
-		frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE user IN ('Administrator', 'admin@example.com')")
-		frappe.db.commit()
+			frappe.db.commit()
 	except Exception:
 		pass
-	try:
-		frappe.cache().delete("connectfest:active_admin_session")
-	except Exception:
-		pass
+
 	if hasattr(frappe.local, "cookie_manager"):
 		try:
 			frappe.local.cookie_manager.delete_cookie("sid")
 			frappe.local.cookie_manager.delete_cookie("user_id")
 			frappe.local.cookie_manager.delete_cookie("system_user")
+			frappe.local.cookie_manager.delete_cookie("full_name")
 		except Exception:
 			pass
+
+	frappe.set_user("Guest")
+	logged_out = target_user or "Guest"
 	return {
 		"status": "success",
-		"message": f"Successfully logged out {user}",
-		"logged_out_user": user,
+		"message": f"Successfully logged out {logged_out}",
+		"logged_out_user": logged_out,
 	}
 
 
@@ -500,18 +485,6 @@ def get_authenticated_user(data=None, **kwargs):
 					return user_from_sid
 		except Exception:
 			pass
-
-	# Fallback: check recent active attendee session from tabSessions
-	try:
-		res = frappe.db.sql("""
-			SELECT user FROM `tabSessions`
-			WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
-			ORDER BY lastupdate DESC LIMIT 1
-		""", as_dict=True)
-		if res and res[0].get("user"):
-			return res[0]["user"]
-	except Exception:
-		pass
 
 	return None
 
@@ -565,45 +538,6 @@ def get_current_user_profile(**kwargs):
 			if user_from_sid and user_from_sid != "Guest":
 				sess_user = user_from_sid
 				frappe.set_user(user_from_sid)
-
-		# If still Guest, check if mobile_no or email has an active session from recent OTP login
-		if not sess_user or sess_user == "Guest":
-			candidate_email = (data.get("email") or data.get("user_email") or "").strip().lower()
-			candidate_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
-			if not candidate_email and candidate_mob:
-				candidate_email = (
-					frappe.db.get_value("ConnectFest Registration", {"mobile_no": candidate_mob}, "email")
-					or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": candidate_mob}, "email")
-					or frappe.db.get_value("User", {"mobile_no": candidate_mob}, "name")
-					or frappe.db.get_value("User", {"phone": candidate_mob}, "name")
-				)
-			if not candidate_email:
-				try:
-					active_user = frappe.db.sql("""
-						SELECT user FROM `tabSessions`
-						WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
-						ORDER BY lastupdate DESC LIMIT 1
-					""", as_dict=True)
-					if active_user and active_user[0].get("user"):
-						candidate_email = active_user[0]["user"]
-				except Exception:
-					pass
-
-			if candidate_email:
-				candidate_email = candidate_email.strip().lower()
-				try:
-					res = frappe.db.sql(
-						"SELECT user FROM `tabSessions` WHERE user = %s AND status = 'Active' ORDER BY lastupdate DESC LIMIT 1",
-						(candidate_email,)
-					)
-					if res and res[0][0]:
-						sess_user = res[0][0]
-						frappe.set_user(sess_user)
-					elif frappe.db.exists("User", candidate_email):
-						sess_user = candidate_email
-						frappe.set_user(sess_user)
-				except Exception:
-					pass
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401

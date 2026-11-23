@@ -587,7 +587,7 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 @frappe.whitelist(allow_guest=True)
 def logout(**kwargs):
 	"""Logs out the current session user and clears authentication cookies."""
-	return _logout()
+	return _logout(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

@@ -548,17 +548,6 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 			stall_holder_email = frappe.db.get_value("ConnectFest Stall", stall_num, "booked_by_email")
 			if stall_holder_email:
 				candidate_email = stall_holder_email
-		if not candidate_email:
-			try:
-				active_sessions = frappe.db.sql("""
-					SELECT user FROM `tabSessions`
-					WHERE status = 'Active' AND user NOT IN ('Guest', 'Administrator')
-					ORDER BY lastupdate DESC LIMIT 1
-				""", as_dict=True)
-				if active_sessions and active_sessions[0].get("user"):
-					candidate_email = active_sessions[0]["user"]
-			except Exception:
-				pass
 
 		if candidate_email:
 			sess_user = candidate_email
