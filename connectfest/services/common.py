@@ -330,15 +330,22 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 					"status": "error",
 					"message": str(ve).replace("<br>", " ").strip() or "Validation error occurred.",
 				}
-			except Exception:
+			except Exception as e:
+				err_str = str(e).strip() or type(e).__name__
+				tb = frappe.get_traceback()
 				try:
 					frappe.db.rollback()
 				except Exception:
 					pass
-				frappe.log_error(title=title, message=frappe.get_traceback())
+				try:
+					frappe.log_error(title=title, message=tb)
+					frappe.db.commit()
+				except Exception:
+					pass
 				return {
 					"status": "error",
-					"message": "Something went wrong. Please try again or contact event support.",
+					"message": f"{title}: {err_str}",
+					"error": err_str,
 				}
 
 		return wrapper
@@ -359,15 +366,22 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 					"status": "error",
 					"message": str(ve).replace("<br>", " ").strip() or "Validation error occurred.",
 				}
-			except Exception:
+			except Exception as e:
+				err_str = str(e).strip() or type(e).__name__
+				tb = frappe.get_traceback()
 				try:
 					frappe.db.rollback()
 				except Exception:
 					pass
-				frappe.log_error(title=title, message=frappe.get_traceback())
+				try:
+					frappe.log_error(title=title, message=tb)
+					frappe.db.commit()
+				except Exception:
+					pass
 				return {
 					"status": "error",
-					"message": "Something went wrong. Please try again or contact event support.",
+					"message": f"{title}: {err_str}",
+					"error": err_str,
 				}
 
 		return wrapper

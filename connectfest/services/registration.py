@@ -1441,6 +1441,13 @@ def register_visitor(**kwargs):
 		"checked_in": 0,
 	}
 
+	if "company_name" in record:
+		try:
+			if not frappe.db.has_column("ConnectFest Visitor Registration", "company_name"):
+				record.pop("company_name", None)
+		except Exception:
+			pass
+
 	try:
 		doc = frappe.get_doc({"doctype": "ConnectFest Visitor Registration", **record})
 		doc.flags.ignore_permissions = True
@@ -1502,8 +1509,18 @@ def register_visitor(**kwargs):
 			"pass_info": pass_info,
 		}
 	except Exception as e:
-		frappe.log_error(title="ConnectFest Visitor Insert Error", message=frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		err_msg = str(e).strip() or type(e).__name__
+		tb = frappe.get_traceback()
+		try:
+			frappe.log_error(title="ConnectFest Visitor Registration Error", message=tb)
+			frappe.db.commit()
+		except Exception:
+			pass
+		return {
+			"status": "error",
+			"message": f"Visitor registration failed: {err_msg}",
+			"error": err_msg,
+		}
 	finally:
 		if has_lock:
 			try:
