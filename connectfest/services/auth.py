@@ -592,8 +592,10 @@ def get_current_user_profile(**kwargs):
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
 
 	# Fetch visitor pass details (Visitor)
-	visitors_raw = frappe.db.sql("""
-		SELECT name, registration_id, full_name, company_name, visitor_image, email, mobile_no, which_day, pass_code,
+	has_pass_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
+	pass_col_sql = ", visitor_image_pass" if has_pass_col else ""
+	visitors_raw = frappe.db.sql(f"""
+		SELECT name, registration_id, full_name, company_name, visitor_image {pass_col_sql}, email, mobile_no, which_day, pass_code,
 		       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
@@ -844,28 +846,31 @@ def get_current_user_profile(**kwargs):
 
 	visitor_passes = []
 	for v in visitors_raw:
-		v_img = v.get("visitor_image") or ""
-		if not v_img or not v_img.startswith("/files/visitor_badges/"):
+		raw_vis_img = v.get("visitor_image") or ""
+		raw_pass_img = v.get("visitor_image_pass") or ""
+		if not raw_pass_img:
 			try:
 				from connectfest.services.visitor_badge import generate_visitor_badge_image
 				generated_img = generate_visitor_badge_image(v)
 				if generated_img:
-					v_img = generated_img
-					v["visitor_image"] = v_img
-					frappe.db.set_value("ConnectFest Visitor Registration", v.get("name"), "visitor_image", v_img)
-					frappe.db.commit()
+					raw_pass_img = generated_img
+					v["visitor_image_pass"] = raw_pass_img
+					if frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
+						frappe.db.set_value("ConnectFest Visitor Registration", v.get("name"), "visitor_image_pass", raw_pass_img)
+						frappe.db.commit()
 			except Exception:
 				pass
 
 		vp_code = v.pass_code or v.registration_id
 		v_mod = v.get("modified")
 		mod_ts = int(v_mod.timestamp()) if (v_mod and hasattr(v_mod, "timestamp")) else int(now_datetime().timestamp())
-		pass_img_url = f"{format_full_url(v_img)}?v={mod_ts}"
+		pass_img_url = f"{format_full_url(raw_pass_img or raw_vis_img)}?v={mod_ts}"
 		visitor_passes.append({
 			"registration_id": v.registration_id,
 			"full_name": (v.full_name if (v.get("full_name") and "@" not in v.get("full_name")) else user_full_name),
 			"company_name": v.get("company_name") or "",
 			"pass_code": vp_code,
+			"visitor_image": format_full_url(raw_vis_img) if raw_vis_img else "",
 			"visitor_pass_url": pass_img_url,
 			"which_day": v.which_day,
 			"area_of_interest": v.get("area_of_interest") or "",
@@ -967,9 +972,6 @@ def get_current_user_profile(**kwargs):
 		"venue": "Chennai Trade Centre, Nandambakkam",
 		"dates": "20 & 21 Feb 2027",
 	}
-
-	if visitor_passes:
-		res["visitor_pass_url"] = visitor_passes[0]["visitor_pass_url"]
 
 	if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
 		frappe.local.response["http_status_code"] = 200

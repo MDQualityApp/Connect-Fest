@@ -1147,7 +1147,16 @@ def register_visitor(**kwargs):
 				or ""
 			)
 
-	raw_image = (data.get("visitor_image") or data.get("image") or data.get("photo") or data.get("visitor_photo") or data.get("avatar") or "").strip()
+	raw_image = (
+		data.get("visitor_image")
+		or data.get("image")
+		or data.get("photo")
+		or data.get("visitor_photo")
+		or data.get("avatar")
+		or data.get("company_logo")
+		or data.get("logo")
+		or ""
+	).strip()
 	visitor_image = save_image_from_base64_or_url(raw_image, file_name_prefix=f"vis_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_image else ""
 	company_name = safe_str(data.get("company_name") or data.get("company") or data.get("company_title") or "").strip()
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
@@ -1364,6 +1373,7 @@ def register_visitor(**kwargs):
 		"full_name": full_name,
 		"company_name": company_name,
 		"visitor_image": visitor_image,
+		"visitor_image_pass": "",
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
@@ -1383,12 +1393,13 @@ def register_visitor(**kwargs):
 	}
 
 	# Dynamically generate official Visitor Badge Pass Image
+	visitor_image_pass = ""
 	try:
 		from connectfest.services.visitor_badge import generate_visitor_badge_image
 		badge_img_url = generate_visitor_badge_image(record)
 		if badge_img_url:
-			visitor_image = badge_img_url
-			record["visitor_image"] = visitor_image
+			visitor_image_pass = badge_img_url
+			record["visitor_image_pass"] = visitor_image_pass
 	except Exception as e:
 		try:
 			frappe.logger("connectfest").warning(f"[Visitor Badge Generation Warning] {str(e)}")
@@ -1414,7 +1425,9 @@ def register_visitor(**kwargs):
 		"pass_title": "Visitor Gate Pass",
 		"full_name": full_name,
 		"company_name": company_name,
-		"visitor_pass_url": f"{format_full_url(visitor_image)}?v={int(now_datetime().timestamp())}",
+		"visitor_image": format_full_url(visitor_image) if visitor_image else "",
+		"visitor_image_pass": format_full_url(visitor_image_pass) if visitor_image_pass else "",
+		"visitor_pass_url": f"{format_full_url(visitor_image_pass or visitor_image)}?v={int(now_datetime().timestamp())}",
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
@@ -1434,6 +1447,13 @@ def register_visitor(**kwargs):
 		try:
 			if not frappe.db.has_column("ConnectFest Visitor Registration", "company_name"):
 				record.pop("company_name", None)
+		except Exception:
+			pass
+
+	if "visitor_image_pass" in record:
+		try:
+			if not frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
+				record.pop("visitor_image_pass", None)
 		except Exception:
 			pass
 

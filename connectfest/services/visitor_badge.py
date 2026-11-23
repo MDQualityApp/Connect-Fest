@@ -4,6 +4,7 @@ import io
 import base64
 import urllib.parse
 import urllib.request
+import ssl
 import frappe
 from frappe.utils import now_datetime, cint, flt
 from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url
@@ -28,6 +29,78 @@ def _load_image_b64(filename):
 			ext = "png" if filename.lower().endswith(".png") else "jpeg"
 			return f"data:image/{ext};base64,{base64.b64encode(f.read()).decode('utf-8')}"
 	return ""
+
+
+def _load_badge_image(img_input):
+	"""
+	Loads a PIL Image from:
+	- Local Frappe public/files path (e.g. /files/xyz.png)
+	- Full URL (e.g. http://localhost:8080/files/xyz.png or https://api.connectfesttn.in/files/xyz.png)
+	- Base64 data URI (data:image/...;base64,...)
+	- Direct filesystem path
+	Returns a PIL Image in RGBA mode, or None if invalid.
+	"""
+	from PIL import Image
+	if not img_input or not isinstance(img_input, str):
+		return None
+	val = img_input.strip()
+	if not val:
+		return None
+
+	# Case 1: Base64 data URI
+	if val.startswith("data:image/") and ";base64," in val:
+		try:
+			b64_data = val.split(";base64,")[1]
+			return Image.open(io.BytesIO(base64.b64decode(b64_data))).convert("RGBA")
+		except Exception:
+			pass
+
+	# Case 2: Extract /files/ path from URL or relative path
+	parsed = urllib.parse.urlparse(val)
+	path = parsed.path if parsed.scheme else val
+
+	if "/files/" in path:
+		fname = path.split("/files/")[-1].lstrip("/")
+		# Avoid loading already generated visitor badges as input logo!
+		if fname.startswith("visitor_badges/") or fname.startswith("ConnectFest_Visitor_"):
+			return None
+		sites_path = getattr(frappe.local, "sites_path", None) or "sites"
+		current_site = getattr(frappe.local, "site", None) or "connectfest.localhost"
+		candidates = [
+			frappe.get_site_path("public", "files", fname) if hasattr(frappe, "get_site_path") else "",
+			os.path.join(sites_path, current_site, "public", "files", fname),
+			os.path.join(sites_path, "connectfest", "public", "files", fname),
+			os.path.join(sites_path, "connectfest.localhost", "public", "files", fname),
+			os.path.join("sites", "connectfest", "public", "files", fname),
+			os.path.join("sites", "connectfest.localhost", "public", "files", fname),
+		]
+		for cand in candidates:
+			if cand and os.path.isfile(cand):
+				try:
+					return Image.open(cand).convert("RGBA")
+				except Exception:
+					pass
+
+	# Case 3: Direct local file
+	if os.path.isfile(val):
+		try:
+			return Image.open(val).convert("RGBA")
+		except Exception:
+			pass
+
+	# Case 4: Remote HTTP/HTTPS URL
+	if val.startswith("http://") or val.startswith("https://"):
+		try:
+			ctx = ssl.create_default_context()
+			ctx.check_hostname = False
+			ctx.verify_mode = ssl.CERT_NONE
+			req = urllib.request.Request(val, headers={"User-Agent": "ConnectFest/2027"})
+			with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+				return Image.open(io.BytesIO(resp.read())).convert("RGBA")
+		except Exception:
+			pass
+
+	return None
 
 
 CONNECTFEST_LOGO_B64 = _load_image_b64("connectfest_logo.png")
@@ -61,8 +134,11 @@ def get_visitor_badge_data(pass_code=None, registration_id=None, mobile_no=None,
 		return None
 
 	where_clause = " OR ".join(conds)
+	has_pass_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
+	pass_col_sql = ", visitor_image_pass" if has_pass_col else ""
 	records = frappe.db.sql(f"""
-		SELECT name, registration_id, full_name, company_name, visitor_image, email, mobile_no,
+		SELECT name, registration_id, full_name, company_name, visitor_image
+		       {pass_col_sql}, email, mobile_no,
 		       which_day, pass_code, qr_payload, status, checked_in, checked_in_at,
 		       area_of_interest, creation
 		FROM `tabConnectFest Visitor Registration`
@@ -456,16 +532,18 @@ def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, emai
 	pcode = rec.get("pass_code") or rec.get("registration_id")
 	access_text = "VISITOR - BOTH DAYS" if (not rec.get("which_day") or str(rec.get("which_day")).lower() == "both days") else f"VISITOR - {str(rec.get('which_day')).upper()}"
 
-	# If badge pass image not generated yet, generate and save it
-	vis_img = rec.get("visitor_image") or ""
-	if not vis_img or not vis_img.startswith("/files/visitor_badges/"):
+	# If badge pass image not generated yet, generate and save it into visitor_image_pass!
+	user_uploaded_img = rec.get("visitor_image") or ""
+	pass_img = rec.get("visitor_image_pass") or ""
+	if not pass_img:
 		try:
 			generated_img = generate_visitor_badge_image(rec)
 			if generated_img:
-				vis_img = generated_img
-				rec["visitor_image"] = vis_img
-				frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image", vis_img)
-				frappe.db.commit()
+				pass_img = generated_img
+				rec["visitor_image_pass"] = pass_img
+				if frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
+					frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image_pass", pass_img)
+					frappe.db.commit()
 		except Exception:
 			pass
 
@@ -476,9 +554,10 @@ def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, emai
 		"pass_title": "Visitor Gate Pass",
 		"full_name": rec.get("full_name"),
 		"company_name": rec.get("company_name") or "",
-		"visitor_pass_url": format_full_url(vis_img),
-		"image": format_full_url(vis_img),
-		"visitor_image": format_full_url(vis_img),
+		"visitor_image": format_full_url(user_uploaded_img) if user_uploaded_img else "",
+		"visitor_image_pass": format_full_url(pass_img) if pass_img else "",
+		"visitor_pass_url": format_full_url(pass_img or user_uploaded_img),
+		"image": format_full_url(pass_img or user_uploaded_img),
 		"which_day": rec.get("which_day") or "Both days",
 		"access": access_text,
 		"email": rec.get("email"),
@@ -567,6 +646,55 @@ def generate_visitor_badge_image(data):
 	from PIL import ImageFilter
 	im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=140, threshold=2))
 	draw = ImageDraw.Draw(im)
+
+	# 0. Overlay visitor's uploaded image (photo / logo) over the goat illustration
+	user_img_source = (
+		get_val("visitor_image")
+		or get_val("image")
+		or get_val("photo")
+		or get_val("avatar")
+		or get_val("user_image")
+		or get_val("company_logo")
+		or get_val("logo")
+		or ""
+	)
+	if user_img_source and ("visitor_badges" in str(user_img_source) or "ConnectFest_Visitor_" in str(user_img_source)):
+		user_img_source = ""
+
+	reg_id_val = get_val("registration_id") or get_val("name") or get_val("pass_code")
+	if not user_img_source and reg_id_val and hasattr(frappe, "db") and frappe.db:
+		try:
+			cand_db = (
+				frappe.db.get_value("ConnectFest Visitor Registration", {"name": reg_id_val}, "visitor_image")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id_val}, "visitor_image")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"pass_code": reg_id_val}, "visitor_image")
+				or ""
+			)
+			if cand_db and "visitor_badges" not in str(cand_db) and "ConnectFest_Visitor_" not in str(cand_db):
+				user_img_source = cand_db
+		except Exception:
+			pass
+
+	user_logo_im = _load_badge_image(user_img_source) if user_img_source else None
+	if user_logo_im:
+		# Draw clean, rounded white showcase container over the goat illustration
+		x1, y1 = int(20 * SCALE), int(120 * SCALE)
+		x2, y2 = int(316 * SCALE), int(304 * SCALE)
+		radius = int(14 * SCALE)
+		draw.rounded_rectangle([x1, y1, x2, y2], radius=radius, fill=(255, 255, 255), outline=(226, 232, 240), width=int(1.5 * SCALE))
+
+		max_w = (x2 - x1) - int(16 * SCALE)
+		max_h = (y2 - y1) - int(16 * SCALE)
+		lw, lh = user_logo_im.size
+		ratio = min(max_w / lw, max_h / lh)
+		new_w, new_h = max(1, int(lw * ratio)), max(1, int(lh * ratio))
+		logo_resized = user_logo_im.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+		pos_x = x1 + ((x2 - x1) - new_w) // 2
+		pos_y = y1 + ((y2 - y1) - new_h) // 2
+
+		mask = logo_resized.split()[3] if logo_resized.mode == "RGBA" else None
+		im.paste(logo_resized, (pos_x, pos_y), mask=mask)
 
 	# 1. Yellow banner replacement with Visitor Name
 	yellow_color = (252, 196, 25)

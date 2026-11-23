@@ -10,6 +10,7 @@
   "full_name",
   "company_name",
   "visitor_image",
+  "visitor_image_pass",
   "column_break_contact",
   "email",
   "mobile_no",
@@ -51,6 +52,11 @@
    "fieldtype": "Attach Image",
    "in_list_view": 1,
    "label": "Visitor Image"
+  },
+  {
+   "fieldname": "visitor_image_pass",
+   "fieldtype": "Attach Image",
+   "label": "Visitor Image Pass"
   },
   {
    "fieldname": "column_break_contact",
