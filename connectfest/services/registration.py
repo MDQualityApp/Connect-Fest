@@ -110,7 +110,7 @@ def register_stall(**kwargs):
 	industry = safe_str(data.get("industry"))
 	segment = safe_str(data.get("segment"))
 
-	raw_category = safe_str(data.get("stall_category") or data.get("category") or data.get("tier")).capitalize()
+	raw_category = safe_str(data.get("stall_category") or data.get("category") or data.get("tier")).strip()
 	source_of_info = safe_str(data.get("source_of_info") or data.get("source"))
 	stall_number = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
 	sync_mode = parse_boolean(data.get("sync", 0))
@@ -317,10 +317,15 @@ def register_stall(**kwargs):
 				stall_category = stall_doc.tier
 				amount = dynamic_prices.get(stall_category, stall_doc.price)
 	elif raw_category:
-		if raw_category not in STALL_PRICING:
-			valid_tiers = ", ".join(STALL_PRICING.keys())
-			errors.append(f"Invalid stall_category '{raw_category}'. Allowed: {valid_tiers}")
+		from connectfest.services.pricing import ensure_tier_pricing_exists
 		stall_category = raw_category
+		for existing_t in STALL_PRICING.keys():
+			if existing_t.lower() == raw_category.lower():
+				stall_category = existing_t
+				break
+		if stall_category not in STALL_PRICING:
+			ensure_tier_pricing_exists(stall_category, price=0.0)
+			dynamic_prices = get_tier_pricing()
 		amount = dynamic_prices.get(stall_category, 0.0)
 	else:
 		# Initial registration without choosing a stall yet

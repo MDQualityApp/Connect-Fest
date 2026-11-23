@@ -195,11 +195,11 @@
   {
    "default": "",
    "fieldname": "stall_category",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Stall Category",
-   "options": "\nRegular\nStandard\nPremium\nSilver\nTitle Sponsor",
-   "reqd": 0
+   "reqd": 0,
+   "search_index": 1
   },
   {
    "fieldname": "amount",
