@@ -513,6 +513,10 @@ def after_request(response=None, request=None):
 		try:
 			response.headers["Access-Control-Allow-Origin"] = origin
 			response.headers["Access-Control-Allow-Credentials"] = "true"
+			response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+			response.headers["Access-Control-Allow-Headers"] = (
+				"Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, X-Admin-Token, x-requested-with"
+			)
 			response.headers["Vary"] = "Origin"
 		except Exception:
 			pass

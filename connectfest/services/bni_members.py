@@ -194,7 +194,7 @@ def admin_create_bni_member(**kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("BNI member management")
+		err = check_admin_permission("BNI member management", **kwargs)
 		if err:
 			return err
 
@@ -419,7 +419,7 @@ def admin_get_bni_members(**kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("BNI members view")
+		err = check_admin_permission("BNI members view", **kwargs)
 		if err:
 			return err
 
@@ -492,7 +492,7 @@ def admin_get_bni_member(mobile_no=None, **kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("BNI member details")
+		err = check_admin_permission("BNI member details", **kwargs)
 		if err:
 			return err
 
@@ -531,7 +531,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("BNI member update")
+		err = check_admin_permission("BNI member update", **kwargs)
 		if err:
 			return err
 
@@ -620,7 +620,7 @@ def admin_delete_bni_member(mobile_no=None, mobile_numbers=None, select_all=None
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("BNI member deletion")
+		err = check_admin_permission("BNI member deletion", **kwargs)
 		if err:
 			return err
 
@@ -870,7 +870,7 @@ def admin_toggle_crn_bni_restriction(enable=None, **kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("CRN BNI restriction controls")
+		err = check_admin_permission("CRN BNI restriction controls", **kwargs)
 		if err:
 			return err
 
@@ -946,7 +946,7 @@ def admin_set_non_bni_extra_percentage(percentage=None, **kwargs):
 	"""
 	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
 		from connectfest.services.auth import check_admin_permission
-		err = check_admin_permission("Non-BNI extra pricing settings")
+		err = check_admin_permission("Non-BNI extra pricing settings", **kwargs)
 		if err:
 			return err
 
