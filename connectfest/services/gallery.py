@@ -67,10 +67,12 @@ def _parse_images_payload(raw_images, file_prefix="gallery"):
 		caption = ""
 		order = idx
 
-		if isinstance(item, str):
+		if hasattr(item, "read") and hasattr(item, "filename"):
+			img_url = save_image_from_base64_or_url(item, file_name_prefix=f"{file_prefix}_{idx+1}")
+		elif isinstance(item, str):
 			img_url = save_image_from_base64_or_url(item, file_name_prefix=f"{file_prefix}_{idx+1}")
 		elif isinstance(item, dict):
-			raw_url = item.get("image") or item.get("image_url") or item.get("url") or ""
+			raw_url = item.get("image") or item.get("image_url") or item.get("url") or item.get("file") or item.get("gallery_image") or ""
 			caption = (item.get("caption") or item.get("title") or "").strip()
 			order = cint(item.get("display_order", idx))
 			img_url = save_image_from_base64_or_url(raw_url, file_name_prefix=f"{file_prefix}_{idx+1}")
@@ -383,9 +385,11 @@ def admin_create_gallery_item(title=None, images=None, description=None, categor
 
 	raw_imgs = images if images is not None else data.get("images")
 	if not raw_imgs:
-		single_img = data.get("image") or data.get("image_url") or data.get("file")
+		single_img = data.get("image") or data.get("image_url") or data.get("file") or data.get("gallery_image")
 		if single_img:
 			raw_imgs = [single_img]
+		elif getattr(frappe, "request", None) and getattr(frappe.request, "files", None) and len(frappe.request.files) > 0:
+			raw_imgs = list(frappe.request.files.values())
 
 	if not title_val:
 		frappe.local.response["http_status_code"] = 400
@@ -548,6 +552,12 @@ def admin_update_gallery_item(gallery_id=None, name=None, title=None, descriptio
 
 	# Update images if provided
 	raw_imgs = images if images is not None else data.get("images")
+	if not raw_imgs:
+		single_img = data.get("image") or data.get("image_url") or data.get("file") or data.get("gallery_image")
+		if single_img:
+			raw_imgs = [single_img]
+		elif getattr(frappe, "request", None) and getattr(frappe.request, "files", None) and len(frappe.request.files) > 0:
+			raw_imgs = list(frappe.request.files.values())
 	append_images = parse_boolean(data.get("append_images", 0))
 
 	if raw_imgs is not None:
@@ -807,20 +817,56 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 
 	uploaded_file = None
 	if getattr(frappe, "request", None) and getattr(frappe.request, "files", None):
-		uploaded_file = (
-			frappe.request.files.get("file")
-			or frappe.request.files.get("image")
-			or frappe.request.files.get("photo")
-			or frappe.request.files.get("visitor_image")
-			or frappe.request.files.get("filedata")
-		)
+		for k in (
+			"file", "image", "gallery_image", "gallery_file", "gallery_item", "gallery",
+			"photo", "visitor_image", "filedata", "attachment", "media",
+			"img", "images", "upload"
+		):
+			if k in frappe.request.files:
+				uploaded_file = frappe.request.files.get(k)
+				break
+		if not uploaded_file and len(frappe.request.files) > 0:
+			uploaded_file = next(iter(frappe.request.files.values()), None)
 
 	raw_bytes = None
 	if uploaded_file:
+		if hasattr(uploaded_file, "seek"):
+			try:
+				uploaded_file.seek(0)
+			except Exception:
+				pass
 		raw_bytes = uploaded_file.read()
 		fname_hint = getattr(uploaded_file, "filename", "") or fname_hint
 	else:
-		raw_content = file or filedata or data.get("file") or data.get("image") or data.get("photo") or data.get("visitor_image") or data.get("filedata")
+		raw_content = (
+			file
+			or filedata
+			or data.get("file")
+			or data.get("image")
+			or data.get("photo")
+			or data.get("gallery_image")
+			or data.get("gallery_file")
+			or data.get("gallery")
+			or data.get("visitor_image")
+			or data.get("filedata")
+			or data.get("image_url")
+			or data.get("url")
+			or data.get("images")
+			or data.get("upload")
+			or data.get("attachment")
+			or data.get("media")
+		)
+		if isinstance(raw_content, list) and raw_content:
+			raw_content = raw_content[0]
+		if isinstance(raw_content, dict):
+			raw_content = (
+				raw_content.get("image")
+				or raw_content.get("image_url")
+				or raw_content.get("url")
+				or raw_content.get("file")
+				or raw_content.get("gallery_image")
+				or ""
+			)
 		if not raw_content:
 			frappe.local.response["http_status_code"] = 400
 			return {
@@ -842,11 +888,16 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 				if raw_content.lower().startswith("javascript:") or "<script" in raw_content.lower():
 					frappe.local.response["http_status_code"] = 400
 					return {"status": "error", "message": "Malicious URL detected."}
+				full_u = format_full_url(raw_content)
 				return {
 					"status": "success",
-					"file_url": raw_content,
-					"full_url": frappe.utils.get_url(raw_content) if raw_content.startswith("/") else raw_content,
-					"filename": fname_hint or "file.jpg"
+					"message": "Image URL verified successfully",
+					"file_url": full_u,
+					"full_url": full_u,
+					"url": full_u,
+					"image_url": full_u,
+					"image": full_u,
+					"filename": fname_hint or raw_content.split("/")[-1] or "file.jpg"
 				}
 			try:
 				import base64
@@ -873,12 +924,19 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 	safe_fname = f"cf_{uuid.uuid4().hex[:12]}.{detected_ext}"
 	saved = save_file(safe_fname, raw_bytes, dt=None, dn=None, is_private=cint(is_private))
 	saved_url = format_full_url(saved.file_url)
+	try:
+		frappe.db.commit()
+	except Exception:
+		pass
+
 	return {
 		"status": "success",
 		"message": "File verified and uploaded securely",
 		"file_url": saved_url,
 		"full_url": saved_url,
 		"url": saved_url,
+		"image_url": saved_url,
+		"image": saved_url,
 		"filename": safe_fname,
 		"format": detected_ext.upper(),
 		"size_bytes": len(raw_bytes),

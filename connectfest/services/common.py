@@ -493,15 +493,21 @@ class ServeStaticFile(HTTPException):
 class OptionsPreflightResponse(HTTPException):
 	code = 204
 
+	def __init__(self, origin="*"):
+		self.origin = origin
+		super().__init__()
+
 	def get_response(self, environ=None):
 		from werkzeug.wrappers import Response
+		allowed_origin = self.origin if self.origin and self.origin != "*" else "*"
 		headers = {
-			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Origin": allowed_origin,
 			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
 			"Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, X-Admin-Token, x-requested-with",
 			"Access-Control-Allow-Credentials": "true",
 			"Access-Control-Max-Age": "86400",
 			"Content-Length": "0",
+			"Vary": "Origin",
 		}
 		return Response(status=204, headers=headers)
 
@@ -523,9 +529,10 @@ def before_request():
 		return
 
 	# Fast-path OPTIONS preflight on /files/, /assets/, or /api/
+	origin = (req.headers.get("Origin") if hasattr(req, "headers") else "") or ""
 	if req.method == "OPTIONS":
 		if req.path.startswith("/files/") or req.path.startswith("/assets/") or req.path.startswith("/api/"):
-			raise OptionsPreflightResponse()
+			raise OptionsPreflightResponse(origin=origin or "*")
 
 	# Static files handler for /files/
 	if req.path.startswith("/files/"):
