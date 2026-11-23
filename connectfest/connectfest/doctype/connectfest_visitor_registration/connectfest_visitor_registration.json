@@ -10,17 +10,18 @@
   "full_name",
   "company_name",
   "visitor_image",
-  "visitor_image_pass",
   "column_break_contact",
   "email",
   "mobile_no",
-  "status_section",
-  "status",
+  "which_day",
   "area_of_interest",
   "source_of_info",
-  "which_day",
+  "pass_section",
   "pass_code",
+  "status",
   "qr_payload",
+  "column_break_pass",
+  "visitor_image_pass",
   "checked_in",
   "checked_in_at",
   "checked_in_by"
@@ -54,11 +55,6 @@
    "label": "Visitor Image"
   },
   {
-   "fieldname": "visitor_image_pass",
-   "fieldtype": "Attach Image",
-   "label": "Visitor Image Pass"
-  },
-  {
    "fieldname": "column_break_contact",
    "fieldtype": "Column Break"
   },
@@ -80,17 +76,12 @@
    "search_index": 1
   },
   {
-   "fieldname": "status_section",
-   "fieldtype": "Section Break",
-   "label": "Status & Source"
-  },
-  {
-   "default": "Registered",
-   "fieldname": "status",
+   "default": "Both days",
+   "fieldname": "which_day",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Status",
-   "options": "Registered\nChecked In\nCancelled"
+   "label": "Which Day?",
+   "options": "Day 1\nDay 2\nBoth days"
   },
   {
    "fieldname": "area_of_interest",
@@ -106,12 +97,9 @@
    "options": "\nSocial Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther"
   },
   {
-   "default": "Both days",
-   "fieldname": "which_day",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Which Day?",
-   "options": "Day 1\nDay 2\nBoth days"
+   "fieldname": "pass_section",
+   "fieldtype": "Section Break",
+   "label": "Visitor Pass & Badge"
   },
   {
    "fieldname": "pass_code",
@@ -122,10 +110,28 @@
    "search_index": 1
   },
   {
+   "default": "Registered",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Registered\nChecked In\nCancelled"
+  },
+  {
    "fieldname": "qr_payload",
    "fieldtype": "Code",
    "label": "QR Payload",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_pass",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "visitor_image_pass",
+   "fieldtype": "Attach Image",
+   "label": "Visitor Pass Badge",
+   "in_list_view": 1
   },
   {
    "default": "0",

@@ -677,21 +677,36 @@ def generate_visitor_badge_image(data):
 
 	user_logo_im = _load_badge_image(user_img_source) if user_img_source else None
 	if user_logo_im:
-		# Draw clean, rounded white showcase container over the goat illustration
-		x1, y1 = int(20 * SCALE), int(120 * SCALE)
-		x2, y2 = int(316 * SCALE), int(304 * SCALE)
-		radius = int(14 * SCALE)
-		draw.rounded_rectangle([x1, y1, x2, y2], radius=radius, fill=(255, 255, 255), outline=(226, 232, 240), width=int(1.5 * SCALE))
+		# 0. Clean the white horizontal gap above the red card (y=127 to 149)
+		# Completely erases any mascot horns from protruding into the white gap
+		draw.rectangle([(int(22 * SCALE), int(127 * SCALE)), (int(314 * SCALE), int(149 * SCALE))], fill=(255, 255, 255))
 
-		max_w = (x2 - x1) - int(16 * SCALE)
-		max_h = (y2 - y1) - int(16 * SCALE)
+		# 1. Cleanly re-fill the red inner card container with the exact template card red (188, 14, 38)
+		# Matches template card geometry: x=20..316, y=150..306
+		card_x1, card_y1 = int(20 * SCALE), int(150 * SCALE)
+		card_x2, card_y2 = int(316 * SCALE), int(306 * SCALE)
+		card_radius = int(14 * SCALE)
+		draw.rounded_rectangle([card_x1, card_y1, card_x2, card_y2], radius=card_radius, fill=(188, 14, 38))
+
+		# 2. Inside the red card container, place a pristine white showcase card with generous padding
+		# No outer border outline so there is ZERO overlap over any template border
+		pad_x = int(16 * SCALE)
+		pad_y = int(8 * SCALE)
+		box_x1, box_y1 = card_x1 + pad_x, card_y1 + pad_y
+		box_x2, box_y2 = card_x2 - pad_x, card_y2 - pad_y
+		inner_radius = int(10 * SCALE)
+		draw.rounded_rectangle([box_x1, box_y1, box_x2, box_y2], radius=inner_radius, fill=(255, 255, 255))
+
+		# 3. High-definition placement of visitor photo / logo inside the showcase card
+		max_w = (box_x2 - box_x1) - int(20 * SCALE)
+		max_h = (box_y2 - box_y1) - int(14 * SCALE)
 		lw, lh = user_logo_im.size
 		ratio = min(max_w / lw, max_h / lh)
 		new_w, new_h = max(1, int(lw * ratio)), max(1, int(lh * ratio))
 		logo_resized = user_logo_im.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-		pos_x = x1 + ((x2 - x1) - new_w) // 2
-		pos_y = y1 + ((y2 - y1) - new_h) // 2
+		pos_x = box_x1 + ((box_x2 - box_x1) - new_w) // 2
+		pos_y = box_y1 + ((box_y2 - box_y1) - new_h) // 2
 
 		mask = logo_resized.split()[3] if logo_resized.mode == "RGBA" else None
 		im.paste(logo_resized, (pos_x, pos_y), mask=mask)
