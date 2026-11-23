@@ -3,7 +3,7 @@ import frappe
 import frappe.auth
 from frappe.auth import LoginManager
 from frappe.utils import flt, cint, now_datetime
-from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url
+from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url, log_and_return_error
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
 
@@ -1045,8 +1045,7 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			"dashboard": dash,
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Login Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		return log_and_return_error("ConnectFest Login Error", e)
 
 
 def admin_login(email=None, password=None, otp=None, **kwargs):
@@ -1283,8 +1282,7 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			"session_user": getattr(frappe.session, "user", usr),
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Admin Login Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong during admin authentication."}
+		return log_and_return_error("ConnectFest Admin Login Error", e)
 
 
 def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kwargs):
@@ -2531,8 +2529,7 @@ def update_profile(**kwargs):
 			"dashboard": refreshed_dashboard,
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Profile Update Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong while updating profile. Please try again."}
+		return log_and_return_error("ConnectFest Profile Update Error", e)
 
 
 edit_profile = update_profile

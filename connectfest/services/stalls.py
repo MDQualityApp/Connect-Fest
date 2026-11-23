@@ -12,6 +12,7 @@ from connectfest.services.common import (
 	generate_stall_id,
 	set_cached_record,
 	save_image_from_base64_or_url,
+	log_and_return_error,
 	STALL_LOCK_PREFIX,
 	STALL_CACHE_PREFIX,
 	VALID_SOURCES,
@@ -507,8 +508,7 @@ def get_stalls(**kwargs):
 
 		return res
 	except Exception as e:
-		frappe.log_error("ConnectFest Get Stalls Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		return log_and_return_error("ConnectFest Get Stalls Error", e)
 
 
 def hold_stall(stall_number=None, **kwargs):
@@ -802,8 +802,7 @@ def hold_stall(stall_number=None, **kwargs):
 			"hold_expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Hold Stall Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		return log_and_return_error("ConnectFest Hold Stall Error", e)
 
 
 def release_stall_hold(stall_number=None, hold_token=None, **kwargs):

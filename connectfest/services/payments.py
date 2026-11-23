@@ -621,6 +621,10 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 			order_id = order.get("id")
 		except Exception as e:
 			frappe.log_error("Razorpay Order Creation Error", str(e))
+			try:
+				frappe.db.commit()
+			except Exception:
+				pass
 			order_id = f"order_mock_{reg_id}_{int(time.time())}"
 	else:
 		order_id = f"order_mock_{reg_id}_{int(time.time())}"
@@ -766,6 +770,10 @@ def verify_razorpay_payment(**kwargs):
 			is_verified = True
 		except Exception as e:
 			frappe.log_error("Razorpay Signature Verification Failed", str(e))
+			try:
+				frappe.db.commit()
+			except Exception:
+				pass
 			is_verified = False
 	else:
 		expected_mock_sig = hmac.new(

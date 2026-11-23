@@ -21,6 +21,7 @@ from connectfest.services.common import (
 	save_image_from_base64_or_url,
 	format_full_url,
 	handle_api_errors,
+	log_and_return_error,
 )
 from connectfest.services.pricing import get_tier_pricing, STALL_PRICING
 from connectfest.services.auth import ensure_frappe_user
@@ -511,8 +512,7 @@ def register_stall(**kwargs):
 
 		return response_data
 	except Exception as e:
-		frappe.log_error(title="ConnectFest Stall Insert Error", message=frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		return log_and_return_error("ConnectFest Stall Insert Error", e)
 
 
 @handle_api_errors("ConnectFest Select Stall Error")
@@ -1456,6 +1456,10 @@ def register_visitor(**kwargs):
 			)
 		except Exception as notif_err:
 			frappe.log_error(title="ConnectFest Visitor Notification Error", message=frappe.get_traceback())
+			try:
+				frappe.db.commit()
+			except Exception:
+				pass
 
 		# Auto-login behavior:
 		# Exhibitors registering visitor passes MUST NOT be switched to visitor login!

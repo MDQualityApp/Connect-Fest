@@ -389,6 +389,33 @@ def handle_api_errors(title_or_fn="ConnectFest Error"):
 	return decorator
 
 
+def log_and_return_error(title="ConnectFest Error", error=None, custom_message=None):
+	"""
+	Safely rolls back current transaction, logs error to Frappe 'Error Log' DocType,
+	commits the Error Log doc immediately so it is permanently saved to the Error Log list,
+	and returns a clean, detailed error dictionary.
+	"""
+	err_str = str(error).strip() if error else ""
+	if not err_str and error:
+		err_str = type(error).__name__
+	tb = frappe.get_traceback() if hasattr(frappe, "get_traceback") else err_str
+	try:
+		frappe.db.rollback()
+	except Exception:
+		pass
+	try:
+		frappe.log_error(title=title, message=tb)
+		frappe.db.commit()
+	except Exception:
+		pass
+	msg = custom_message or (f"{title}: {err_str}" if err_str else f"{title}: An unexpected error occurred.")
+	return {
+		"status": "error",
+		"message": msg,
+		"error": err_str or msg,
+	}
+
+
 def get_base_url():
 	"""
 	Dynamically resolves the Frappe backend base URL for API endpoints and downloads:

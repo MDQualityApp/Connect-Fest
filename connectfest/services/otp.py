@@ -755,7 +755,8 @@ def send_email_otp(email=None, **kwargs):
 		frappe.local.response["http_status_code"] = 500
 		return {
 			"status": "error",
-			"message": "Something went wrong while sending verification email. Please try again or contact support.",
+			"message": "Unable to send verification email: No active outgoing Email Account is configured in Frappe (Desk > Email Account).",
+			"error": "Email Account missing",
 		}
 
 	# Dynamically resolve sender from configured default outgoing Email Account
@@ -805,7 +806,8 @@ def send_email_otp(email=None, **kwargs):
 					frappe.local.response["http_status_code"] = 500
 					return {
 						"status": "error",
-						"message": "Something went wrong while sending verification email. Please try again or contact support.",
+						"message": f"Unable to send verification email: {err_detail}",
+						"error": err_detail,
 					}
 		except Exception as send_err:
 			frappe.log_error(
@@ -816,7 +818,8 @@ def send_email_otp(email=None, **kwargs):
 			frappe.local.response["http_status_code"] = 500
 			return {
 				"status": "error",
-				"message": "Something went wrong while sending verification email. Please try again or contact support.",
+				"message": f"Failed to send verification email: {str(send_err)}",
+				"error": str(send_err),
 			}
 
 	# Log OTP in Frappe site log for observability

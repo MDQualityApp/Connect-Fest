@@ -12,6 +12,8 @@ from connectfest.services.common import (
 	get_cached_record,
 	safe_str,
 	format_full_url,
+	get_base_url,
+	log_and_return_error,
 )
 
 
@@ -1202,6 +1204,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		exhibitor_pass = exhibitor_passes[0] if exhibitor_passes else None
 
 		stall_booking = all_stall_bookings[0] if all_stall_bookings else None
+		base_url = get_base_url()
 
 		if visitors:
 			for v in visitors:
@@ -1274,8 +1277,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 
 		return res
 	except Exception as e:
-		frappe.log_error("ConnectFest Dashboard Error", frappe.get_traceback())
-		return {"status": "error", "message": "Something went wrong. Please try again or contact event support."}
+		return log_and_return_error("ConnectFest Dashboard Error", e)
 
 
 def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
