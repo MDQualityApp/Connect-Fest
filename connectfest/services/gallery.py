@@ -197,6 +197,11 @@ def get_gallery(**kwargs):
 	- Supports optional filtering by category, search term, and pagination.
 	- Redis cached for sub-millisecond public response time.
 	"""
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	category = (data.get("category") or "").strip()
 	search = (data.get("search") or data.get("query") or "").strip().lower()
@@ -322,6 +327,11 @@ def get_gallery_item(gallery_id=None, name=None, **kwargs):
 	"""
 	Public API to view a single gallery item and its images.
 	"""
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	docname = (gallery_id or name or data.get("gallery_id") or data.get("name") or data.get("id") or "").strip()
 
@@ -357,6 +367,11 @@ def admin_create_gallery_item(title=None, images=None, description=None, categor
 	if err:
 		return err
 
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	title_val = (title or data.get("title") or "").strip()
 	desc_val = (description or data.get("description") or "").strip()
@@ -445,6 +460,11 @@ def admin_get_gallery_items(**kwargs):
 	if err:
 		return err
 
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	category = (data.get("category") or "").strip()
 	search = (data.get("search") or data.get("query") or "").strip().lower()
@@ -520,6 +540,11 @@ def admin_update_gallery_item(gallery_id=None, name=None, title=None, descriptio
 	if err:
 		return err
 
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	docname = (gallery_id or name or data.get("gallery_id") or data.get("name") or data.get("id") or "").strip()
 
@@ -622,6 +647,11 @@ def admin_delete_gallery_item(gallery_id=None, name=None, gallery_ids=None, ids=
 	if err:
 		return err
 
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	raw_ids = gallery_ids or ids or data.get("gallery_ids") or data.get("ids") or data.get("items")
 	single_id = (gallery_id or name or data.get("gallery_id") or data.get("name") or data.get("id") or "").strip()
@@ -708,6 +738,11 @@ def admin_toggle_gallery_pin(gallery_id=None, name=None, gallery_ids=None, ids=N
 	if err:
 		return err
 
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	raw_ids = gallery_ids or ids or data.get("gallery_ids") or data.get("ids") or data.get("items")
 	single_id = (gallery_id or name or data.get("gallery_id") or data.get("name") or data.get("id") or "").strip()
@@ -812,6 +847,11 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 	- Path traversal via randomized UUID storage
 	- Denial of Service / Disk exhaustion (>10MB rejected)
 	"""
+	from connectfest.services.common import (
+		extract_request_data,
+		format_full_url,
+		detect_and_validate_file_type,
+	)
 	data = extract_request_data(kwargs)
 	fname_hint = (filename or data.get("filename") or "").strip()
 
@@ -923,7 +963,11 @@ def upload_file(file=None, filedata=None, filename=None, is_private=0, **kwargs)
 	from frappe.utils.file_manager import save_file
 	safe_fname = f"cf_{uuid.uuid4().hex[:12]}.{detected_ext}"
 	saved = save_file(safe_fname, raw_bytes, dt=None, dn=None, is_private=cint(is_private))
-	saved_url = format_full_url(saved.file_url)
+	try:
+		raw_file_url = getattr(saved, "file_url", None) or (saved.get("file_url") if isinstance(saved, dict) else str(saved))
+		saved_url = format_full_url(raw_file_url)
+	except Exception:
+		saved_url = getattr(saved, "file_url", str(saved))
 	try:
 		frappe.db.commit()
 	except Exception:
