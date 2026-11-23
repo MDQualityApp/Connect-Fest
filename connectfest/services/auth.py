@@ -1,3 +1,5 @@
+import json
+import secrets
 import urllib.parse
 import frappe
 import frappe.auth
@@ -6,6 +8,8 @@ from frappe.utils import flt, cint, now_datetime
 from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url, log_and_return_error
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
+TOKEN_CACHE_PREFIX = "connectfest:token:"
+TOKEN_EXPIRY_SECONDS = 30 * 86400  # 30 days
 
 
 def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
@@ -174,14 +178,19 @@ def is_admin_user(user=None):
 	u = user or getattr(frappe.session, "user", None)
 	if not u or u == "Guest":
 		return False
-	if str(u).strip().lower() in ["administrator", "admin@example.com"]:
+	clean_u = str(u).strip().lower()
+	if clean_u in ["administrator", "admin@example.com"]:
 		return True
-	if "@" in str(u):
-		resolved = frappe.db.get_value("User", {"email": str(u).strip().lower()}, "name")
-		if resolved:
-			u = resolved
-			if str(u).strip().lower() in ["administrator", "admin@example.com"]:
+	if "@" in clean_u:
+		admin_email = frappe.db.get_value("User", "Administrator", "email")
+		if admin_email and admin_email.strip().lower() == clean_u:
+			return True
+		user_names = frappe.db.get_values("User", {"email": clean_u}, "name", pluck=True) or [u]
+		for un in user_names:
+			roles = frappe.get_roles(un)
+			if "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles:
 				return True
+		return False
 	roles = frappe.get_roles(u)
 	return "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles
 
@@ -258,113 +267,493 @@ def check_scanner_status(email=None, **kwargs):
 	}
 
 
-def check_admin_permission(resource_name="this administrative resource", **kwargs):
+def get_token_expiry_days():
 	"""
-	Verifies that the current session belongs to an authenticated Administrator.
-	Supports:
-	1. Active Frappe session cookie (frappe.session.user)
-	2. Request headers: 'sid', 'X-Frappe-Session-Id', 'token', 'X-Admin-Token', 'Authorization: Bearer <sid>'
-	3. Request JSON payload, kwargs, or form dict: 'sid', 'token', 'admin_token'
-	4. Active Administrator session cache in Redis (connectfest:active_admin_session)
-	5. Active Administrator session in database (tabSessions)
-	If authorized Admin, sets session and returns None.
-	If unauthorized (Guest/not logged in), returns 401 Unauthorized.
-	If logged in user is non-admin, strictly returns 403 Forbidden.
+	Reads dynamic token expiry days from ConnectFest Settings.
+	Falls back to 30 days if not configured or invalid.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	if sess_user and sess_user != "Guest":
-		if is_admin_user(sess_user):
-			return None
+	try:
+		val = cint(frappe.db.get_single_value("ConnectFest Settings", "token_expiry_days"))
+		return val if val > 0 else 30
+	except Exception:
+		return 30
 
-	# 1. Check for explicit session ID (sid) or token in kwargs, headers, query params, or body
-	req_sid = None
 
-	# From kwargs
-	if kwargs and isinstance(kwargs, dict):
-		req_sid = kwargs.get("sid") or kwargs.get("token") or kwargs.get("admin_token")
+def generate_auth_token(user, role_type=None, expiry_days=None):
+	"""
+	Generates a cryptographically secure, high-entropy, subdomain-safe auth token.
+	Format: cftk_<random_hex_24> (53 chars, URL-safe, unguessable).
+	Reads dynamic expiry days from ConnectFest Settings if not explicitly passed.
+	Stores token in:
+	1. Redis: connectfest:token:{token} -> {"user": user, "role_type": role_type, "created_at": ...}
+	2. Redis Frappe session cache: frappe.cache().hset("session", token, ...)
+	3. MariaDB tabSessions: INSERT INTO tabSessions (sid, user, status, lastupdate, sessiondata)
+	4. If admin: connectfest:admin_session_sid:{token}
+	5. Tracks token in connectfest:user_tokens:{user} for comprehensive logout revocation.
+	Returns token string.
+	"""
+	clean_user = (user or "").strip()
+	if not clean_user or clean_user == "Guest":
+		return None
+	token = f"cftk_{secrets.token_hex(24)}"
+	if expiry_days is None or expiry_days <= 0:
+		expiry_days = get_token_expiry_days()
+	expiry_secs = int(expiry_days * 86400)
+	now_dt = frappe.utils.now()
 
-	# From form_dict
-	if not req_sid and hasattr(frappe, "local") and hasattr(frappe.local, "form_dict"):
-		req_sid = (
-			frappe.local.form_dict.get("sid")
+	# 1. Redis token mapping
+	cache = frappe.cache()
+	token_data = {
+		"user": clean_user,
+		"role_type": role_type or ("Administrator" if is_admin_user(clean_user) else "Attendee"),
+		"created_at": str(now_dt),
+	}
+	try:
+		cache.setex(f"{TOKEN_CACHE_PREFIX}{token}", expiry_secs, json.dumps(token_data))
+		cache.sadd(f"connectfest:user_tokens:{clean_user}", token)
+		cache.expire(f"connectfest:user_tokens:{clean_user}", expiry_secs)
+	except Exception:
+		pass
+
+	# 2. Redis Frappe session cache
+	try:
+		cache.hset("session", token, {
+			"user": clean_user,
+			"session_country": "",
+			"last_updated": str(now_dt),
+			"data": {"user": clean_user}
+		})
+	except Exception:
+		pass
+
+	# 3. MariaDB tabSessions (so all native Frappe SQL queries find the token as an Active session)
+	try:
+		frappe.db.sql("""
+			INSERT INTO `tabSessions` (sessiondata, user, lastupdate, sid, status)
+			VALUES (%s, %s, %s, %s, 'Active')
+			ON DUPLICATE KEY UPDATE status = 'Active', lastupdate = %s
+		""", (json.dumps({"user": clean_user}), clean_user, now_dt, token, now_dt))
+		frappe.db.commit()
+	except Exception:
+		pass
+
+	# 4. Redis admin session cache if admin
+	if role_type == "admin" or is_admin_user(clean_user):
+		try:
+			cache.setex(f"connectfest:admin_session_sid:{token}", expiry_secs, clean_user)
+			cache.setex("connectfest:active_admin_session", 28800, clean_user)
+		except Exception:
+			pass
+
+	# 5. Store in Frappe DocType 'ConnectFest Auth Token' for Frappe Desk visibility and management
+	try:
+		user_fn = (
+			frappe.db.get_value("ConnectFest Registration", {"email": clean_user}, "full_name")
+			or frappe.db.get_value("ConnectFest Visitor Registration", {"email": clean_user}, "full_name")
+			or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": clean_user}, "full_name")
+			or frappe.db.get_value("User", clean_user, "full_name")
+			or clean_user.split("@")[0].title()
+		)
+		exp_dt = frappe.utils.add_to_date(now_dt, seconds=expiry_secs)
+		token_doc = frappe.get_doc({
+			"doctype": "ConnectFest Auth Token",
+			"token": token,
+			"user": clean_user,
+			"registered_user": user_fn,
+			"role_type": role_type or ("Administrator" if is_admin_user(clean_user) else "Attendee"),
+			"status": "Active",
+			"expires_at": exp_dt,
+			"last_active_at": now_dt,
+		})
+		token_doc.flags.ignore_permissions = True
+		token_doc.insert()
+		frappe.db.commit()
+	except Exception as e:
+		frappe.log_error("ConnectFest Auth Token Save Error", str(e))
+
+	return token
+
+
+def extract_token_from_request(data=None, **kwargs):
+	"""
+	Extracts authentication token or session ID from all standard locations:
+	1. HTTP Header: X-Auth-Token (Primary)
+	2. HTTP Header: Authorization (Bearer <token>)
+	3. HTTP Header: X-Frappe-Session-Id, token, sid
+	4. Kwargs / Form Dict / Query Params: x_auth_token, x-auth-token, token
+	5. JSON Body: x_auth_token, x-auth-token, token
+	6. Cookie: sid, token (backward compatibility)
+	"""
+	token = None
+
+	# Check headers (X-Auth-Token prioritized)
+	if hasattr(frappe, "request") and frappe.request:
+		token = (
+			frappe.get_request_header("X-Auth-Token")
+			or frappe.get_request_header("x-auth-token")
+			or frappe.get_request_header("X-Admin-Token")
+		)
+		if not token:
+			auth_hdr = frappe.get_request_header("Authorization", "")
+			if auth_hdr:
+				parts = auth_hdr.strip().split(" ", 1)
+				if len(parts) == 2 and parts[0].lower() == "bearer":
+					token = parts[1].strip()
+				elif len(parts) == 1 and not parts[0].lower().startswith("basic"):
+					token = parts[0].strip()
+
+		if not token:
+			token = (
+				frappe.get_request_header("token")
+				or frappe.get_request_header("X-Frappe-Session-Id")
+				or frappe.get_request_header("sid")
+			)
+
+	# Check kwargs
+	if not token and kwargs:
+		token = (
+			kwargs.get("x_auth_token")
+			or kwargs.get("x-auth-token")
+			or kwargs.get("token")
+			or kwargs.get("auth_token")
+			or kwargs.get("access_token")
+			or kwargs.get("sid")
+			or kwargs.get("admin_token")
+		)
+
+	# Check form_dict
+	if not token and hasattr(frappe, "local") and hasattr(frappe.local, "form_dict") and frappe.local.form_dict:
+		token = (
+			frappe.local.form_dict.get("x_auth_token")
+			or frappe.local.form_dict.get("x-auth-token")
 			or frappe.local.form_dict.get("token")
+			or frappe.local.form_dict.get("auth_token")
+			or frappe.local.form_dict.get("access_token")
+			or frappe.local.form_dict.get("sid")
 			or frappe.local.form_dict.get("admin_token")
 		)
 
-	# From headers and cookies
-	if not req_sid and hasattr(frappe, "request") and frappe.request:
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or frappe.get_request_header("token")
-			or frappe.get_request_header("X-Admin-Token")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") else None)
-			or (frappe.request.cookies.get("token") if hasattr(frappe.request, "cookies") else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-
-	# From JSON body
-	if not req_sid:
+	# Check data dict or parse request JSON body
+	req_data = data
+	if not token and req_data is None:
 		try:
-			data = extract_request_data(kwargs)
-			if data and isinstance(data, dict):
-				req_sid = data.get("sid") or data.get("token") or data.get("admin_token")
+			req_data = extract_request_data(kwargs)
+		except Exception:
+			req_data = None
+
+	if not token and req_data and isinstance(req_data, dict):
+		token = (
+			req_data.get("x_auth_token")
+			or req_data.get("x-auth-token")
+			or req_data.get("token")
+			or req_data.get("auth_token")
+			or req_data.get("access_token")
+			or req_data.get("sid")
+			or req_data.get("admin_token")
+		)
+
+	# Check cookies (backward compatibility fallback)
+	if not token and hasattr(frappe, "request") and frappe.request and hasattr(frappe.request, "cookies"):
+		token = frappe.request.cookies.get("sid") or frappe.request.cookies.get("token")
+
+	if token:
+		token = str(token).strip()
+		if token in ("Guest", "None", "null", "undefined", ""):
+			return None
+		return token
+	return None
+
+
+def resolve_token_or_session(token_or_sid):
+	"""
+	Resolves a token or sid to an authenticated user string.
+	Checks:
+	1. Blacklist check: connectfest:revoked_token:{token}
+	2. MariaDB Expired check: sid = %s AND status = 'Expired'
+	3. Redis connectfest:token:{token}
+	4. Redis connectfest:admin_session_sid:{token}
+	5. Redis session hash: session:{token}
+	6. MariaDB tabSessions: sid = %s AND status = 'Active'
+	Verifies user is enabled.
+	Returns user email / ID or None.
+	"""
+	if not token_or_sid or token_or_sid in ("Guest", "None", "null", "undefined", ""):
+		return None
+
+	clean_tok = str(token_or_sid).strip()
+	cache = frappe.cache()
+
+	# 1. Immediate rejection if token was revoked
+	try:
+		if cache.get(f"connectfest:revoked_token:{clean_tok}"):
+			return None
+	except Exception:
+		pass
+
+	# 2. Immediate rejection if marked Expired in MariaDB tabSessions or Logged Out in ConnectFest Auth Token
+	if hasattr(frappe, "db") and frappe.db:
+		try:
+			is_expired = frappe.db.sql(
+				"SELECT 1 FROM `tabSessions` WHERE sid = %s AND status = 'Expired' LIMIT 1",
+				(clean_tok,),
+			)
+			if is_expired:
+				return None
+
+			if frappe.db.table_exists("ConnectFest Auth Token"):
+				cftk_status = frappe.db.get_value("ConnectFest Auth Token", {"token": clean_tok}, ["status", "expires_at"], as_dict=True)
+				if cftk_status:
+					if cftk_status.status in ("Logged Out", "Expired"):
+						return None
+					if cftk_status.expires_at and cftk_status.expires_at < frappe.utils.now_datetime():
+						frappe.db.set_value("ConnectFest Auth Token", {"token": clean_tok}, "status", "Expired")
+						return None
 		except Exception:
 			pass
 
-	# 2. If req_sid is provided, verify in DB tabSessions and Redis
-	if req_sid and req_sid != "Guest":
-		user_from_sid = None
+	resolved_user = None
+
+	# 3. Redis connectfest:token:{token}
+	try:
+		tok_val = cache.get(f"{TOKEN_CACHE_PREFIX}{clean_tok}")
+		if tok_val:
+			if isinstance(tok_val, bytes):
+				tok_val = tok_val.decode("utf-8")
+			if isinstance(tok_val, str) and tok_val.startswith("{"):
+				tok_dict = json.loads(tok_val)
+				resolved_user = tok_dict.get("user")
+			elif isinstance(tok_val, str):
+				resolved_user = tok_val
+	except Exception:
+		pass
+
+	# 4. Redis connectfest:admin_session_sid:{token}
+	if not resolved_user:
+		try:
+			admin_u = cache.get(f"connectfest:admin_session_sid:{clean_tok}")
+			if admin_u:
+				if isinstance(admin_u, bytes):
+					admin_u = admin_u.decode("utf-8")
+				resolved_user = str(admin_u).strip()
+		except Exception:
+			pass
+
+	# 5. Redis session hash
+	if not resolved_user:
+		try:
+			sess_obj = cache.hget("session", clean_tok)
+			if sess_obj and isinstance(sess_obj, dict):
+				resolved_user = sess_obj.get("user")
+		except Exception:
+			pass
+
+	# 6. MariaDB tabSessions
+	if not resolved_user and hasattr(frappe, "db") and frappe.db:
 		try:
 			res = frappe.db.sql(
 				"SELECT user FROM `tabSessions` WHERE sid = %s AND status = 'Active' LIMIT 1",
-				(req_sid,),
+				(clean_tok,),
 			)
 			if res and res[0][0]:
-				user_from_sid = res[0][0]
+				resolved_user = res[0][0]
 		except Exception:
 			pass
 
-		if not user_from_sid:
-			try:
-				session_cache = frappe.cache().hget("session", req_sid)
-				if session_cache and isinstance(session_cache, dict):
-					user_from_sid = session_cache.get("user")
-			except Exception:
-				pass
-
-		if not user_from_sid:
-			try:
-				cached_u = frappe.cache().get(f"connectfest:admin_session_sid:{req_sid}")
-				if isinstance(cached_u, bytes):
-					cached_u = cached_u.decode("utf-8")
-				if cached_u:
-					user_from_sid = cached_u
-			except Exception:
-				pass
-
-		if user_from_sid and user_from_sid != "Guest":
-			if is_admin_user(user_from_sid):
-				frappe.set_user(user_from_sid)
+	if resolved_user and resolved_user != "Guest":
+		resolved_user = str(resolved_user).strip()
+		# Verify user exists and is not disabled
+		if hasattr(frappe, "db") and frappe.db and frappe.db.exists("User", resolved_user):
+			enabled = cint(frappe.db.get_value("User", resolved_user, "enabled"))
+			if not enabled:
 				return None
-			frappe.local.response["http_status_code"] = 403
-			return {
-				"status": "forbidden",
-				"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
-			}
+		return resolved_user
 
-	# 3. If logged in as non-admin attendee (e.g. attendee session active), return 403 Forbidden
+	return None
+
+
+def authenticate_token_request(token_or_sid=None, data=None, **kwargs):
+	"""
+	Extracts and resolves token, and sets frappe.session.user and frappe.local.session.
+	Preserves frappe.local.form_dict across frappe.set_user().
+	Returns resolved user or None.
+	"""
+	tok = token_or_sid or extract_token_from_request(data=data, **kwargs)
+	if not tok:
+		return None
+
+	resolved_user = resolve_token_or_session(tok)
+	if resolved_user and resolved_user != "Guest":
+		orig_fd = getattr(frappe.local, "form_dict", None)
+		try:
+			frappe.set_user(resolved_user)
+			if hasattr(frappe, "session"):
+				frappe.session.user = resolved_user
+				frappe.session.sid = tok
+			if hasattr(frappe, "local") and hasattr(frappe.local, "session"):
+				frappe.local.session.user = resolved_user
+				frappe.local.session.sid = tok
+		finally:
+			if orig_fd is not None:
+				frappe.local.form_dict = orig_fd
+		return resolved_user
+	return None
+
+
+def validate_custom_auth_token():
+	"""
+	Frappe auth_hooks callback. Runs inside frappe.app.validate_auth().
+	Authenticates requests carrying Bearer token or X-Auth-Token headers.
+	Preserves frappe.local.form_dict across all session transitions so desk RPC calls
+	never lose their arguments.
+	"""
+	if not hasattr(frappe, "request") or not frappe.request:
+		return
+
+	# Only authenticate if explicit API token headers are present
+	tok = (
+		frappe.get_request_header("X-Auth-Token")
+		or frappe.get_request_header("x-auth-token")
+		or frappe.get_request_header("X-Admin-Token")
+	)
+	if not tok:
+		auth_hdr = frappe.get_request_header("Authorization", "")
+		if auth_hdr and auth_hdr.lower().startswith("bearer "):
+			tok = auth_hdr.split(" ", 1)[1].strip()
+
+	if not tok:
+		# No custom API token passed. Let Frappe handle native cookie/session authentication
+		return
+
+	orig_fd = getattr(frappe.local, "form_dict", None)
+	try:
+		resolved = resolve_token_or_session(tok)
+		if resolved and resolved != "Guest":
+			frappe.set_user(resolved)
+			if hasattr(frappe, "session"):
+				frappe.session.user = resolved
+				frappe.session.sid = tok
+			if hasattr(frappe, "local") and hasattr(frappe.local, "session"):
+				frappe.local.session.user = resolved
+				frappe.local.session.sid = tok
+		else:
+			# Explicit invalid or expired token passed on an API request!
+			frappe.set_user("Guest")
+			if hasattr(frappe, "session"):
+				frappe.session.user = "Guest"
+			if hasattr(frappe, "local") and hasattr(frappe.local, "session"):
+				frappe.local.session.user = "Guest"
+	finally:
+		if orig_fd is not None:
+			frappe.local.form_dict = orig_fd
+
+
+def revoke_auth_token(token_or_sid=None, user=None):
+	"""
+	Revokes an active token and clears it from Redis and MariaDB.
+	Also adds the token to a revoked blacklist to guarantee rejection.
+	"""
+	cache = frappe.cache()
+	revoked_tokens = set()
+
+	if token_or_sid and token_or_sid != "Guest":
+		clean_tok = str(token_or_sid).strip()
+		revoked_tokens.add(clean_tok)
+
+	if user and user != "Guest":
+		clean_u = str(user).strip()
+		# Retrieve all tokens associated with this user
+		try:
+			user_toks = cache.smembers(f"connectfest:user_tokens:{clean_u}")
+			if user_toks:
+				for ut in user_toks:
+					if isinstance(ut, bytes):
+						ut = ut.decode("utf-8")
+					if ut:
+						revoked_tokens.add(str(ut).strip())
+			cache.delete(f"connectfest:user_tokens:{clean_u}")
+		except Exception:
+			pass
+
+		# Expire all sessions in MariaDB for this user
+		try:
+			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE user = %s", (clean_u,))
+			if frappe.db.table_exists("ConnectFest Auth Token"):
+				frappe.db.sql("""
+					UPDATE `tabConnectFest Auth Token`
+					SET status = 'Logged Out', logged_out_at = NOW()
+					WHERE user = %s AND status = 'Active'
+				""", (clean_u,))
+			frappe.db.commit()
+		except Exception:
+			pass
+
+	# Revoke and blacklist each token
+	for tok in revoked_tokens:
+		if not tok or tok == "Guest":
+			continue
+		try:
+			cache.delete(f"{TOKEN_CACHE_PREFIX}{tok}")
+			cache.delete(f"connectfest:admin_session_sid:{tok}")
+			cache.hdel("session", tok)
+			# Blacklist token for 30 days so resolve_token_or_session immediately rejects it
+			cache.setex(f"connectfest:revoked_token:{tok}", 30 * 86400, "1")
+		except Exception:
+			pass
+		try:
+			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE sid = %s", (tok,))
+			if frappe.db.table_exists("ConnectFest Auth Token"):
+				frappe.db.sql("""
+					UPDATE `tabConnectFest Auth Token`
+					SET status = 'Logged Out', logged_out_at = NOW()
+					WHERE token = %s
+				""", (tok,))
+			frappe.db.commit()
+		except Exception:
+			pass
+
+	# Clear active admin session key if user was admin
+	if user and (is_admin_user(user) or str(user).lower() in ("administrator", "admin@example.com")):
+		try:
+			cache.delete("connectfest:active_admin_session")
+		except Exception:
+			pass
+
+
+def check_admin_permission(resource_name="this administrative resource", **kwargs):
+	"""
+	Verifies that the current session belongs to an authenticated Administrator.
+	Supports Bearer token, X-Auth-Token, token param, sid, or session cookie.
+	If authorized Admin, returns None.
+	If unauthorized (Guest/not logged in), returns 401 Unauthorized.
+	If logged in user is non-admin, strictly returns 403 Forbidden.
+	"""
+	data = extract_request_data(kwargs) if hasattr(frappe, "local") else {}
+	req_token = extract_token_from_request(data=data, **kwargs)
+	if req_token:
+		resolved = resolve_token_or_session(req_token)
+		if not resolved or resolved == "Guest":
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"is_logged_in": False,
+				"user": "Guest",
+				"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
+			}
+		sess_user = resolved
+	else:
+		sess_user = getattr(frappe.session, "user", None)
+		if not sess_user or sess_user == "Guest":
+			sess_user = authenticate_token_request(**kwargs)
+
 	if sess_user and sess_user != "Guest":
+		if is_admin_user(sess_user):
+			return None
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
 			"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
 		}
 
-	# 4. If still Guest or not authorized
 	frappe.local.response["http_status_code"] = 401
 	return {
 		"status": "unauthorized",
@@ -376,51 +765,44 @@ def check_admin_permission(resource_name="this administrative resource", **kwarg
 
 def logout(**kwargs):
 	"""
-	Logs out the current session user and clears authentication cookies.
+	Logs out the current session user, revokes token, and clears authentication cookies.
 	"""
 	data = extract_request_data(kwargs) if hasattr(frappe, "local") else {}
 	sess_user = getattr(frappe.session, "user", "Guest")
-
-	req_sid = (
-		data.get("sid")
-		or data.get("token")
-		or (frappe.local.form_dict.get("sid") if hasattr(frappe.local, "form_dict") else None)
-	)
-	if not req_sid and hasattr(frappe, "request") and frappe.request:
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
+	req_token = extract_token_from_request(data=data, **kwargs)
 
 	target_user = sess_user if (sess_user and sess_user != "Guest") else None
+	if not target_user and req_token:
+		target_user = resolve_token_or_session(req_token)
+
+	if not target_user:
+		target_user = data.get("user") or data.get("email") or kwargs.get("user") or kwargs.get("email")
+
+	# If neither an active token nor a logged-in user was provided, reject with a clear 400 error
+	if not req_token and (not target_user or target_user == "Guest"):
+		frappe.local.response["http_status_code"] = 400
+		return {
+			"status": "error",
+			"message": "No active authentication token or session was provided to log out! Please pass the 'X-Auth-Token' header or token in the request body.",
+			"logged_out_user": None,
+		}
+
+	# Also check cookie sid and session sid
+	cookie_sid = None
+	if hasattr(frappe, "request") and frappe.request and hasattr(frappe.request, "cookies"):
+		cookie_sid = frappe.request.cookies.get("sid")
+	sess_sid = getattr(getattr(frappe, "session", None), "sid", None)
+
+	# Revoke token from Redis and MariaDB
+	revoke_auth_token(token_or_sid=req_token, user=target_user)
+	if cookie_sid and cookie_sid != req_token:
+		revoke_auth_token(token_or_sid=cookie_sid)
+	if sess_sid and sess_sid != req_token and sess_sid != cookie_sid:
+		revoke_auth_token(token_or_sid=sess_sid)
 
 	try:
-		if req_sid:
-			res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-			if res and res[0][0] and res[0][0] != "Guest":
-				target_user = res[0][0]
-			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE sid = %s", (req_sid,))
-			try:
-				frappe.cache().hdel("session", req_sid)
-			except Exception:
-				pass
-	except Exception:
-		pass
-
-	try:
-		frappe.local.login_manager.logout()
-	except Exception:
-		pass
-
-	try:
-		if target_user and target_user != "Guest":
-			frappe.db.sql("UPDATE `tabSessions` SET status = 'Expired' WHERE user = %s", (target_user,))
-			frappe.db.commit()
+		if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+			frappe.local.login_manager.logout()
 	except Exception:
 		pass
 
@@ -434,6 +816,13 @@ def logout(**kwargs):
 			pass
 
 	frappe.set_user("Guest")
+	if hasattr(frappe, "session"):
+		frappe.session.user = "Guest"
+		frappe.session.sid = ""
+	if hasattr(frappe.local, "session"):
+		frappe.local.session.user = "Guest"
+		frappe.local.session.sid = ""
+
 	logged_out = target_user or "Guest"
 	return {
 		"status": "success",
@@ -444,47 +833,22 @@ def logout(**kwargs):
 
 def get_authenticated_user(data=None, **kwargs):
 	"""
-	Returns the authenticated user email if an active session exists (from session, cookie, sid, or Bearer token).
+	Returns the authenticated user email if an active session or token exists.
+	Supports: Bearer token, X-Auth-Token, token header/param, sid, or cookie.
+	Prioritizes explicit token in request/headers/kwargs. If an explicit token is passed
+	and is invalid/revoked, strictly returns None (does not fall back to cookie).
 	Returns None if Guest or unauthenticated.
 	"""
+	tok = extract_token_from_request(data=data, **kwargs)
+	if tok:
+		resolved = resolve_token_or_session(tok)
+		if resolved and resolved != "Guest":
+			return resolved
+		return None
+
 	sess_user = getattr(frappe.session, "user", None)
 	if sess_user and sess_user != "Guest":
 		return sess_user
-
-	# Session resolution fallback for API clients / cross-origin requests (e.g. Hoppscotch / Mobile App)
-	req_sid = None
-	if data and isinstance(data, dict):
-		req_sid = data.get("sid") or data.get("token")
-	if not req_sid:
-		req_sid = kwargs.get("sid") or kwargs.get("token")
-	if not req_sid and hasattr(frappe, "local") and hasattr(frappe.local, "form_dict"):
-		req_sid = frappe.local.form_dict.get("sid") or frappe.local.form_dict.get("token")
-	if not req_sid and hasattr(frappe, "request") and frappe.request:
-		req_sid = (
-			frappe.get_request_header("sid")
-			or frappe.get_request_header("X-Frappe-Session-Id")
-			or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") else None)
-		)
-		if not req_sid:
-			auth_hdr = frappe.get_request_header("Authorization", "")
-			if auth_hdr.startswith("Bearer "):
-				req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-
-	if req_sid and req_sid != "Guest":
-		try:
-			res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s AND status = 'Active' LIMIT 1", (req_sid,))
-			if res and res[0][0] and res[0][0] != "Guest":
-				return res[0][0]
-		except Exception:
-			pass
-		try:
-			session_cache = frappe.cache().hget("session", req_sid)
-			if session_cache and isinstance(session_cache, dict):
-				user_from_sid = session_cache.get("user")
-				if user_from_sid and user_from_sid != "Guest":
-					return user_from_sid
-		except Exception:
-			pass
 
 	return None
 
@@ -498,46 +862,26 @@ def get_current_user_profile(**kwargs):
 	Prevents IDOR: Users can only see their own profile.
 	"""
 	data = extract_request_data(kwargs)
-	sess_user = getattr(frappe.session, "user", None)
 
-	# Session resolution fallback for API clients / cross-origin requests (e.g. Hoppscotch / Mobile App)
-	if not sess_user or sess_user == "Guest":
-		req_sid = (
-			data.get("sid")
-			or data.get("token")
-			or (frappe.local.form_dict.get("sid") if hasattr(frappe.local, "form_dict") else None)
-		)
-		if not req_sid and hasattr(frappe, "request") and frappe.request:
-			req_sid = (
-				frappe.get_request_header("sid")
-				or frappe.get_request_header("X-Frappe-Session-Id")
-				or frappe.request.cookies.get("sid")
-			)
-			if not req_sid:
-				auth_hdr = frappe.get_request_header("Authorization", "")
-				if auth_hdr.startswith("Bearer "):
-					req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-
-		if req_sid and req_sid != "Guest":
-			user_from_sid = None
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s AND status = 'Active' LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					user_from_sid = res[0][0]
-			except Exception:
-				pass
-
-			if not user_from_sid:
-				try:
-					session_cache = frappe.cache().hget("session", req_sid)
-					if session_cache and isinstance(session_cache, dict):
-						user_from_sid = session_cache.get("user")
-				except Exception:
-					pass
-
-			if user_from_sid and user_from_sid != "Guest":
-				sess_user = user_from_sid
-				frappe.set_user(user_from_sid)
+	# If client provided an explicit token, validate it strictly
+	req_token = extract_token_from_request(data=data, **kwargs)
+	if req_token:
+		resolved = resolve_token_or_session(req_token)
+		if not resolved or resolved == "Guest":
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"is_logged_in": False,
+				"verified": False,
+				"user": "Guest",
+				"message": "Authentication required! Your token has expired or has been logged out. Please log in again.",
+			}
+		sess_user = resolved
+		frappe.set_user(resolved)
+	else:
+		sess_user = getattr(frappe.session, "user", None)
+		if not sess_user or sess_user == "Guest":
+			sess_user = authenticate_token_request(data=data, **kwargs)
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
@@ -847,6 +1191,13 @@ def get_current_user_profile(**kwargs):
 	visitor_passes = []
 	for v in visitors_raw:
 		raw_vis_img = v.get("visitor_image") or ""
+		if raw_vis_img and ("/visitor_badges/" in raw_vis_img or "ConnectFest_Visitor_" in raw_vis_img):
+			raw_vis_img = ""
+		if not raw_vis_img and user_vals:
+			u_img = (user_vals.get("user_image") or "").strip()
+			if u_img and "/visitor_badges/" not in u_img and "ConnectFest_Visitor_" not in u_img:
+				raw_vis_img = u_img
+
 		raw_pass_img = v.get("visitor_image_pass") or ""
 		if not raw_pass_img:
 			try:
@@ -973,6 +1324,12 @@ def get_current_user_profile(**kwargs):
 		"dates": "20 & 21 Feb 2027",
 	}
 
+	# Include active token in profile response for client-side persistence
+	req_tok = extract_token_from_request(data=data, **kwargs) or getattr(frappe.session, "sid", None)
+	if req_tok and req_tok != "Guest":
+		res["x_auth_token"] = req_tok
+		res["token"] = req_tok
+
 	if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
 		frappe.local.response["http_status_code"] = 200
 	return res
@@ -1036,13 +1393,32 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 		elif usr:
 			# Passwordless / direct attendee session login
 			if frappe.db.exists("User", usr):
-				frappe.local.login_manager.login_as(usr)
+				try:
+					if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+						frappe.local.login_manager.login_as(usr)
+					else:
+						frappe.local.login_manager = LoginManager()
+						frappe.local.login_manager.login_as(usr)
+				except Exception:
+					pass
+				frappe.set_user(usr)
+
+		auth_token = None
+		if usr:
+			auth_token = generate_auth_token(usr, role_type="Attendee")
+			if auth_token and hasattr(frappe.local, "cookie_manager"):
+				try:
+					frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
+					frappe.local.cookie_manager.set_cookie("user_id", usr, samesite="None", secure=True)
+				except Exception:
+					pass
 
 		dash = get_my_dashboard(email=usr, mobile_no=mob)
 		return {
 			"status": "success",
 			"message": "Login successful",
 			"user": usr or mob,
+			"x_auth_token": auth_token,
 			"session_user": getattr(frappe.session, "user", "Guest"),
 			"dashboard": dash,
 		}
@@ -1231,55 +1607,31 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			pass
 
 		# Complete login and establish admin session
-		active_sid = None
+		auth_token = generate_auth_token(usr, role_type="admin")
 		try:
 			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
 				frappe.local.login_manager.login_as(usr)
 			else:
 				frappe.local.login_manager = LoginManager()
 				frappe.local.login_manager.login_as(usr)
-			active_sid = getattr(frappe.session, "sid", None)
 		except Exception:
 			pass
 		frappe.set_user(usr)
 
-		# Ensure a valid Active session exists in tabSessions
-		if not active_sid or active_sid == "Guest":
-			active_sid = frappe.generate_hash()
-			now_dt = frappe.utils.now()
-			try:
-				frappe.db.sql("""
-					INSERT INTO `tabSessions` (sessiondata, user, lastupdate, sid, status)
-					VALUES (%s, %s, %s, %s, 'Active')
-					ON DUPLICATE KEY UPDATE status = 'Active', lastupdate = %s
-				""", (f'{{"user":"{usr}"}}', usr, now_dt, active_sid, now_dt))
-				frappe.db.commit()
-			except Exception:
-				pass
-
 		if hasattr(frappe.local, "cookie_manager"):
 			try:
-				frappe.local.cookie_manager.set_cookie("sid", active_sid, samesite="None", secure=True)
+				frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
 				frappe.local.cookie_manager.set_cookie("user_id", usr, samesite="None", secure=True)
 				frappe.local.cookie_manager.set_cookie("system_user", "yes", samesite="None", secure=True)
 			except Exception:
 				pass
-
-		# Cache active admin session for seamless local dev / cross-origin requests
-		try:
-			cache.setex("connectfest:active_admin_session", 28800, usr)  # 8 hours
-			cache.setex(f"connectfest:admin_session_sid:{active_sid}", 28800, usr)
-		except Exception:
-			pass
 
 		return {
 			"status": "success",
 			"verified_2fa": True,
 			"message": f"Admin 2FA Authentication successful. Welcome {usr}!",
 			"admin_user": usr,
-			"sid": active_sid,
-			"token": active_sid,
-			"admin_token": active_sid,
+			"x_auth_token": auth_token,
 			"roles": [r for r in roles if r in ("Administrator", "System Manager", "Website Manager")],
 			"session_user": getattr(frappe.session, "user", usr),
 		}

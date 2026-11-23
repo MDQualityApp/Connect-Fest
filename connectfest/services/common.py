@@ -544,7 +544,7 @@ class OptionsPreflightResponse(HTTPException):
 		headers = {
 			"Access-Control-Allow-Origin": allowed_origin,
 			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
-			"Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, X-Admin-Token, x-requested-with",
+			"Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, auth_token, access_token, X-Auth-Token, X-Admin-Token, x-requested-with",
 			"Access-Control-Allow-Credentials": "true",
 			"Access-Control-Max-Age": "86400",
 			"Content-Length": "0",
@@ -615,6 +615,16 @@ def before_request():
 		if hasattr(frappe.local, "conf") and frappe.local.conf:
 			frappe.local.conf.ignore_csrf = True
 
+	# Fast token authentication for cross-subdomain and Bearer token API requests
+	if req.path.startswith("/api/"):
+		curr_user = getattr(frappe.session, "user", None)
+		if not curr_user or curr_user == "Guest":
+			try:
+				from connectfest.services.auth import authenticate_token_request
+				authenticate_token_request()
+			except Exception:
+				pass
+
 
 def after_request(response=None, request=None):
 	"""
@@ -658,7 +668,7 @@ def after_request(response=None, request=None):
 			response.headers["Access-Control-Allow-Credentials"] = "true"
 			response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
 			response.headers["Access-Control-Allow-Headers"] = (
-				"Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, X-Admin-Token, x-requested-with"
+				"Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, auth_token, access_token, X-Auth-Token, X-Admin-Token, x-requested-with"
 			)
 			response.headers["Vary"] = "Origin"
 		except Exception:

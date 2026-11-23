@@ -245,9 +245,11 @@ def register_bni_event(**kwargs):
 	frappe.db.commit()
 
 	# 5. Provision Frappe User account and auto-login
+	auth_token = None
 	try:
-		from connectfest.services.auth import ensure_frappe_user
+		from connectfest.services.auth import ensure_frappe_user, generate_auth_token
 		ensure_frappe_user(email, full_name=full_name, mobile_no=mobile_no, role="Website User")
+		auth_token = generate_auth_token(email, role_type="Event Attendee")
 		# Auto-login immediately upon successful registration
 		from frappe.auth import LoginManager
 		if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
@@ -256,6 +258,12 @@ def register_bni_event(**kwargs):
 			frappe.local.login_manager = LoginManager()
 			frappe.local.login_manager.login_as(email)
 		frappe.set_user(email)
+		if auth_token and hasattr(frappe.local, "cookie_manager"):
+			try:
+				frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
+				frappe.local.cookie_manager.set_cookie("user_id", email, samesite="None", secure=True)
+			except Exception:
+				pass
 	except Exception as e:
 		frappe.log_error("User creation error on BNI registration", str(e))
 
@@ -299,6 +307,7 @@ def register_bni_event(**kwargs):
 		"event_name": event_name,
 		"message": "Event registration successful!",
 		"logged_in": True,
+		"x_auth_token": auth_token,
 		"home_page": "/me",
 		"pass_info": pass_info,
 	}

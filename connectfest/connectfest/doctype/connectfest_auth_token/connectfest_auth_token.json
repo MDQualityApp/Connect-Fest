@@ -1,0 +1,109 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:CFTK-{#####}",
+ "creation": "2026-11-23 22:40:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "token",
+  "user",
+  "registered_user",
+  "role_type",
+  "column_break_1",
+  "status",
+  "expires_at",
+  "logged_out_at",
+  "last_active_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Auth Token",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User / Email",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "registered_user",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Attendee Name"
+  },
+  {
+   "fieldname": "role_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Role / Type"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nLogged Out\nExpired"
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Expires At"
+  },
+  {
+   "fieldname": "logged_out_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Logged Out At"
+  },
+  {
+   "fieldname": "last_active_at",
+   "fieldtype": "Datetime",
+   "label": "Last Active At"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-23 22:40:00",
+ "modified_by": "Administrator",
+ "module": "ConnectFest",
+ "name": "ConnectFest Auth Token",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -591,6 +591,12 @@ def logout(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def logout_attendee(**kwargs):
+	"""Alias for logout: revokes active token and clears session."""
+	return _logout(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def admin_login(email=None, password=None, otp=None, **kwargs):
 	"""Dedicated Admin Login with Two-Factor Authentication (Password + 2FA OTP)."""
 	return _admin_login(email=email, password=password, otp=otp, **kwargs)

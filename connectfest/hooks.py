@@ -253,9 +253,9 @@ after_request = ["connectfest.services.common.after_request"]
 # Authentication and authorization
 # --------------------------------
 
-# auth_hooks = [
-# 	"connectfest.auth.validate"
-# ]
+auth_hooks = [
+	"connectfest.services.auth.validate_custom_auth_token"
+]
 
 # Automatically update python controller files with type annotations for this app.
 # export_python_type_annotations = True

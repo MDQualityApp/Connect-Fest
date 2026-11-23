@@ -36,6 +36,7 @@ ALLOWED_EVENT_FIELDS = {
 
 ALLOWED_OTP_FIELDS = {
 	"otp_expiry_seconds": lambda v: max(10, cint(v)),
+	"token_expiry_days": lambda v: max(1, cint(v)),
 }
 
 # Explicitly disallowed / excluded fields
@@ -70,6 +71,7 @@ def _get_clean_settings_data(settings_doc):
 	}
 	otp_data = {
 		"otp_expiry_seconds": cint(settings_doc.get("otp_expiry_seconds") or 120),
+		"token_expiry_days": cint(settings_doc.get("token_expiry_days") or 30),
 	}
 
 	return {

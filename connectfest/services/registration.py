@@ -487,10 +487,14 @@ def register_stall(**kwargs):
 			set_cached_record(cache, f"{STALL_CACHE_PREFIX}{doc.name}", record)
 
 		# Provision Frappe User account immediately and auto-login
+		auth_token = None
 		try:
 			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
 			if company_logo:
 				frappe.db.set_value("User", email, "user_image", company_logo)
+			# Generate Token for Exhibitor
+			from connectfest.services.auth import generate_auth_token
+			auth_token = generate_auth_token(email, role_type="Exhibitor")
 			# Auto-login immediately upon successful registration
 			from frappe.auth import LoginManager
 			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
@@ -499,6 +503,12 @@ def register_stall(**kwargs):
 				frappe.local.login_manager = LoginManager()
 				frappe.local.login_manager.login_as(email)
 			frappe.set_user(email)
+			if auth_token and hasattr(frappe.local, "cookie_manager"):
+				try:
+					frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
+					frappe.local.cookie_manager.set_cookie("user_id", email, samesite="None", secure=True)
+				except Exception:
+					pass
 		except Exception:
 			pass
 
@@ -507,6 +517,7 @@ def register_stall(**kwargs):
 			"registration_id": actual_reg_id,
 			"message": "Exhibitor registration successful!",
 			"logged_in": True,
+			"x_auth_token": auth_token,
 		}
 
 		if create_order and stall_number:
@@ -1490,9 +1501,12 @@ def register_visitor(**kwargs):
 		# Exhibitors registering visitor passes MUST NOT be switched to visitor login!
 		# Only pure non-exhibitor visitors are auto-logged into the visitor account.
 		logged_in = False
+		auth_token = None
 		if not is_exhibitor:
 			try:
 				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+				from connectfest.services.auth import generate_auth_token
+				auth_token = generate_auth_token(email, role_type="Visitor")
 				if getattr(frappe.local, "request", None):
 					from frappe.auth import LoginManager
 					if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
@@ -1501,13 +1515,26 @@ def register_visitor(**kwargs):
 						frappe.local.login_manager = LoginManager()
 						frappe.local.login_manager.login_as(email)
 				frappe.set_user(email)
+				if auth_token and hasattr(frappe.local, "cookie_manager"):
+					try:
+						frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
+						frappe.local.cookie_manager.set_cookie("user_id", email, samesite="None", secure=True)
+					except Exception:
+						pass
 				logged_in = True
 			except Exception:
 				try:
+					if getattr(frappe.local, "request", None):
+						from frappe.auth import LoginManager
+						if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
+							frappe.local.login_manager.login_as(email)
+						else:
+							frappe.local.login_manager = LoginManager()
+							frappe.local.login_manager.login_as(email)
 					frappe.set_user(email)
+					logged_in = True
 				except Exception:
 					pass
-				logged_in = True
 		else:
 			# Exhibitor session protection: DO NOT overwrite session or log in as visitor!
 			try:
@@ -1515,7 +1542,7 @@ def register_visitor(**kwargs):
 			except Exception:
 				pass
 
-		return {
+		res_payload = {
 			"status": "success",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
@@ -1526,6 +1553,9 @@ def register_visitor(**kwargs):
 			"user_type": "exhibitor" if is_exhibitor else "visitor",
 			"pass_info": pass_info,
 		}
+		if auth_token:
+			res_payload["x_auth_token"] = auth_token
+		return res_payload
 	except Exception as e:
 		err_msg = str(e).strip() or type(e).__name__
 		tb = frappe.get_traceback()

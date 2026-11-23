@@ -8,7 +8,27 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080",
+      "value": "http://localhost:8080/",
+      "type": "string"
+    },
+    {
+      "key": "live",
+      "value": "https://api.connectfesttn.in/",
+      "type": "string"
+    },
+    {
+      "key": "local",
+      "value": "http://localhost:8080/",
+      "type": "string"
+    },
+    {
+      "key": "uat",
+      "value": "https://connectfest.mdqapps.online/",
+      "type": "string"
+    },
+    {
+      "key": "X-Auth-Token",
+      "value": "",
       "type": "string"
     }
   ],
@@ -48,7 +68,23 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "var token = (jsonData.message && jsonData.message.x_auth_token) || jsonData.x_auth_token;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set(\"X-Auth-Token\", token);",
+                  "    console.log(\"[Postman] X-Auth-Token auto-saved to collection variable:\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Register_Stall (BNI-Member)",
@@ -82,7 +118,23 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "var token = (jsonData.message && jsonData.message.x_auth_token) || jsonData.x_auth_token;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set(\"X-Auth-Token\", token);",
+                  "    console.log(\"[Postman] X-Auth-Token auto-saved to collection variable:\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Register Visitors",
@@ -116,7 +168,23 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "var token = (jsonData.message && jsonData.message.x_auth_token) || jsonData.x_auth_token;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set(\"X-Auth-Token\", token);",
+                  "    console.log(\"[Postman] X-Auth-Token auto-saved to collection variable:\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Me",
@@ -126,6 +194,11 @@
               {
                 "key": "Content-Type",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Auth-Token",
+                "value": "{{X-Auth-Token}}",
                 "type": "text"
               }
             ],
@@ -161,6 +234,11 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "X-Auth-Token",
+                "value": "{{X-Auth-Token}}",
+                "type": "text"
               }
             ],
             "url": {
@@ -184,7 +262,19 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"X-Auth-Token\", \"\");",
+                  "console.log(\"[Postman] X-Auth-Token cleared from collection variable upon logout\");"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Edit Profile",
@@ -286,7 +376,23 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "var token = (jsonData.message && jsonData.message.x_auth_token) || jsonData.x_auth_token;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set(\"X-Auth-Token\", token);",
+                  "    console.log(\"[Postman] X-Auth-Token auto-saved to collection variable:\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -780,7 +886,23 @@
                   }
                 }
               },
-              "response": []
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "var token = (jsonData.message && jsonData.message.x_auth_token) || jsonData.x_auth_token;",
+                      "if (token) {",
+                      "    pm.collectionVariables.set(\"X-Auth-Token\", token);",
+                      "    console.log(\"[Postman] X-Auth-Token auto-saved to collection variable:\", token);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
             },
             {
               "name": "Enable / Disable Attendee Account",
@@ -1581,6 +1703,80 @@
               "response": []
             }
           ]
+        },
+        {
+          "name": "Settings & Auth",
+          "item": [
+            {
+              "name": "Get Settings (with Token Expiry)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  },
+                  {
+                    "key": "X-Auth-Token",
+                    "value": "{{X-Auth-Token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_get_settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_get_settings"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Settings (Token Expiry & OTP)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  },
+                  {
+                    "key": "X-Auth-Token",
+                    "value": "{{X-Auth-Token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token_expiry_days\": 30,\n  \"otp_expiry_seconds\": 120\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/method/connectfest.api.admin_update_settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "method",
+                    "connectfest.api.admin_update_settings"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },
@@ -2205,6 +2401,21 @@
           "response": []
         }
       ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-inject X-Auth-Token header if collection variable is set",
+          "var token = pm.collectionVariables.get(\"X-Auth-Token\");",
+          "if (token && token.trim() !== \"\") {",
+          "    pm.request.headers.upsert({key: \"X-Auth-Token\", value: token.trim()});",
+          "}"
+        ]
+      }
     }
   ]
 }

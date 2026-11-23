@@ -548,17 +548,22 @@ def send_email_otp(email=None, **kwargs):
 			"message": "A valid email address is required to receive OTP.",
 		}
 
-	# Validate purpose: MUST BE STRICTLY MANDATORY ('register' or 'login')
+	from connectfest.services.auth import get_authenticated_user, is_admin_user
+
+	# Validate purpose: auto-detect if missing based on registration status
 	purpose = str(data.get("purpose") or kwargs.get("purpose") or "").strip().lower()
-	if not purpose or purpose not in ("register", "registration", "login"):
-		frappe.local.response["http_status_code"] = 400
-		return {
-			"status": "error",
-			"message": "Valid purpose ('register' or 'login') is required to send verification code.",
-		}
+	if not purpose:
+		is_already_reg, _ = is_email_registered(target_email)
+		if not is_already_reg and is_admin_user(target_email):
+			is_already_reg = True
+		purpose = "login" if is_already_reg else "register"
+	elif purpose in ("registration",):
+		purpose = "register"
+
+	if purpose not in ("register", "login"):
+		purpose = "register"
 
 	# Disallow sending OTP for another user if already logged in
-	from connectfest.services.auth import get_authenticated_user, is_admin_user
 	auth_user = get_authenticated_user(data, **kwargs)
 	if auth_user and not is_admin_user(auth_user):
 		if purpose == "login":
@@ -567,22 +572,13 @@ def send_email_otp(email=None, **kwargs):
 				"status": "error",
 				"message": "You are already logged in! Please log out to request a login OTP.",
 			}
-		elif purpose in ("register", "registration"):
+		elif purpose == "register":
 			if target_email != auth_user.lower():
 				frappe.local.response["http_status_code"] = 400
 				return {
 					"status": "error",
 					"message": "You are currently logged in. Verification OTP can only be requested for your active account. Please log out first to register another account.",
 				}
-
-	if purpose == "login":
-		# Admin login strictly requires password via Admin Portal
-		if is_admin_user(target_email):
-			frappe.local.response["http_status_code"] = 403
-			return {
-				"status": "forbidden",
-				"message": "Administrator login strictly requires password authentication. Please use the Admin Login portal.",
-			}
 
 	# Check registration status scoped to registration type if provided
 	reg_type = str(
@@ -625,6 +621,13 @@ def send_email_otp(email=None, **kwargs):
 	else:
 		is_reg, reg_info = is_email_registered(target_email)
 		role_label = "with ConnectFest"
+
+	# Admin user support for OTP login
+	if is_admin_user(target_email):
+		is_reg = True
+		role_label = "as an Administrator"
+		if not reg_info:
+			reg_info = {"type": "Administrator", "data": {}, "full_name": "Administrator"}
 
 	if purpose == "login" and not is_reg:
 		frappe.local.response["http_status_code"] = 404
@@ -834,6 +837,8 @@ def send_email_otp(email=None, **kwargs):
 	return {
 		"status": "success",
 		"message": f"Verification code sent successfully to your email address. Please check your inbox (valid for {exp_text}).",
+		"purpose": purpose,
+		"is_registered": bool(is_reg),
 		"expires_in_seconds": otp_expiry,
 		"expires_in": exp_text,
 		"remaining_requests": remaining_sends,
@@ -1032,17 +1037,33 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid) if is_reg else []
 	is_scanner = bool(is_scanner_user(uid)) if is_reg else False
 
-	# Admin login strictly requires password via Admin Portal
 	from connectfest.services.auth import is_admin_user
-	if is_admin_user(target_email) or is_admin_user(uid):
-		frappe.local.response["http_status_code"] = 403
+	is_admin = bool(is_admin_user(target_email) or is_admin_user(uid))
+	if is_admin:
+		is_reg = True
+		admin_roles = [r for r in frappe.get_roles(uid) if r not in ("All", "Guest")]
+		for ar in admin_roles:
+			if ar not in roles_arr:
+				roles_arr.append(ar)
+		if "Administrator" not in roles_arr:
+			roles_arr.append("Administrator")
+
+	# -------------------------------------------------------------
+	# If NOT registered and NOT admin: Email verified only.
+	# User must proceed to registration form before account/token is created!
+	# -------------------------------------------------------------
+	if not is_reg and not is_admin:
+		frappe.local.response["http_status_code"] = 200
 		return {
-			"status": "forbidden",
-			"message": "Administrator login strictly requires password authentication. Please use the Admin Login portal.",
+			"status": "success",
+			"is_verified": True,
+			"is_registered": False,
+			"message": "Email address verified successfully! You may now proceed with registration.",
+			"email": target_email,
 		}
 
 	# -------------------------------------------------------------
-	# Log user into Frappe session (Email OTP Login)
+	# Log registered user / Admin into Frappe session (Email OTP Login)
 	# -------------------------------------------------------------
 	user_record_name = (
 		frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "full_name")
@@ -1054,54 +1075,35 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 
 	ensure_frappe_user(target_email, user_record_name, user_mob, role="Website User")
 
-	active_sid = None
-	if frappe.db.exists("User", target_email):
+	from connectfest.services.auth import generate_auth_token
+	role_label = "Administrator" if is_admin else ("Exhibitor" if (roles_arr and "Exhibitor" in roles_arr) else "Attendee")
+	login_identity = "Administrator" if is_admin else target_email
+	auth_token = generate_auth_token(login_identity, role_type="admin" if is_admin else role_label)
+
+	if frappe.db.exists("User", login_identity):
 		try:
 			from frappe.auth import LoginManager
 			if not getattr(frappe.local, "login_manager", None):
 				frappe.local.login_manager = LoginManager()
-			frappe.local.login_manager.login_as(target_email)
-			active_sid = getattr(frappe.session, "sid", None)
+			frappe.local.login_manager.login_as(login_identity)
 		except Exception:
 			pass
-		frappe.set_user(target_email)
-
-	# Ensure a valid Active session exists in tabSessions
-	if not active_sid or active_sid == "Guest":
-		active_sid = frappe.generate_hash()
-		now_dt = frappe.utils.now()
-		try:
-			frappe.db.sql("""
-				INSERT INTO `tabSessions` (sessiondata, user, lastupdate, sid, status)
-				VALUES (%s, %s, %s, %s, 'Active')
-				ON DUPLICATE KEY UPDATE status = 'Active', lastupdate = %s
-			""", (f'{{"user":"{target_email}"}}', target_email, now_dt, active_sid, now_dt))
-			frappe.db.commit()
-		except Exception:
-			pass
-
-	if hasattr(frappe.local, "cookie_manager"):
-		try:
-			frappe.local.cookie_manager.set_cookie("sid", active_sid, samesite="None", secure=True)
-			frappe.local.cookie_manager.set_cookie("user_id", target_email, samesite="None", secure=True)
-			frappe.local.cookie_manager.set_cookie("system_user", "no", samesite="None", secure=True)
-		except Exception:
-			pass
+		frappe.set_user(login_identity)
 
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"is_verified": True,
-		"is_registered": bool(is_reg),
-		"message": "Email verification successful! You are logged in." if is_reg else "Email address verified successfully! You may now proceed with registration.",
+		"is_registered": True,
+		"is_admin": is_admin,
+		"message": "Email verification successful! You are logged in.",
 		"roles": roles_arr,
 		"is_scanner": is_scanner,
-		"sid": active_sid,
-		"token": active_sid,
+		"x_auth_token": auth_token,
 		"user": target_email,
 		"email": target_email,
 		"full_name": user_record_name,
-		"home_page": "/me" if is_reg else "/floorplan",
+		"home_page": "/admin" if is_admin else "/me",
 	}
 
 

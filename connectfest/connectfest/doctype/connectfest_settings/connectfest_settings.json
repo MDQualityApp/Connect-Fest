@@ -31,6 +31,7 @@
   "otp_section",
   "otp_expiry_seconds",
   "email_verified_validity_minutes",
+  "token_expiry_days",
   "wati_section",
   "wati_enabled",
   "wati_api_host",
@@ -186,6 +187,13 @@
    "fieldname": "email_verified_validity_minutes",
    "fieldtype": "Int",
    "label": "Email Verified Registration Window (Minutes)"
+  },
+  {
+   "default": "30",
+   "description": "Authentication token expiry duration in days (e.g. 30 for 30 days, 7 for 7 days). Defaults to 30 days.",
+   "fieldname": "token_expiry_days",
+   "fieldtype": "Int",
+   "label": "Auth Token Expiry (Days)"
   },
   {
    "fieldname": "wati_section",
