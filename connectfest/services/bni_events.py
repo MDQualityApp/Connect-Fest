@@ -265,13 +265,42 @@ def register_bni_event(**kwargs):
 	except Exception as e:
 		frappe.logger("connectfest").warning(f"[BNI Event] Failed to send confirmation email to {email}: {str(e)}")
 
+	pass_info = {
+		"registration_id": doc.name,
+		"pass_code": pass_code,
+		"full_name": full_name,
+		"visitor_name": full_name,
+		"name": full_name,
+		"email": email,
+		"mobile_no": mobile_no,
+		"company_name": company_name,
+		"chapter_name": chapter_name,
+		"region_name": region_name,
+		"event_name": event_name,
+		"which_day": "Both days",
+		"access": "BOTH DAYS",
+		"venue": "Chennai Trade Centre, Nandambakkam",
+		"dates": "20 & 21 Feb 2027",
+	}
+
+	frappe.clear_messages()
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
+		"full_name": full_name,
+		"visitor_name": full_name,
+		"name": full_name,
+		"email": email,
+		"mobile_no": mobile_no,
+		"company_name": company_name,
+		"chapter_name": chapter_name,
+		"event_name": event_name,
 		"message": "Event registration successful!",
 		"logged_in": True,
+		"home_page": "/me",
+		"pass_info": pass_info,
 	}
 
 
@@ -391,15 +420,6 @@ def send_bni_event_confirmation_email(registration_id=None, email=None, **kwargs
 		"message": f"BNI Event confirmation email sent to {target_email}",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
-	}
-
-	frappe.local.response["http_status_code"] = 200
-	return {
-		"status": "success",
-		"registration_id": doc.name,
-		"pass_code": pass_code,
-		"message": "Event registration successful!",
-		"logged_in": True,
 	}
 
 
