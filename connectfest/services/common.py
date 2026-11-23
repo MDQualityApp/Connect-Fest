@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import functools
@@ -457,20 +458,114 @@ def check_expired_holds_lazy():
 		pass
 
 
+from werkzeug.exceptions import HTTPException, NotFound
+
+
+class ServeStaticFile(HTTPException):
+	code = 200
+
+	def __init__(self, file_path):
+		self.file_path = file_path
+		super().__init__()
+
+	def get_response(self, environ=None):
+		import mimetypes
+		from werkzeug.wrappers import Response
+
+		mime_type, _ = mimetypes.guess_type(self.file_path)
+		mime_type = mime_type or "application/octet-stream"
+		try:
+			with open(self.file_path, "rb") as f:
+				data = f.read()
+		except Exception:
+			return Response("Error reading file", status=500)
+
+		headers = {
+			"Content-Type": mime_type,
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+			"Access-Control-Allow-Headers": "*",
+			"Cache-Control": "public, max-age=2592000",
+		}
+		return Response(data, status=200, headers=headers)
+
+
+class OptionsPreflightResponse(HTTPException):
+	code = 204
+
+	def get_response(self, environ=None):
+		from werkzeug.wrappers import Response
+		headers = {
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+			"Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Frappe-Session-Id, sid, token, X-Admin-Token, x-requested-with",
+			"Access-Control-Allow-Credentials": "true",
+			"Access-Control-Max-Age": "86400",
+			"Content-Length": "0",
+		}
+		return Response(status=204, headers=headers)
+
+
 def before_request():
 	"""
 	Runtime hook executed before processing any HTTP request.
-	Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs,
-	even if site_config.json does not have explicit flags.
-	Ultra-fast (<0.005ms) with zero DB/Redis overhead.
+	1. Fast-path handles OPTIONS preflight.
+	2. Automatically serves static files (/files/ and /assets/) with CORS headers
+	   even if Nginx is not configured or proxies static requests to Gunicorn.
+	3. Ensures CORS is always enabled for ConnectFest APIs and prevents CSRF blocking on REST APIs.
 	"""
 	frappe.local.allow_cors = "*"
 	if hasattr(frappe.local, "conf") and frappe.local.conf:
 		frappe.local.conf.allow_cors = "*"
-		req = getattr(frappe, "request", None)
-		if req and hasattr(req, "path") and req.path:
-			if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
-				frappe.local.conf.ignore_csrf = True
+
+	req = getattr(frappe, "request", None)
+	if not req or not hasattr(req, "path") or not req.path:
+		return
+
+	# Fast-path OPTIONS preflight on /files/, /assets/, or /api/
+	if req.method == "OPTIONS":
+		if req.path.startswith("/files/") or req.path.startswith("/assets/") or req.path.startswith("/api/"):
+			raise OptionsPreflightResponse()
+
+	# Static files handler for /files/
+	if req.path.startswith("/files/"):
+		filename = req.path[len("/files/"):].lstrip("/")
+		if not filename or ".." in filename:
+			raise NotFound()
+
+		candidate_paths = []
+		try:
+			candidate_paths.append(frappe.get_site_path("public", "files", filename))
+		except Exception:
+			pass
+
+		sites_path = getattr(frappe.local, "sites_path", None) or "sites"
+		current_site = getattr(frappe.local, "site", None)
+		if current_site:
+			candidate_paths.append(os.path.join(sites_path, current_site, "public", "files", filename))
+		candidate_paths.append(os.path.join(sites_path, "connectfest", "public", "files", filename))
+		candidate_paths.append(os.path.join(sites_path, "connectfest.localhost", "public", "files", filename))
+
+		for p in candidate_paths:
+			if os.path.isfile(p):
+				raise ServeStaticFile(p)
+
+		raise NotFound(f"File {filename} not found")
+
+	# Static files handler for /assets/
+	if req.path.startswith("/assets/"):
+		asset_rel = req.path[len("/assets/"):].lstrip("/")
+		if not asset_rel or ".." in asset_rel:
+			raise NotFound()
+		sites_path = getattr(frappe.local, "sites_path", None) or "sites"
+		asset_path = os.path.join(sites_path, "assets", asset_rel)
+		if os.path.isfile(asset_path):
+			raise ServeStaticFile(asset_path)
+		raise NotFound(f"Asset {asset_rel} not found")
+
+	if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
+		if hasattr(frappe.local, "conf") and frappe.local.conf:
+			frappe.local.conf.ignore_csrf = True
 
 
 def after_request(response=None, request=None):

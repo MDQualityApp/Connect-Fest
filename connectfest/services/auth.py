@@ -1,7 +1,8 @@
+import urllib.parse
 import frappe
 import frappe.auth
 from frappe.auth import LoginManager
-from frappe.utils import flt, cint
+from frappe.utils import flt, cint, now_datetime
 from connectfest.services.common import extract_request_data, handle_api_errors, format_full_url
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
@@ -658,7 +659,7 @@ def get_current_user_profile(**kwargs):
 
 	# Fetch visitor pass details (Visitor)
 	visitors_raw = frappe.db.sql("""
-		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code,
+		SELECT name, registration_id, full_name, company_name, visitor_image, email, mobile_no, which_day, pass_code,
 		       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
@@ -909,11 +910,29 @@ def get_current_user_profile(**kwargs):
 
 	visitor_passes = []
 	for v in visitors_raw:
+		v_img = v.get("visitor_image") or ""
+		if not v_img or not v_img.startswith("/files/visitor_badges/"):
+			try:
+				from connectfest.services.visitor_badge import generate_visitor_badge_image
+				generated_img = generate_visitor_badge_image(v)
+				if generated_img:
+					v_img = generated_img
+					v["visitor_image"] = v_img
+					frappe.db.set_value("ConnectFest Visitor Registration", v.get("name"), "visitor_image", v_img)
+					frappe.db.commit()
+			except Exception:
+				pass
+
+		vp_code = v.pass_code or v.registration_id
+		v_mod = v.get("modified")
+		mod_ts = int(v_mod.timestamp()) if (v_mod and hasattr(v_mod, "timestamp")) else int(now_datetime().timestamp())
+		pass_img_url = f"{format_full_url(v_img)}?v={mod_ts}"
 		visitor_passes.append({
 			"registration_id": v.registration_id,
 			"full_name": (v.full_name if (v.get("full_name") and "@" not in v.get("full_name")) else user_full_name),
-			"pass_code": v.pass_code,
-			"visitor_image": format_full_url(v.visitor_image),
+			"company_name": v.get("company_name") or "",
+			"pass_code": vp_code,
+			"visitor_pass_url": pass_img_url,
 			"which_day": v.which_day,
 			"area_of_interest": v.get("area_of_interest") or "",
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
@@ -951,6 +970,10 @@ def get_current_user_profile(**kwargs):
 	total_amount_paid = sum(flt(s.get("amount", 0.0)) for s in stalls if s.get("has_paid"))
 	all_stalls_paid = bool(stalls and all(s.get("has_paid") for s in stalls))
 
+	raw_user_img = (user_vals.get("user_image") if user_vals else "") or ""
+	if "/visitor_badges/" in raw_user_img:
+		raw_user_img = ""
+
 	res = {
 		"status": "success",
 		"is_logged_in": True,
@@ -959,14 +982,14 @@ def get_current_user_profile(**kwargs):
 		"email": target_user,
 		"full_name": user_full_name,
 		"mobile_no": user_mobile,
-		"user_image": format_full_url(user_vals.get("user_image") if user_vals else ""),
+		"user_image": format_full_url(raw_user_img),
 		"roles": user_roles,
 		"role_type": role_type,
 		"is_admin": is_admin,
 		"is_scanner": is_scanner,
 
 		# Business / Attendee Profile
-		"company_name": company_name,
+		"company_name": company_name or (visitor_passes[0]["company_name"] if visitor_passes else ""),
 		"company_logo": company_logo,
 		"location": location,
 		"industry": industry,
@@ -1010,6 +1033,9 @@ def get_current_user_profile(**kwargs):
 		"venue": "Chennai Trade Centre, Nandambakkam",
 		"dates": "20 & 21 Feb 2027",
 	}
+
+	if visitor_passes:
+		res["visitor_pass_url"] = visitor_passes[0]["visitor_pass_url"]
 
 	if hasattr(frappe, "local") and hasattr(frappe.local, "response"):
 		frappe.local.response["http_status_code"] = 200
@@ -1696,7 +1722,7 @@ def admin_get_all_users(**kwargs):
 	visitor_records = frappe.get_all(
 		"ConnectFest Visitor Registration",
 		fields=[
-			"registration_id", "full_name", "visitor_image", "email", "mobile_no", "which_day",
+			"registration_id", "full_name", "company_name", "visitor_image", "email", "mobile_no", "which_day",
 			"source_of_info", "pass_code", "checked_in", "checked_in_at", "status", "creation", "modified",
 			"area_of_interest"
 		],
@@ -1842,6 +1868,7 @@ def admin_get_all_users(**kwargs):
 			visitor_info = {
 				"registration_id": vis_doc.registration_id,
 				"pass_code": vis_doc.pass_code or "",
+				"company_name": vis_doc.get("company_name") or "",
 				"visitor_image": format_full_url(vis_doc.visitor_image),
 				"which_day": vis_doc.which_day or "Both days",
 				"checked_in": cint(vis_doc.checked_in),
@@ -1856,7 +1883,7 @@ def admin_get_all_users(**kwargs):
 		primary_chapter = (ex_doc.get("chapter_name") if ex_doc else "") or ""
 		primary_industry = (ex_doc.get("industry") if ex_doc else "") or ""
 		primary_segment = (ex_doc.get("segment") if ex_doc else "") or ""
-		primary_company = (ex_doc.company_name if ex_doc else "") or ""
+		primary_company = (ex_doc.company_name if ex_doc else (vis_doc.get("company_name") if vis_doc else "")) or ""
 		primary_location = (ex_doc.location if ex_doc else "") or ""
 		primary_source = (ex_doc.get("source_of_info") if ex_doc else (vis_doc.get("source_of_info") if vis_doc else "")) or ""
 		primary_pay_mode = (ex_doc.get("payment_mode") or ("Cash" if (ex_doc.get("razorpay_payment_id") or "").startswith("CASH") else "Online")) if ex_doc else None
@@ -2319,6 +2346,7 @@ def update_profile(**kwargs):
 		if raw_company is not None:
 			clean_company = strip_html(str(raw_company)).strip()[:140]
 			updates_exhibitor["company_name"] = clean_company
+			updates_visitor["company_name"] = clean_company
 			updated_fields["company_name"] = clean_company
 
 		# Company Logo
@@ -2517,6 +2545,19 @@ def update_profile(**kwargs):
 				v_cached = get_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{v_id}") or {}
 				v_cached.update(updates_visitor)
 				set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{v_id}", v_cached)
+
+			# Regenerate visitor badge pass image if name or company changed
+			if "full_name" in updates_visitor or "company_name" in updates_visitor:
+				try:
+					from connectfest.services.visitor_badge import generate_visitor_badge_image
+					for v in vis_regs:
+						full_v = frappe.db.get_value("ConnectFest Visitor Registration", v["name"], ["name", "full_name", "company_name", "pass_code", "qr_payload"], as_dict=True)
+						if full_v:
+							new_b = generate_visitor_badge_image(full_v)
+							if new_b:
+								frappe.db.set_value("ConnectFest Visitor Registration", v["name"], "visitor_image", new_b)
+				except Exception:
+					pass
 
 		# 8b. Apply Updates to ConnectFest BNI Event Registration(s)
 		evt_regs = frappe.db.sql("""

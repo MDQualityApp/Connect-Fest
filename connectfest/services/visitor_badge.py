@@ -62,7 +62,7 @@ def get_visitor_badge_data(pass_code=None, registration_id=None, mobile_no=None,
 
 	where_clause = " OR ".join(conds)
 	records = frappe.db.sql(f"""
-		SELECT name, registration_id, full_name, visitor_image, email, mobile_no,
+		SELECT name, registration_id, full_name, company_name, visitor_image, email, mobile_no,
 		       which_day, pass_code, qr_payload, status, checked_in, checked_in_at,
 		       area_of_interest, creation
 		FROM `tabConnectFest Visitor Registration`
@@ -89,6 +89,7 @@ def generate_visitor_badge_html(data, is_email=False):
 	from connectfest.services.passes import generate_local_qr_png_bytes, get_pass_qr_url
 
 	full_name = (data.get("full_name") or "Valued Visitor").strip()
+	company_name = (data.get("company_name") or data.get("company") or "").strip()
 	pass_code = (data.get("pass_code") or data.get("registration_id") or "CF27-VISITOR").strip()
 	which_day = (data.get("which_day") or "Both days").strip()
 
@@ -173,9 +174,13 @@ def generate_visitor_badge_html(data, is_email=False):
 			<!-- Bottom Details -->
 			<div style="padding: 0 16px 18px 16px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
 				<div style="font-size: 9px; font-weight: 800; color: #64748b; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px;">NAME</div>
-				<div style="font-size: 16px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px;">
+				<div style="font-size: 16px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 8px;">
 					{full_name}
 				</div>
+				{f'''<div style="font-size: 9px; font-weight: 800; color: #64748b; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px;">COMPANY</div>
+				<div style="font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; margin-bottom: 8px;">
+					{company_name}
+				</div>''' if company_name else ''}
 				<div style="font-size: 9px; font-weight: 800; color: #64748b; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px;">VENUE</div>
 				<div style="font-size: 11px; font-weight: 600; color: #334155; line-height: 1.3;">
 					{event_venue}
@@ -372,6 +377,8 @@ def generate_visitor_badge_html(data, is_email=False):
 	<div class="info-box">
 		<div class="lbl">NAME</div>
 		<div class="val-name">{full_name}</div>
+		{f'''<div class="lbl">COMPANY</div>
+		<div class="val-name" style="font-size: 10pt; margin-bottom: 1.5mm;">{company_name}</div>''' if company_name else ''}
 		<div class="lbl">VENUE</div>
 		<div class="val-venue">{event_venue}</div>
 	</div>
@@ -449,14 +456,29 @@ def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, emai
 	pcode = rec.get("pass_code") or rec.get("registration_id")
 	access_text = "VISITOR - BOTH DAYS" if (not rec.get("which_day") or str(rec.get("which_day")).lower() == "both days") else f"VISITOR - {str(rec.get('which_day')).upper()}"
 
+	# If badge pass image not generated yet, generate and save it
+	vis_img = rec.get("visitor_image") or ""
+	if not vis_img or not vis_img.startswith("/files/visitor_badges/"):
+		try:
+			generated_img = generate_visitor_badge_image(rec)
+			if generated_img:
+				vis_img = generated_img
+				rec["visitor_image"] = vis_img
+				frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image", vis_img)
+				frappe.db.commit()
+		except Exception:
+			pass
+
 	badge_info = {
 		"pass_code": pcode,
 		"registration_id": rec.get("registration_id") or rec.get("name"),
 		"pass_type": "visitor_pass",
 		"pass_title": "Visitor Gate Pass",
 		"full_name": rec.get("full_name"),
-		"image": format_full_url(rec.get("visitor_image")),
-		"visitor_image": format_full_url(rec.get("visitor_image")),
+		"company_name": rec.get("company_name") or "",
+		"visitor_pass_url": format_full_url(vis_img),
+		"image": format_full_url(vis_img),
+		"visitor_image": format_full_url(vis_img),
 		"which_day": rec.get("which_day") or "Both days",
 		"access": access_text,
 		"email": rec.get("email"),
@@ -479,4 +501,233 @@ def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, emai
 		"pass": badge_info,
 		"visitor_pass": badge_info,
 	}
+
+
+def _get_badge_font(bold=True, size=12):
+	"""Loads Arial / TrueType font with robust cross-platform fallbacks."""
+	bold_candidates = [
+		"/home/mdquality-apps/.local/share/fonts/custom/Arial-Bold.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+	]
+	reg_candidates = [
+		"/home/mdquality-apps/.local/share/fonts/custom/Arial.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	]
+	from PIL import ImageFont
+	candidates = bold_candidates if bold else reg_candidates
+	for p in candidates:
+		if os.path.exists(p):
+			try:
+				return ImageFont.truetype(p, size)
+			except Exception:
+				pass
+	try:
+		return ImageFont.load_default()
+	except Exception:
+		return None
+
+
+def generate_visitor_badge_image(data):
+	"""
+	Generates a customized, ultra-high-definition (HD 300 DPI, 1008x1701), official Visitor Badge pass image:
+	- Base template: visitor_badge_template.jpg upscaled with Lanczos filtering
+	- Yellow banner: Visitor Name (full_name) replaces 'ACCESS: BOTH DAYS' in crisp vector font
+	- Left section:
+	    * COMPANY label + visitor's company_name (replaces NAME VISITOR)
+	    * VENUE label + Full Event Venue ('Chennai Trade Centre, Nandambakkam')
+	    * Contacts: Mr. S. Mariappan (+91 9840000000) & Mr. R. Manooj (+91 9840000000)
+	- Right section:
+	    * pass_code
+	    * High-contrast scannable Gate Pass QR code (pyqrcode) matching entrance scanner
+	    * SCAN AT ENTRY label
+	- Clean rounded corner outline
+	Saves PNG image to /public/files/visitor_badges/ and returns relative URL.
+	"""
+	from PIL import Image, ImageDraw
+	import pyqrcode
+
+	template_path = os.path.join(_TEMPLATES_DIR, "visitor_badge_template.jpg")
+	if not os.path.exists(template_path):
+		return ""
+
+	# Handle data as dict or DocType object
+	get_val = getattr(data, "get", None) or (lambda k, d=None: getattr(data, k, d))
+	full_name = (get_val("full_name") or "VALUED VISITOR").strip()
+	company_name = (get_val("company_name") or get_val("company") or "").strip()
+	pass_code = (get_val("pass_code") or get_val("registration_id") or "CF27-VISITOR").strip()
+	qr_payload = str(get_val("qr_payload") or pass_code).strip()
+
+	# Ultra-High Definition Scale Factor (4x = 1344 x 2268 px @ 300+ DPI)
+	SCALE = 4
+	base_im = Image.open(template_path).convert("RGB")
+	w, h = base_im.width * SCALE, base_im.height * SCALE
+	im = base_im.resize((w, h), Image.Resampling.LANCZOS)
+	from PIL import ImageFilter
+	im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=140, threshold=2))
+	draw = ImageDraw.Draw(im)
+
+	# 1. Yellow banner replacement with Visitor Name
+	yellow_color = (252, 196, 25)
+	poly = [
+		(int(42 * SCALE), int(375 * SCALE)),
+		(int(293 * SCALE), int(375 * SCALE)),
+		(int(285 * SCALE), int(414 * SCALE)),
+		(int(34 * SCALE), int(414 * SCALE)),
+	]
+	draw.polygon(poly, fill=yellow_color)
+
+	# Dynamic auto-scaled Visitor Name inside banner
+	name_font_size = 18
+	font_name = _get_badge_font(bold=True, size=int(name_font_size * SCALE))
+	display_name = full_name.upper()
+	while name_font_size > 9:
+		bbox = font_name.getbbox(display_name)
+		if (bbox[2] - bbox[0]) <= int(225 * SCALE):
+			break
+		name_font_size -= 0.5
+		font_name = _get_badge_font(bold=True, size=int(name_font_size * SCALE))
+
+	draw.text((int(164 * SCALE), int(394 * SCALE)), display_name, fill=(0, 0, 0), font=font_name, anchor="mm")
+
+	# 2. Spotless clean white canvas below banner
+	draw.rectangle([(int(8 * SCALE), int(415 * SCALE)), (int(328 * SCALE), int(558 * SCALE))], fill=(255, 255, 255))
+
+	# 3. Dynamic Event Venue from ConnectFest Settings
+	event_venue = "Chennai Trade Centre, Nandambakkam"
+	try:
+		settings = frappe.get_single("ConnectFest Settings")
+		if settings:
+			event_venue = (settings.get("event_venue") or settings.get("venue") or event_venue).strip()
+	except Exception:
+		pass
+
+	# Dynamic multi-line venue formatting
+	if "\n" in event_venue:
+		venue_lines = [l.strip() for l in event_venue.split("\n") if l.strip()]
+	elif "," in event_venue:
+		parts = [p.strip() for p in event_venue.split(",") if p.strip()]
+		if len(parts) >= 2:
+			venue_lines = [parts[0] + ",", ", ".join(parts[1:])]
+		else:
+			venue_lines = parts
+	else:
+		if len(event_venue) > 20:
+			words = event_venue.split()
+			mid = len(words) // 2
+			venue_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
+		else:
+			venue_lines = [event_venue]
+
+	font_label = _get_badge_font(bold=True, size=int(7 * SCALE))
+
+	# 4. Left side: COMPANY & VENUE
+	# Company Name (auto-scaled)
+	display_company = company_name if company_name else "-"
+	comp_size = 12
+	font_company = _get_badge_font(bold=True, size=int(comp_size * SCALE))
+	while comp_size > 7:
+		c_bbox = font_company.getbbox(display_company)
+		if (c_bbox[2] - c_bbox[0]) <= int(175 * SCALE):
+			break
+		comp_size -= 0.5
+		font_company = _get_badge_font(bold=True, size=int(comp_size * SCALE))
+
+	draw.text((int(18 * SCALE), int(420 * SCALE)), "COMPANY", fill=(100, 116, 139), font=font_label)
+	draw.text((int(18 * SCALE), int(431 * SCALE)), display_company, fill=(15, 23, 42), font=font_company)
+
+	# Dynamic Venue (auto-scaled)
+	venue_font_size = 8.5
+	font_venue = _get_badge_font(bold=True, size=int(venue_font_size * SCALE))
+	for vl in venue_lines:
+		while venue_font_size > 6:
+			bbox = font_venue.getbbox(vl)
+			if (bbox[2] - bbox[0]) <= int(175 * SCALE):
+				break
+			venue_font_size -= 0.5
+			font_venue = _get_badge_font(bold=True, size=int(venue_font_size * SCALE))
+
+	draw.text((int(18 * SCALE), int(455 * SCALE)), "VENUE", fill=(100, 116, 139), font=font_label)
+	cur_vy = int(466 * SCALE)
+	for line in venue_lines[:2]:
+		draw.text((int(18 * SCALE), cur_vy), line, fill=(51, 65, 85), font=font_venue)
+		cur_vy += int(11 * SCALE)
+
+	# 5. Right side: Gate Pass QR Code (pyqrcode)
+	qr = pyqrcode.create(qr_payload)
+	matrix = qr.code
+	qr_module_scale = 3 * SCALE
+	qr_border = 2
+	qr_size = (len(matrix) + 2 * qr_border) * qr_module_scale
+	qr_img = Image.new("RGB", (qr_size, qr_size), "white")
+	qr_draw = ImageDraw.Draw(qr_img)
+	for r_idx, row in enumerate(matrix):
+		for c_idx, val in enumerate(row):
+			if val == 1:
+				x0 = (c_idx + qr_border) * qr_module_scale
+				y0 = (r_idx + qr_border) * qr_module_scale
+				qr_draw.rectangle([x0, y0, x0 + qr_module_scale, y0 + qr_module_scale], fill="black")
+
+	target_qr_size = int(68 * SCALE)
+	qr_img = qr_img.resize((target_qr_size, target_qr_size), Image.Resampling.NEAREST)
+
+	qr_center_x = int(260 * SCALE)
+	qr_x = qr_center_x - target_qr_size // 2
+	qr_y = int(433 * SCALE)
+
+	# QR border box
+	draw.rounded_rectangle(
+		[qr_x - int(3 * SCALE), qr_y - int(3 * SCALE), qr_x + target_qr_size + int(3 * SCALE), qr_y + target_qr_size + int(3 * SCALE)],
+		radius=int(5 * SCALE),
+		outline=(203, 213, 225),
+		width=max(1, int(1 * SCALE))
+	)
+	im.paste(qr_img, (qr_x, qr_y))
+
+	# Pass code text above QR
+	font_code = _get_badge_font(bold=True, size=int(8.5 * SCALE))
+	draw.text((qr_center_x, int(423 * SCALE)), pass_code, fill=(30, 41, 59), font=font_code, anchor="mm")
+
+	# SCAN AT ENTRY below QR
+	font_scan = _get_badge_font(bold=True, size=int(7 * SCALE))
+	draw.text((qr_center_x, int(507 * SCALE)), "SCAN AT ENTRY", fill=(67, 56, 202), font=font_scan, anchor="mm")
+
+	# 6. Horizontal Divider Line above contacts
+	draw.line([(int(18 * SCALE), int(515 * SCALE)), (int(318 * SCALE), int(515 * SCALE))], fill=(226, 232, 240), width=max(1, int(1 * SCALE)))
+
+	# 7. Bottom Contacts: Side-by-Side (Left: Mr. S. Mariappan, Right: Mr. R. Manooj)
+	font_contact_name = _get_badge_font(bold=True, size=int(8.5 * SCALE))
+	font_contact_phone = _get_badge_font(bold=True, size=int(8.5 * SCALE))
+
+	# Left Contact: Mr. S. Mariappan
+	draw.text((int(18 * SCALE), int(521 * SCALE)), "Mr. S. Mariappan", fill=(15, 23, 42), font=font_contact_name)
+	draw.text((int(18 * SCALE), int(533 * SCALE)), "+91 8825668054", fill=(220, 38, 38), font=font_contact_phone)
+
+	# Right Contact: Mr. R. Manooj
+	draw.text((int(190 * SCALE), int(521 * SCALE)), "Mr. R. Manooj", fill=(15, 23, 42), font=font_contact_name)
+	draw.text((int(190 * SCALE), int(533 * SCALE)), "+91 8939291011", fill=(220, 38, 38), font=font_contact_phone)
+
+	# 8. Crisp Rounded Card Outline with 100% Transparent Corners (RGBA - No White Corners)
+	mask = Image.new("L", (w, h), 0)
+	mask_draw = ImageDraw.Draw(mask)
+	mask_draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=int(26 * SCALE), fill=255)
+
+	final_im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+	final_im.paste(im, (0, 0), mask=mask)
+
+	final_draw = ImageDraw.Draw(final_im)
+	final_draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=int(26 * SCALE), outline=(0, 0, 0, 255), width=int(2 * SCALE))
+
+	# 9. Save image to public files
+	safe_code = re.sub(r"[^A-Za-z0-9_-]", "_", pass_code)
+	filename = f"ConnectFest_Visitor_{safe_code}.png"
+
+	# Resolve site public files dir
+	badges_dir = frappe.get_site_path("public", "files", "visitor_badges")
+	os.makedirs(badges_dir, exist_ok=True)
+	filepath = os.path.join(badges_dir, filename)
+
+	final_im.save(filepath, format="PNG", optimize=True)
+	return f"/files/visitor_badges/{filename}"
 

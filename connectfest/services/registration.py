@@ -1125,6 +1125,9 @@ def register_visitor(**kwargs):
 	- Free entry with QR code pass
 	"""
 	data = extract_request_data(kwargs)
+	has_lock = False
+	lock_email_key = None
+	lock_mob_key = None
 
 	# Determine session user
 	from connectfest.services.auth import get_authenticated_user
@@ -1157,6 +1160,7 @@ def register_visitor(**kwargs):
 
 	raw_image = (data.get("visitor_image") or data.get("image") or data.get("photo") or data.get("visitor_photo") or data.get("avatar") or "").strip()
 	visitor_image = save_image_from_base64_or_url(raw_image, file_name_prefix=f"vis_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_image else ""
+	company_name = safe_str(data.get("company_name") or data.get("company") or data.get("company_title") or "").strip()
 	which_day = (data.get("which_day") or data.get("day") or "Both days").strip()
 	area_of_interest = (data.get("area_of_interest") or data.get("areas_of_interest") or data.get("interest") or "").strip()
 	source_of_info = (data.get("source_of_info") or data.get("source") or "").strip()
@@ -1268,7 +1272,7 @@ def register_visitor(**kwargs):
 
 	# Enforce strict 1-visitor-pass maximum limit per email and mobile (applies to everyone including exhibitors)
 	existing = frappe.db.sql("""
-		SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
+		SELECT name, registration_id, full_name, company_name, visitor_image, email, mobile_no, which_day, pass_code, qr_payload, status, checked_in, checked_in_at, area_of_interest
 		FROM `tabConnectFest Visitor Registration`
 		WHERE email = %(email)s OR mobile_no = %(mobile)s
 		LIMIT 1
@@ -1295,20 +1299,28 @@ def register_visitor(**kwargs):
 				"message": "Email address is already registered with a different mobile number! Please use your registered mobile number."
 			}
 
-		if visitor_image and not rec.get("visitor_image"):
+		vis_img = rec.get("visitor_image") or ""
+		if not vis_img or not vis_img.startswith("/files/visitor_badges/"):
 			try:
-				frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "visitor_image", visitor_image)
-				rec["visitor_image"] = visitor_image
+				from connectfest.services.visitor_badge import generate_visitor_badge_image
+				generated_img = generate_visitor_badge_image(rec)
+				if generated_img:
+					vis_img = generated_img
+					rec["visitor_image"] = vis_img
+					frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "visitor_image", vis_img)
+					frappe.db.commit()
+			except Exception:
+				pass
+
+		if company_name and not rec.get("company_name"):
+			try:
+				frappe.db.set_value("ConnectFest Visitor Registration", rec.name, "company_name", company_name)
+				rec["company_name"] = company_name
 				frappe.db.commit()
 			except Exception:
 				pass
 
 		ensure_frappe_user(rec_email, rec.full_name or full_name, rec_mobile, role="Website User")
-		if visitor_image:
-			try:
-				frappe.db.set_value("User", rec_email, "user_image", visitor_image)
-			except Exception:
-				pass
 
 		base_url = "https://api.connectfesttn.in"
 		try:
@@ -1361,6 +1373,7 @@ def register_visitor(**kwargs):
 		"name": reg_id,
 		"registration_id": reg_id,
 		"full_name": full_name,
+		"company_name": company_name,
 		"visitor_image": visitor_image,
 		"email": email,
 		"mobile_no": mobile_no,
@@ -1380,6 +1393,19 @@ def register_visitor(**kwargs):
 		"idx": 0,
 	}
 
+	# Dynamically generate official Visitor Badge Pass Image
+	try:
+		from connectfest.services.visitor_badge import generate_visitor_badge_image
+		badge_img_url = generate_visitor_badge_image(record)
+		if badge_img_url:
+			visitor_image = badge_img_url
+			record["visitor_image"] = visitor_image
+	except Exception as e:
+		try:
+			frappe.logger("connectfest").warning(f"[Visitor Badge Generation Warning] {str(e)}")
+		except Exception:
+			pass
+
 	base_url = "https://api.connectfesttn.in"
 	try:
 		from connectfest.services.notifications import get_base_url
@@ -1398,8 +1424,8 @@ def register_visitor(**kwargs):
 		"pass_type": "visitor_pass",
 		"pass_title": "Visitor Gate Pass",
 		"full_name": full_name,
-		"image": format_full_url(visitor_image),
-		"visitor_image": format_full_url(visitor_image),
+		"company_name": company_name,
+		"visitor_pass_url": f"{format_full_url(visitor_image)}?v={int(now_datetime().timestamp())}",
 		"email": email,
 		"mobile_no": mobile_no,
 		"area_of_interest": area_of_interest,
@@ -1442,8 +1468,6 @@ def register_visitor(**kwargs):
 		if not is_exhibitor:
 			try:
 				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-				if visitor_image:
-					frappe.db.set_value("User", email, "user_image", visitor_image)
 				if getattr(frappe.local, "request", None):
 					from frappe.auth import LoginManager
 					if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
@@ -1470,9 +1494,6 @@ def register_visitor(**kwargs):
 			"status": "success",
 			"registration_id": reg_id,
 			"pass_code": pass_code,
-			"qr_url": qr_url,
-			"qr_download_url": qr_download_url,
-			"badge_download_url": badge_download_url,
 			"message": "Visitor registration successful!" if not is_exhibitor else "Visitor pass generated successfully!",
 			"logged_in": logged_in,
 			"is_exhibitor": is_exhibitor,
@@ -1519,7 +1540,7 @@ def check_user_booking_status(email=None, mobile_no=None, **kwargs):
 			stall_booking = stalls[0]
 
 		visitors = frappe.db.sql("""
-			SELECT registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
+			SELECT registration_id, full_name, company_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, source_of_info, area_of_interest
 			FROM `tabConnectFest Visitor Registration`
 			WHERE (email = %(email)s OR mobile_no = %(mobile)s)
 			ORDER BY creation DESC

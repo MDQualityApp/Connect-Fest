@@ -8,6 +8,7 @@
  "field_order": [
   "registration_id",
   "full_name",
+  "company_name",
   "visitor_image",
   "column_break_contact",
   "email",
@@ -38,6 +39,12 @@
    "in_list_view": 1,
    "label": "Full Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company Name"
   },
   {
    "fieldname": "visitor_image",
