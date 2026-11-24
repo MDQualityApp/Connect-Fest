@@ -322,12 +322,12 @@ def generate_exhibitor_badge_image(data, pass_index=1):
 		)
 
 	# -------------------------------------------------------------------------
-	# 2. Attendee Full Name (Auto-scaled)
+	# 2. Attendee Full Name (Auto-scaled Large & Bold)
 	# -------------------------------------------------------------------------
 	display_name = full_name.upper()
-	name_font_size = 25
+	name_font_size = 40
 	font_name = _get_badge_font(bold=True, size=name_font_size)
-	while name_font_size > 14:
+	while name_font_size > 20:
 		bbox = font_name.getbbox(display_name)
 		if (bbox[2] - bbox[0]) <= 500:
 			break
@@ -337,30 +337,30 @@ def generate_exhibitor_badge_image(data, pass_index=1):
 	draw.text((center_x, 436), display_name, fill=(255, 255, 255), font=font_name, anchor="mm")
 
 	# -------------------------------------------------------------------------
-	# 3. Company Name (Auto-scaled)
+	# 3. Company Name (Auto-scaled Large & Clear)
 	# -------------------------------------------------------------------------
 	display_company = company_name if company_name else "-"
-	comp_font_size = 17
+	comp_font_size = 25
 	font_company = _get_badge_font(bold=True, size=comp_font_size)
-	while comp_font_size > 11:
+	while comp_font_size > 14:
 		bbox = font_company.getbbox(display_company)
 		if (bbox[2] - bbox[0]) <= 480:
 			break
 		comp_font_size -= 1
 		font_company = _get_badge_font(bold=True, size=comp_font_size)
 
-	draw.text((center_x, 470), display_company, fill=(203, 213, 225), font=font_company, anchor="mm")
+	draw.text((center_x, 482), display_company, fill=(226, 232, 240), font=font_company, anchor="mm")
 
 	# -------------------------------------------------------------------------
 	# 4. Role Pill ('PRIMARY EXHIBITOR' or 'CO-EXHIBITOR')
 	# -------------------------------------------------------------------------
-	font_pill = _get_badge_font(bold=True, size=11)
+	font_pill = _get_badge_font(bold=True, size=14)
 	pill_bbox = font_pill.getbbox(role_label)
-	pw = (pill_bbox[2] - pill_bbox[0]) + 24
-	ph = (pill_bbox[3] - pill_bbox[1]) + 12
+	pw = (pill_bbox[2] - pill_bbox[0]) + 30
+	ph = (pill_bbox[3] - pill_bbox[1]) + 16
 	px1 = center_x - pw // 2
-	py1 = 498
-	draw.rounded_rectangle([px1, py1, px1 + pw, py1 + ph], radius=10, fill=(185, 28, 28))
+	py1 = 520
+	draw.rounded_rectangle([px1, py1, px1 + pw, py1 + ph], radius=12, fill=(185, 28, 28))
 	draw.text((center_x, py1 + ph // 2), role_label, fill=(255, 255, 255), font=font_pill, anchor="mm")
 
 	# -------------------------------------------------------------------------
@@ -373,11 +373,11 @@ def generate_exhibitor_badge_image(data, pass_index=1):
 		sub_parts.append(f"BNI {chapter_name}")
 	sub_text = " • ".join(sub_parts) if sub_parts else "Chennai • Tamil Nadu"
 
-	font_sub = _get_badge_font(bold=False, size=12.5)
+	font_sub = _get_badge_font(bold=False, size=16)
 	sub_bbox = font_sub.getbbox(sub_text)
 	if (sub_bbox[2] - sub_bbox[0]) > 480:
 		sub_text = sub_text[:45] + "..."
-	draw.text((center_x, 538), sub_text, fill=(148, 163, 184), font=font_sub, anchor="mm")
+	draw.text((center_x, 578), sub_text, fill=(148, 163, 184), font=font_sub, anchor="mm")
 
 	# -------------------------------------------------------------------------
 	# 6. Lower Left Section: Stall Number and Category

@@ -105,260 +105,32 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		elif len(parts) >= 2:
 			code = parts[1].strip()
 
+	if code.startswith("{") and code.endswith("}"):
+		try:
+			import json
+			_obj = json.loads(code)
+			code = str(_obj.get("pass_code") or _obj.get("code") or _obj.get("registration_id") or code).strip()
+			if not mob_scan:
+				mob_scan = str(_obj.get("mobile") or _obj.get("mobile_no") or _obj.get("phone") or "").strip()
+			if not email_scan:
+				email_scan = safe_str(_obj.get("email") or _obj.get("mail")).strip().lower()
+		except Exception:
+			pass
+
+	clean_digits = re.sub(r"[^\d]", "", code)
+	if not mob_scan and len(clean_digits) in (10, 11, 12, 13):
+		mob_scan = clean_digits[-10:]
+
+	if not email_scan and "@" in code and "." in code:
+		email_scan = code.lower().strip()
+
 	if ("-P2" in code.upper()) or (code.endswith("-2") and not code.startswith("CF27-")):
 		is_pass_2_scan = True
 
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
 
 	# =========================================================================
-	# 1. Check Visitor Pass (ConnectFest Visitor Registration)
-	# =========================================================================
-	visitor = None
-	has_v_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
-	v_col_sql = ", visitor_image_pass" if has_v_col else ""
-
-	if code:
-		visitor = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
-			       {v_col_sql}
-			FROM `tabConnectFest Visitor Registration`
-			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
-			LIMIT 1
-		""", {"code": code}, as_dict=True)
-
-	if not visitor and mob_scan:
-		visitor = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
-			       {v_col_sql}
-			FROM `tabConnectFest Visitor Registration`
-			WHERE mobile_no = %(mob)s
-			ORDER BY creation DESC LIMIT 1
-		""", {"mob": mob_scan}, as_dict=True)
-
-	if not visitor and email_scan:
-		visitor = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
-			       {v_col_sql}
-			FROM `tabConnectFest Visitor Registration`
-			WHERE email = %(email)s
-			ORDER BY creation DESC LIMIT 1
-		""", {"email": email_scan}, as_dict=True)
-
-	if visitor:
-		rec = visitor[0]
-
-		raw_v_pass = rec.get("visitor_image_pass") or ""
-		if not raw_v_pass:
-			try:
-				from connectfest.services.visitor_badge import generate_visitor_badge_image
-				raw_v_pass = generate_visitor_badge_image(rec)
-				if raw_v_pass and frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
-					frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image_pass", raw_v_pass)
-					frappe.db.commit()
-			except Exception:
-				pass
-		vis_pass_url = format_full_url(raw_v_pass or rec.visitor_image)
-
-		# Day Validation: Day 1 vs Day 2 check
-		if scan_day:
-			norm_scan = "Day 1" if "1" in str(scan_day) else ("Day 2" if "2" in str(scan_day) else str(scan_day).strip())
-			vis_day = (rec.which_day or "Both days").strip()
-			norm_vis = "Day 1" if "1" in vis_day else ("Day 2" if "2" in vis_day else vis_day)
-
-			if norm_vis.lower() != "both days" and norm_scan.lower() != norm_vis.lower():
-				frappe.local.response["http_status_code"] = 400
-				return {
-					"status": "invalid_day",
-					"verified": False,
-					"message": f"❌ ACCESS DENIED (Day Mismatch): This pass is valid for {vis_day} only! It cannot be scanned on {norm_scan}.",
-				}
-
-		# Duplicate Scan Check
-		if rec.checked_in:
-			return {
-				"status": "duplicate_entry",
-				"verified": False,
-				"pass_type": "visitor_pass",
-				"pass_title": "Visitor Gate Pass",
-				"visitor_pass_url": vis_pass_url,
-				"message": f"⚠️ ALREADY SCANNED! Visitor pass ({rec.pass_code} - {rec.full_name}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
-				"pass": {
-					"pass_code": rec.pass_code,
-					"registration_id": rec.registration_id or rec.name,
-					"pass_type": "visitor_pass",
-					"pass_title": "Visitor Gate Pass",
-					"full_name": rec.full_name,
-					"visitor_pass_url": vis_pass_url,
-					"visitor_image": format_full_url(rec.visitor_image),
-					"which_day": rec.which_day or "Both days",
-					"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
-					"email": rec.email,
-					"mobile_no": rec.mobile_no,
-					"area_of_interest": rec.get("area_of_interest") or "",
-					"checked_in": 1,
-					"checked_in_at": str(rec.checked_in_at or ""),
-					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
-					"venue": "Chennai Trade Centre, Nandambakkam",
-					"dates": "20 & 21 Feb 2027",
-					"qr_payload": rec.get("qr_payload") or rec.pass_code,
-					"status": "Checked In",
-				},
-			}
-
-		frappe.db.set_value("ConnectFest Visitor Registration", rec.name, {
-			"checked_in": 1,
-			"checked_in_at": now_str,
-			"checked_in_by": sess_user,
-			"status": "Checked In",
-		})
-		frappe.db.commit()
-
-		return {
-			"status": "success",
-			"verified": True,
-			"pass_type": "visitor_pass",
-			"pass_title": "Visitor Gate Pass",
-			"visitor_pass_url": vis_pass_url,
-			"message": f"✅ VISITOR PASS VERIFIED - WELCOME {rec.full_name.upper()} TO CONNECTFEST 2027!",
-			"pass": {
-				"pass_code": rec.pass_code,
-				"registration_id": rec.registration_id or rec.name,
-				"pass_type": "visitor_pass",
-				"pass_title": "Visitor Gate Pass",
-				"full_name": rec.full_name,
-				"visitor_pass_url": vis_pass_url,
-				"visitor_image": format_full_url(rec.visitor_image),
-				"which_day": rec.which_day or "Both days",
-				"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
-				"email": rec.email,
-				"mobile_no": rec.mobile_no,
-				"area_of_interest": rec.get("area_of_interest") or "",
-				"checked_in": 1,
-				"checked_in_at": now_str,
-				"checked_in_by": sess_user,
-				"venue": "Chennai Trade Centre, Nandambakkam",
-				"dates": "20 & 21 Feb 2027",
-				"qr_payload": rec.get("qr_payload") or rec.pass_code,
-				"status": "Checked In",
-			},
-		}
-
-	# =========================================================================
-	# 2. Check BNI Event Pass (ConnectFest BNI Event Registration)
-	# =========================================================================
-	bni_event = None
-	has_ev_col = frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url") if hasattr(frappe, "db") and frappe.db else True
-	ev_col_sql = ", event_pass_url" if has_ev_col else ""
-
-	if code:
-		bni_event = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       chapter_name, region_name, location, industry, segment, event_name,
-			       pass_code, status, checked_in, checked_in_at, checked_in_by
-			       {ev_col_sql}
-			FROM `tabConnectFest BNI Event Registration`
-			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
-			LIMIT 1
-		""", {"code": code}, as_dict=True)
-
-	if not bni_event and mob_scan:
-		bni_event = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       chapter_name, region_name, location, industry, segment, event_name,
-			       pass_code, status, checked_in, checked_in_at, checked_in_by
-			       {ev_col_sql}
-			FROM `tabConnectFest BNI Event Registration`
-			WHERE mobile_no = %(mob)s
-			ORDER BY creation DESC LIMIT 1
-		""", {"mob": mob_scan}, as_dict=True)
-
-	if not bni_event and email_scan:
-		bni_event = frappe.db.sql(f"""
-			SELECT name, registration_id, full_name, company_name, mobile_no, email,
-			       chapter_name, region_name, location, industry, segment, event_name,
-			       pass_code, status, checked_in, checked_in_at, checked_in_by
-			       {ev_col_sql}
-			FROM `tabConnectFest BNI Event Registration`
-			WHERE email = %(email)s
-			ORDER BY creation DESC LIMIT 1
-		""", {"email": email_scan}, as_dict=True)
-
-	if bni_event:
-		rec = bni_event[0]
-
-		raw_ev_pass = rec.get("event_pass_url") or ""
-		if not raw_ev_pass:
-			try:
-				from connectfest.services.event_badge import generate_event_badge_image
-				raw_ev_pass = generate_event_badge_image(rec)
-				if raw_ev_pass and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
-					frappe.db.set_value("ConnectFest BNI Event Registration", rec.get("name"), "event_pass_url", raw_ev_pass)
-					frappe.db.commit()
-			except Exception:
-				pass
-		ev_pass_url = format_full_url(raw_ev_pass) if raw_ev_pass else ""
-
-		# Duplicate Scan Check
-		if rec.checked_in:
-			return {
-				"status": "duplicate_entry",
-				"verified": False,
-				"pass_type": "bni_event_pass",
-				"pass_title": "BNI Event Pass",
-				"event_pass_url": ev_pass_url,
-				"message": f"⚠️ ALREADY SCANNED! BNI Event pass ({rec.pass_code}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
-				"pass": {
-					"pass_code": rec.pass_code,
-					"registration_id": rec.registration_id or rec.name,
-					"full_name": rec.full_name,
-					"company_name": rec.company_name,
-					"chapter_name": rec.chapter_name,
-					"region_name": rec.region_name,
-					"mobile_no": rec.mobile_no,
-					"email": rec.email,
-					"event_name": rec.event_name,
-					"event_pass_url": ev_pass_url,
-					"checked_in": 1,
-					"checked_in_at": str(rec.checked_in_at or ""),
-					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
-					"venue": "Chennai Trade Centre, Nandambakkam",
-				},
-			}
-
-		frappe.db.set_value("ConnectFest BNI Event Registration", rec.name, {
-			"checked_in": 1,
-			"checked_in_at": now_str,
-			"checked_in_by": sess_user,
-			"status": "Checked In",
-		})
-		frappe.db.commit()
-
-		return {
-			"status": "success",
-			"verified": True,
-			"pass_type": "bni_event_pass",
-			"event_pass_url": ev_pass_url,
-			"message": f"✅ BNI EVENT PASS VERIFIED - WELCOME TO {rec.get('event_name') or 'CONNECTFEST BNI EVENTS'}!",
-			"pass": {
-				"pass_code": rec.pass_code,
-				"registration_id": rec.registration_id or rec.name,
-				"full_name": rec.full_name,
-				"company_name": rec.company_name,
-				"chapter_name": rec.chapter_name,
-				"region_name": rec.region_name,
-				"mobile_no": rec.mobile_no,
-				"email": rec.email,
-				"event_name": rec.event_name,
-				"event_pass_url": ev_pass_url,
-				"checked_in": 1,
-				"checked_in_at": now_str,
-				"checked_in_by": sess_user,
-				"venue": "Chennai Trade Centre, Nandambakkam",
-			},
-		}
-
-	# =========================================================================
-	# 3. Check Exhibitor Stall Pass (ConnectFest Registration - Max 2 Passes)
+	# 1. Check Exhibitor Stall Pass (ConnectFest Registration - Max 2 Passes)
 	# =========================================================================
 	exhibitor = None
 	clean_base_code = code.rsplit("-", 1)[0] if ("-P2" in code.upper() or code.endswith("-2")) else code
@@ -651,6 +423,253 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"dates": "20 & 21 Feb 2027",
 				},
 			}
+
+	# =========================================================================
+	# 2. Check BNI Event Pass (ConnectFest BNI Event Registration)
+	# =========================================================================
+	bni_event = None
+	has_ev_col = frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	ev_col_sql = ", event_pass_url" if has_ev_col else ""
+
+	if code:
+		bni_event = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       chapter_name, region_name, location, industry, segment, event_name,
+			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
+			LIMIT 1
+		""", {"code": code}, as_dict=True)
+
+	if not bni_event and mob_scan:
+		bni_event = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       chapter_name, region_name, location, industry, segment, event_name,
+			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE mobile_no = %(mob)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"mob": mob_scan}, as_dict=True)
+
+	if not bni_event and email_scan:
+		bni_event = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, company_name, mobile_no, email,
+			       chapter_name, region_name, location, industry, segment, event_name,
+			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
+			FROM `tabConnectFest BNI Event Registration`
+			WHERE email = %(email)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email_scan}, as_dict=True)
+
+	if bni_event:
+		rec = bni_event[0]
+
+		raw_ev_pass = rec.get("event_pass_url") or ""
+		if not raw_ev_pass:
+			try:
+				from connectfest.services.event_badge import generate_event_badge_image
+				raw_ev_pass = generate_event_badge_image(rec)
+				if raw_ev_pass and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+					frappe.db.set_value("ConnectFest BNI Event Registration", rec.get("name"), "event_pass_url", raw_ev_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+		ev_pass_url = format_full_url(raw_ev_pass) if raw_ev_pass else ""
+
+		# Duplicate Scan Check
+		if rec.checked_in:
+			return {
+				"status": "duplicate_entry",
+				"verified": False,
+				"pass_type": "bni_event_pass",
+				"pass_title": "BNI Event Pass",
+				"event_pass_url": ev_pass_url,
+				"message": f"⚠️ ALREADY SCANNED! BNI Event pass ({rec.pass_code}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass": {
+					"pass_code": rec.pass_code,
+					"registration_id": rec.registration_id or rec.name,
+					"full_name": rec.full_name,
+					"company_name": rec.company_name,
+					"chapter_name": rec.chapter_name,
+					"region_name": rec.region_name,
+					"mobile_no": rec.mobile_no,
+					"email": rec.email,
+					"event_name": rec.event_name,
+					"event_pass_url": ev_pass_url,
+					"checked_in": 1,
+					"checked_in_at": str(rec.checked_in_at or ""),
+					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
+					"venue": "Chennai Trade Centre, Nandambakkam",
+				},
+			}
+
+		frappe.db.set_value("ConnectFest BNI Event Registration", rec.name, {
+			"checked_in": 1,
+			"checked_in_at": now_str,
+			"checked_in_by": sess_user,
+			"status": "Checked In",
+		})
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"verified": True,
+			"pass_type": "bni_event_pass",
+			"event_pass_url": ev_pass_url,
+			"message": f"✅ BNI EVENT PASS VERIFIED - WELCOME TO {rec.get('event_name') or 'CONNECTFEST BNI EVENTS'}!",
+			"pass": {
+				"pass_code": rec.pass_code,
+				"registration_id": rec.registration_id or rec.name,
+				"full_name": rec.full_name,
+				"company_name": rec.company_name,
+				"chapter_name": rec.chapter_name,
+				"region_name": rec.region_name,
+				"mobile_no": rec.mobile_no,
+				"email": rec.email,
+				"event_name": rec.event_name,
+				"event_pass_url": ev_pass_url,
+				"checked_in": 1,
+				"checked_in_at": now_str,
+				"checked_in_by": sess_user,
+				"venue": "Chennai Trade Centre, Nandambakkam",
+			},
+		}
+
+	# =========================================================================
+	# 3. Check Visitor Pass (ConnectFest Visitor Registration)
+	# =========================================================================
+	visitor = None
+	has_v_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
+	v_col_sql = ", visitor_image_pass" if has_v_col else ""
+
+	if code:
+		visitor = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
+			FROM `tabConnectFest Visitor Registration`
+			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
+			LIMIT 1
+		""", {"code": code}, as_dict=True)
+
+	if not visitor and mob_scan:
+		visitor = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
+			FROM `tabConnectFest Visitor Registration`
+			WHERE mobile_no = %(mob)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"mob": mob_scan}, as_dict=True)
+
+	if not visitor and email_scan:
+		visitor = frappe.db.sql(f"""
+			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
+			FROM `tabConnectFest Visitor Registration`
+			WHERE email = %(email)s
+			ORDER BY creation DESC LIMIT 1
+		""", {"email": email_scan}, as_dict=True)
+
+	if visitor:
+		rec = visitor[0]
+
+		raw_v_pass = rec.get("visitor_image_pass") or ""
+		if not raw_v_pass:
+			try:
+				from connectfest.services.visitor_badge import generate_visitor_badge_image
+				raw_v_pass = generate_visitor_badge_image(rec)
+				if raw_v_pass and frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
+					frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image_pass", raw_v_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+		vis_pass_url = format_full_url(raw_v_pass or rec.visitor_image)
+
+		# Day Validation: Day 1 vs Day 2 check
+		if scan_day:
+			norm_scan = "Day 1" if "1" in str(scan_day) else ("Day 2" if "2" in str(scan_day) else str(scan_day).strip())
+			vis_day = (rec.which_day or "Both days").strip()
+			norm_vis = "Day 1" if "1" in vis_day else ("Day 2" if "2" in vis_day else vis_day)
+
+			if norm_vis.lower() != "both days" and norm_scan.lower() != norm_vis.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "invalid_day",
+					"verified": False,
+					"message": f"❌ ACCESS DENIED (Day Mismatch): This pass is valid for {vis_day} only! It cannot be scanned on {norm_scan}.",
+				}
+
+		# Duplicate Scan Check
+		if rec.checked_in:
+			return {
+				"status": "duplicate_entry",
+				"verified": False,
+				"pass_type": "visitor_pass",
+				"pass_title": "Visitor Gate Pass",
+				"visitor_pass_url": vis_pass_url,
+				"message": f"⚠️ ALREADY SCANNED! Visitor pass ({rec.pass_code} - {rec.full_name}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass": {
+					"pass_code": rec.pass_code,
+					"registration_id": rec.registration_id or rec.name,
+					"pass_type": "visitor_pass",
+					"pass_title": "Visitor Gate Pass",
+					"full_name": rec.full_name,
+					"visitor_pass_url": vis_pass_url,
+					"visitor_image": format_full_url(rec.visitor_image),
+					"which_day": rec.which_day or "Both days",
+					"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
+					"email": rec.email,
+					"mobile_no": rec.mobile_no,
+					"area_of_interest": rec.get("area_of_interest") or "",
+					"checked_in": 1,
+					"checked_in_at": str(rec.checked_in_at or ""),
+					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
+					"venue": "Chennai Trade Centre, Nandambakkam",
+					"dates": "20 & 21 Feb 2027",
+					"qr_payload": rec.get("qr_payload") or rec.pass_code,
+					"status": "Checked In",
+				},
+			}
+
+		frappe.db.set_value("ConnectFest Visitor Registration", rec.name, {
+			"checked_in": 1,
+			"checked_in_at": now_str,
+			"checked_in_by": sess_user,
+			"status": "Checked In",
+		})
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"verified": True,
+			"pass_type": "visitor_pass",
+			"pass_title": "Visitor Gate Pass",
+			"visitor_pass_url": vis_pass_url,
+			"message": f"✅ VISITOR PASS VERIFIED - WELCOME {rec.full_name.upper()} TO CONNECTFEST 2027!",
+			"pass": {
+				"pass_code": rec.pass_code,
+				"registration_id": rec.registration_id or rec.name,
+				"pass_type": "visitor_pass",
+				"pass_title": "Visitor Gate Pass",
+				"full_name": rec.full_name,
+				"visitor_pass_url": vis_pass_url,
+				"visitor_image": format_full_url(rec.visitor_image),
+				"which_day": rec.which_day or "Both days",
+				"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
+				"email": rec.email,
+				"mobile_no": rec.mobile_no,
+				"area_of_interest": rec.get("area_of_interest") or "",
+				"checked_in": 1,
+				"checked_in_at": now_str,
+				"checked_in_by": sess_user,
+				"venue": "Chennai Trade Centre, Nandambakkam",
+				"dates": "20 & 21 Feb 2027",
+				"qr_payload": rec.get("qr_payload") or rec.pass_code,
+				"status": "Checked In",
+			},
+		}
 
 	# Pass Not Found
 	frappe.local.response["http_status_code"] = 404

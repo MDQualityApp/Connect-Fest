@@ -643,8 +643,6 @@ def generate_visitor_badge_image(data):
 	base_im = Image.open(template_path).convert("RGB")
 	w, h = base_im.width * SCALE, base_im.height * SCALE
 	im = base_im.resize((w, h), Image.Resampling.LANCZOS)
-	from PIL import ImageFilter
-	im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=140, threshold=2))
 	draw = ImageDraw.Draw(im)
 
 	# 0. Overlay visitor's uploaded image (photo / logo) over the goat illustration
@@ -711,20 +709,25 @@ def generate_visitor_badge_image(data):
 		mask = logo_resized.split()[3] if logo_resized.mode == "RGBA" else None
 		im.paste(logo_resized, (pos_x, pos_y), mask=mask)
 
-	# 1. Yellow banner replacement with Visitor Name
-	yellow_color = (252, 196, 25)
+	# 1. Yellow banner replacement with smooth antialiased geometry
+	yellow_color = (250, 204, 21)
 	poly = [
 		(int(42 * SCALE), int(375 * SCALE)),
 		(int(293 * SCALE), int(375 * SCALE)),
 		(int(285 * SCALE), int(414 * SCALE)),
 		(int(34 * SCALE), int(414 * SCALE)),
 	]
-	draw.polygon(poly, fill=yellow_color)
+	poly_mask = Image.new("L", (w, h), 0)
+	poly_draw = ImageDraw.Draw(poly_mask)
+	poly_draw.polygon(poly, fill=255)
+	yellow_layer = Image.new("RGB", (w, h), yellow_color)
+	im.paste(yellow_layer, (0, 0), mask=poly_mask)
 
-	# Dynamic auto-scaled Visitor Name inside banner
+	# Dynamic auto-scaled Visitor Name inside banner (cleaning any repeated duplicate phrases)
+	cleaned_full_name = re.sub(r"(\([^\)]+\))\s*\1+", r"\1", full_name).strip()
 	name_font_size = 18
 	font_name = _get_badge_font(bold=True, size=int(name_font_size * SCALE))
-	display_name = full_name.upper()
+	display_name = cleaned_full_name.upper()
 	while name_font_size > 9:
 		bbox = font_name.getbbox(display_name)
 		if (bbox[2] - bbox[0]) <= int(225 * SCALE):
@@ -797,34 +800,33 @@ def generate_visitor_badge_image(data):
 		draw.text((int(18 * SCALE), cur_vy), line, fill=(51, 65, 85), font=font_venue)
 		cur_vy += int(11 * SCALE)
 
-	# 5. Right side: Gate Pass QR Code (pyqrcode)
+	# 5. Right side: Gate Pass QR Code (pyqrcode with crisp exact integer modules)
 	qr = pyqrcode.create(qr_payload)
 	matrix = qr.code
-	qr_module_scale = 3 * SCALE
 	qr_border = 2
-	qr_size = (len(matrix) + 2 * qr_border) * qr_module_scale
-	qr_img = Image.new("RGB", (qr_size, qr_size), "white")
+	matrix_size = len(matrix)
+	target_qr_size = int(68 * SCALE)
+	module_size = max(1, target_qr_size // (matrix_size + 2 * qr_border))
+	actual_qr_size = module_size * (matrix_size + 2 * qr_border)
+	qr_img = Image.new("RGB", (actual_qr_size, actual_qr_size), "white")
 	qr_draw = ImageDraw.Draw(qr_img)
 	for r_idx, row in enumerate(matrix):
 		for c_idx, val in enumerate(row):
 			if val == 1:
-				x0 = (c_idx + qr_border) * qr_module_scale
-				y0 = (r_idx + qr_border) * qr_module_scale
-				qr_draw.rectangle([x0, y0, x0 + qr_module_scale, y0 + qr_module_scale], fill="black")
-
-	target_qr_size = int(68 * SCALE)
-	qr_img = qr_img.resize((target_qr_size, target_qr_size), Image.Resampling.NEAREST)
+				x0 = (c_idx + qr_border) * module_size
+				y0 = (r_idx + qr_border) * module_size
+				qr_draw.rectangle([x0, y0, x0 + module_size - 1, y0 + module_size - 1], fill="black")
 
 	qr_center_x = int(260 * SCALE)
-	qr_x = qr_center_x - target_qr_size // 2
+	qr_x = qr_center_x - actual_qr_size // 2
 	qr_y = int(433 * SCALE)
 
 	# QR border box
 	draw.rounded_rectangle(
-		[qr_x - int(3 * SCALE), qr_y - int(3 * SCALE), qr_x + target_qr_size + int(3 * SCALE), qr_y + target_qr_size + int(3 * SCALE)],
+		[qr_x - int(3 * SCALE), qr_y - int(3 * SCALE), qr_x + actual_qr_size + int(3 * SCALE), qr_y + actual_qr_size + int(3 * SCALE)],
 		radius=int(5 * SCALE),
 		outline=(203, 213, 225),
-		width=max(1, int(1 * SCALE))
+		width=max(1, int(1.5 * SCALE))
 	)
 	im.paste(qr_img, (qr_x, qr_y))
 
@@ -837,7 +839,7 @@ def generate_visitor_badge_image(data):
 	draw.text((qr_center_x, int(507 * SCALE)), "SCAN AT ENTRY", fill=(67, 56, 202), font=font_scan, anchor="mm")
 
 	# 6. Horizontal Divider Line above contacts
-	draw.line([(int(18 * SCALE), int(515 * SCALE)), (int(318 * SCALE), int(515 * SCALE))], fill=(226, 232, 240), width=max(1, int(1 * SCALE)))
+	draw.line([(int(18 * SCALE), int(515 * SCALE)), (int(318 * SCALE), int(515 * SCALE))], fill=(226, 232, 240), width=max(1, int(1.5 * SCALE)))
 
 	# 7. Bottom Contacts: Side-by-Side (Left: Mr. S. Mariappan, Right: Mr. R. Manooj)
 	font_contact_name = _get_badge_font(bold=True, size=int(8.5 * SCALE))
