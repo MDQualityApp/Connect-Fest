@@ -42,3 +42,22 @@ class ConnectFestBNIEventRegistration(Document):
 		if not self.mobile_no or len(self.mobile_no) != 10:
 			frappe.throw("A valid 10-digit Mobile Number is required.")
 
+		# Auto-generate or regenerate official Event Pass Badge card image
+		doc_before = self.get_doc_before_save()
+		needs_regen = (
+			not getattr(self, "event_pass_url", None)
+			or not doc_before
+			or doc_before.full_name != self.full_name
+			or doc_before.company_name != self.company_name
+			or doc_before.chapter_name != self.chapter_name
+			or doc_before.mobile_no != self.mobile_no
+		)
+		if needs_regen and (getattr(self, "pass_code", None) or getattr(self, "registration_id", None) or self.name):
+			try:
+				from connectfest.services.event_badge import generate_event_badge_image
+				b_url = generate_event_badge_image(self)
+				if b_url:
+					self.event_pass_url = b_url
+			except Exception:
+				pass
+

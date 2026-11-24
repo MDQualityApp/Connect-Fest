@@ -1,7 +1,13 @@
 import json
 import frappe
 from frappe.utils import now_datetime, cint
-from connectfest.services.common import extract_request_data, handle_api_errors, safe_str, parse_boolean
+from connectfest.services.common import (
+	extract_request_data,
+	handle_api_errors,
+	safe_str,
+	parse_boolean,
+	format_full_url,
+)
 from connectfest.services.bni_members import normalize_phone_number, is_valid_bni_member
 
 
@@ -259,9 +265,21 @@ def register_bni_event(**kwargs):
 	except Exception as e:
 		frappe.logger("connectfest").warning(f"[BNI Event] Failed to send confirmation email to {email}: {str(e)}")
 
+	# 7. Generate official Event Badge Pass Image
+	event_pass_url = ""
+	try:
+		from connectfest.services.event_badge import generate_event_badge_image
+		event_pass_url = generate_event_badge_image(doc)
+		if event_pass_url and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+			frappe.db.set_value("ConnectFest BNI Event Registration", doc.name, "event_pass_url", event_pass_url)
+			frappe.db.commit()
+	except Exception as e:
+		frappe.logger("connectfest").warning(f"[BNI Event Badge] Failed to generate badge: {str(e)}")
+
 	pass_info = {
 		"registration_id": doc.name,
 		"pass_code": pass_code,
+		"event_pass_url": format_full_url(event_pass_url) if event_pass_url else "",
 		"full_name": full_name,
 		"visitor_name": full_name,
 		"name": full_name,
@@ -283,6 +301,7 @@ def register_bni_event(**kwargs):
 		"status": "success",
 		"registration_id": doc.name,
 		"pass_code": pass_code,
+		"event_pass_url": format_full_url(event_pass_url) if event_pass_url else "",
 		"full_name": full_name,
 		"visitor_name": full_name,
 		"name": full_name,
@@ -671,6 +690,17 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 
 	qr_payload = f"CONNECTFEST2027:BNI_EVENT:{record.get('pass_code')}:{record.get('email')}:{record.get('mobile_no')}"
 
+	raw_ev_pass = record.get("event_pass_url") or ""
+	if not raw_ev_pass:
+		try:
+			from connectfest.services.event_badge import generate_event_badge_image
+			raw_ev_pass = generate_event_badge_image(record)
+			if raw_ev_pass and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+				frappe.db.set_value("ConnectFest BNI Event Registration", record.get("name"), "event_pass_url", raw_ev_pass)
+				frappe.db.commit()
+		except Exception:
+			pass
+
 	frappe.local.response["http_status_code"] = 200
 	clean_res = {
 		"status": "success",
@@ -678,6 +708,7 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 		"code": record.get("pass_code"),
 		"registration_id": record.get("registration_id") or record.get("name"),
 		"id": record.get("registration_id") or record.get("name"),
+		"event_pass_url": format_full_url(raw_ev_pass) if raw_ev_pass else "",
 		"qr_payload": qr_payload,
 	}
 

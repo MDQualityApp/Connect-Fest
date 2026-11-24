@@ -64,15 +64,13 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Sponsor Category / Tier",
-   "reqd": 1,
    "search_index": 1
   },
   {
    "fieldname": "sponsored_for",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Sponsored For / Purpose",
-   "reqd": 1
+   "label": "Sponsored For / Purpose"
   },
   {
    "fieldname": "stall_number",

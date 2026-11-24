@@ -21,6 +21,7 @@ from connectfest.services.common import (
 	get_cached_record,
 	set_cached_record,
 	handle_api_errors,
+	format_full_url,
 )
 from connectfest.services.pricing import get_tier_pricing
 
@@ -1041,17 +1042,37 @@ def verify_razorpay_payment(**kwargs):
 	if hasattr(frappe, "response") and isinstance(frappe.response, dict) and "_server_messages" in frappe.response:
 		del frappe.response["_server_messages"]
 
-	return {
+	# Generate official Exhibitor Badge Pass upon confirmed payment
+	exhibitor_pass_url = ""
+	p2_pass_url = ""
+	try:
+		from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+		rec = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "*", as_dict=True) or cached_item
+		if rec:
+			exhibitor_pass_url = generate_exhibitor_badge_image(rec, pass_index=1)
+			if exhibitor_pass_url and frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url"):
+				frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "exhibitor_pass_url", exhibitor_pass_url)
+			if rec.get("pass_2_name"):
+				p2_pass_url = generate_exhibitor_badge_image(rec, pass_index=2)
+				if p2_pass_url and frappe.db.has_column("ConnectFest Registration", "pass_2_pass_url"):
+					frappe.db.set_value("ConnectFest Registration", {"registration_id": reg_id}, "pass_2_pass_url", p2_pass_url)
+			frappe.db.commit()
+	except Exception:
+		pass
+
+	res_data = {
 		"status": "success",
 		"message": "Payment verified successfully! Stall registration is confirmed.",
 		"registration_id": reg_id,
 		"stall_number": stall_num,
+		"pass_code": p_code,
 		"payment_status": "Paid",
 		"booking_status": "Confirmed",
 		"razorpay_order_id": order_id,
 		"razorpay_payment_id": payment_id,
 		"payment_date": now_str,
 	}
+	return res_data
 
 
 @handle_api_errors("ConnectFest Payment Preview Error")
@@ -1381,19 +1402,21 @@ def finalize_payment(**kwargs):
 	if verify_res.get("status") in ("error", "unauthorized", "forbidden", "conflict_refunded", "conflict_pending_admin"):
 		return verify_res
 
-	return {
+	res_fin = {
 		"status": "success",
 		"message": f"Payment finalized successfully for stall {verify_res.get('stall_number')}! Registration confirmed.",
 		"reference_doctype": data.get("reference_doctype") or "ConnectFest Registration",
 		"reference_docname": docname,
 		"registration_id": docname,
 		"stall_number": verify_res.get("stall_number"),
+		"pass_code": verify_res.get("pass_code"),
 		"payment_status": "Paid",
 		"booking_status": "Confirmed",
 		"razorpay_order_id": data.get("razorpay_order_id"),
 		"razorpay_payment_id": data.get("razorpay_payment_id"),
 		"payment_date": verify_res.get("payment_date"),
 	}
+	return res_fin
 
 
 @handle_api_errors("ConnectFest Admin Confirm Payment Error")
@@ -1984,7 +2007,7 @@ def admin_confirm_payment(**kwargs):
 	if hasattr(frappe, "response") and isinstance(frappe.response, dict) and "_server_messages" in frappe.response:
 		del frappe.response["_server_messages"]
 
-	return {
+	res_adm = {
 		"status": "success",
 		"message": f"Payment of ₹{final_amount:,.2f} recorded via {payment_mode} successfully! Stall {chosen_stall} is Confirmed.",
 		"registration_id": actual_reg_id,
@@ -2000,5 +2023,7 @@ def admin_confirm_payment(**kwargs):
 		"booking_status": "Confirmed",
 		"receipt_reference": ref_id,
 		"payment_date": now_str,
+		"pass_code": reg_doc.pass_code,
 	}
+	return res_adm
 

@@ -21,6 +21,7 @@
   "section_pass",
   "pass_code",
   "qr_payload",
+  "event_pass_url",
   "column_break_status",
   "status",
   "checked_in",
@@ -120,6 +121,12 @@
    "fieldname": "qr_payload",
    "fieldtype": "Code",
    "label": "QR Payload",
+   "read_only": 1
+  },
+  {
+   "fieldname": "event_pass_url",
+   "fieldtype": "Data",
+   "label": "Event Pass URL",
    "read_only": 1
   },
   {

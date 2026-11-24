@@ -38,7 +38,27 @@
   "column_break_pay",
   "razorpay_payment_id",
   "razorpay_signature",
-  "payment_date"
+  "payment_date",
+  "gate_checkin_section",
+  "pass_code",
+  "qr_payload",
+  "checked_in",
+  "column_break_checkin",
+  "checked_in_at",
+  "checked_in_by",
+  "pass_1_image",
+  "exhibitor_pass_url",
+  "pass_2_section",
+  "pass_2_name",
+  "pass_2_image",
+  "pass_2_mobile",
+  "pass_2_email",
+  "pass_2_pass_code",
+  "pass_2_qr_payload",
+  "pass_2_checked_in",
+  "pass_2_checked_in_at",
+  "pass_2_checked_in_by",
+  "pass_2_pass_url"
  ],
  "fields": [
   {
@@ -303,6 +323,11 @@
    "label": "Pass 1 Photo"
   },
   {
+   "fieldname": "exhibitor_pass_url",
+   "fieldtype": "Attach Image",
+   "label": "Exhibitor Pass Badge"
+  },
+  {
    "fieldname": "pass_2_section",
    "fieldtype": "Section Break",
    "label": "Co-Exhibitor Pass 2"
@@ -353,6 +378,11 @@
    "fieldname": "pass_2_checked_in_by",
    "fieldtype": "Data",
    "label": "Pass 2 Checked In By"
+  },
+  {
+   "fieldname": "pass_2_pass_url",
+   "fieldtype": "Attach Image",
+   "label": "Co-Exhibitor Pass Badge"
   }
  ],
  "index_web_pages_for_search": 0,

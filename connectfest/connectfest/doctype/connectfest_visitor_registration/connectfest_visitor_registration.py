@@ -11,7 +11,16 @@ class ConnectFestVisitorRegistration(Document):
 			self.registration_id = self.name
 
 	def validate(self):
-		if not getattr(self, "visitor_image_pass", None) and (getattr(self, "pass_code", None) or getattr(self, "registration_id", None) or self.name):
+		doc_before = self.get_doc_before_save()
+		needs_regen = (
+			not getattr(self, "visitor_image_pass", None)
+			or not doc_before
+			or doc_before.full_name != self.full_name
+			or doc_before.company_name != self.company_name
+			or doc_before.visitor_image != self.visitor_image
+			or doc_before.which_day != self.which_day
+		)
+		if needs_regen and (getattr(self, "pass_code", None) or getattr(self, "registration_id", None) or self.name):
 			try:
 				from connectfest.services.visitor_badge import generate_visitor_badge_image
 				badge_url = generate_visitor_badge_image(self)

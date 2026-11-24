@@ -922,14 +922,17 @@ def get_current_user_profile(**kwargs):
 	is_scanner = is_scanner_user(target_user)
 
 	# Fetch all stall booking details (Exhibitor)
-	stalls_raw = frappe.db.sql("""
+	has_exh_pass_col = frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	exh_pass_col_sql = ", exhibitor_pass_url, pass_2_pass_url" if has_exh_pass_col else ""
+	stalls_raw = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
 		       is_bni_member, region_name, chapter_name, industry, segment, source_of_info,
 		       email, mobile_no, stall_number, stall_category, amount, payment_status,
-		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation,
+		       payment_mode, razorpay_order_id, razorpay_payment_id, payment_date, creation, modified,
 		       bill, gst, pass_code, qr_payload, checked_in, checked_in_at, checked_in_by,
 		       pass_1_image, pass_2_name, pass_2_image, pass_2_mobile, pass_2_email,
 		       pass_2_pass_code, pass_2_qr_payload, pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+		       {exh_pass_col_sql}
 		FROM `tabConnectFest Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
@@ -947,10 +950,13 @@ def get_current_user_profile(**kwargs):
 	""", (target_user, user_mobile, user_mobile), as_dict=True)
 
 	# Fetch event pass details (BNI Event)
-	events_raw = frappe.db.sql("""
+	has_event_col = frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	event_col_sql = ", event_pass_url" if has_event_col else ""
+	events_raw = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, email, mobile_no,
 		       event_name, chapter_name, region_name, location, industry, segment,
-		       pass_code, qr_payload, status, checked_in, checked_in_at, creation
+		       pass_code, qr_payload, status, checked_in, checked_in_at, creation, modified
+		       {event_col_sql}
 		FROM `tabConnectFest BNI Event Registration`
 		WHERE (email = %s OR (mobile_no = %s AND %s != ''))
 		ORDER BY creation ASC
@@ -1068,6 +1074,26 @@ def get_current_user_profile(**kwargs):
 		pay_mode = sb.get("payment_mode") or ("Cash" if (sb.get("razorpay_payment_id") or "").startswith("CASH") else ("Online" if is_paid else "N/A"))
 		status_desc = "Confirmed" if is_paid else "Awaiting Payment"
 
+		# Exhibitor Pass Badge Image is strictly for PAID and BOOKED stalls
+		raw_exh_pass = sb.get("exhibitor_pass_url") or ""
+		if is_paid and sb.stall_number and not raw_exh_pass:
+			try:
+				from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+				raw_exh_pass = generate_exhibitor_badge_image(sb, pass_index=1)
+				if raw_exh_pass and frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url"):
+					frappe.db.set_value("ConnectFest Registration", sb.get("name"), "exhibitor_pass_url", raw_exh_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+
+		p1_code = sb.get("pass_code") or sb.registration_id
+		sb_mod = sb.get("modified")
+		sb_mod_ts = int(sb_mod.timestamp()) if (sb_mod and hasattr(sb_mod, "timestamp")) else int(now_datetime().timestamp())
+		p1_badge_url = f"{format_full_url(raw_exh_pass)}?v={sb_mod_ts}" if (is_paid and sb.stall_number and raw_exh_pass) else ""
+		from connectfest.services.notifications import get_base_url
+		base_url = get_base_url()
+		p1_dl_url = f"{base_url}/api/method/connectfest.api.download_exhibitor_badge?code={urllib.parse.quote(str(p1_code))}" if (is_paid and sb.stall_number and raw_exh_pass) else ""
+
 		stalls.append({
 			"registration_id": sb.registration_id,
 			"stall_number": sb.stall_number,
@@ -1081,6 +1107,7 @@ def get_current_user_profile(**kwargs):
 			"has_paid": is_paid,
 			"has_selected_stall": True,
 			"next_action": "view_badge" if is_paid else "proceed_to_payment",
+			"exhibitor_pass_url": p1_badge_url,
 			"razorpay_payment_id": sb.razorpay_payment_id,
 			"razorpay_order_id": sb.razorpay_order_id,
 			"payment_date": str(sb.payment_date or sb.creation) if is_paid else None,
@@ -1105,19 +1132,39 @@ def get_current_user_profile(**kwargs):
 			zone = zone_map.get(tier_name) if tier_name else None
 			pay_mode = sb.get("payment_mode") or ("Cash" if (sb.get("razorpay_payment_id") or "").startswith("CASH") else "Online")
 
+			# Ensure Exhibitor Pass 1 Badge Image
+			raw_exh_pass = sb.get("exhibitor_pass_url") or ""
+			if not raw_exh_pass:
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					raw_exh_pass = generate_exhibitor_badge_image(sb, pass_index=1)
+					if raw_exh_pass and frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url"):
+						frappe.db.set_value("ConnectFest Registration", sb.get("name"), "exhibitor_pass_url", raw_exh_pass)
+						frappe.db.commit()
+				except Exception:
+					pass
+			p1_code = sb.get("pass_code") or sb.registration_id
+			sb_mod = sb.get("modified")
+			sb_mod_ts = int(sb_mod.timestamp()) if (sb_mod and hasattr(sb_mod, "timestamp")) else int(now_datetime().timestamp())
+			p1_badge_url = f"{format_full_url(raw_exh_pass)}?v={sb_mod_ts}" if raw_exh_pass else ""
+			from connectfest.services.notifications import get_base_url
+			base_url = get_base_url()
+			p1_dl_url = f"{base_url}/api/method/connectfest.api.download_exhibitor_badge?code={urllib.parse.quote(str(p1_code))}"
+
 			# Pass 1: Primary Exhibitor Pass
 			p1 = {
 				"pass_index": 1,
 				"pass_number": 1,
 				"pass_title": "Primary Exhibitor Pass",
 				"pass_type": "exhibitor_pass",
-				"pass_code": sb.get("pass_code") or sb.registration_id,
+				"pass_code": p1_code,
 				"registration_id": sb.registration_id,
 				"full_name": (sb.full_name if (sb.full_name and "@" not in sb.full_name) else user_full_name),
 				"company_name": sb.company_name or company_name,
 				"company_logo": format_full_url(sb.company_logo or company_logo),
 				"visitor_image": format_full_url(sb.get("pass_1_image") or user_image or sb.company_logo or company_logo),
 				"image": format_full_url(sb.get("pass_1_image") or user_image or sb.company_logo or company_logo),
+				"exhibitor_pass_url": p1_badge_url,
 				"location": sb.location or location,
 				"stall_number": sb.stall_number,
 				"stall_category": tier_name,
@@ -1151,6 +1198,21 @@ def get_current_user_profile(**kwargs):
 			p2_qr = (sb.get("pass_2_qr_payload") or "").strip() if is_p2_assigned else None
 			if is_p2_assigned and not p2_qr and p2_code:
 				p2_qr = f"CONNECTFEST2027:EXHIBITOR:{sb.stall_number}:{p2_code}:{sb.get('pass_2_email') or sb.email or target_user}"
+
+			# Ensure Exhibitor Pass 2 Badge Image
+			raw_p2_pass = sb.get("pass_2_pass_url") or ""
+			if is_p2_assigned and not raw_p2_pass:
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					raw_p2_pass = generate_exhibitor_badge_image(sb, pass_index=2)
+					if raw_p2_pass and frappe.db.has_column("ConnectFest Registration", "pass_2_pass_url"):
+						frappe.db.set_value("ConnectFest Registration", sb.get("name"), "pass_2_pass_url", raw_p2_pass)
+						frappe.db.commit()
+				except Exception:
+					pass
+			p2_badge_url = f"{format_full_url(raw_p2_pass)}?v={sb_mod_ts}" if (is_p2_assigned and raw_p2_pass) else ""
+			p2_dl_url = f"{base_url}/api/method/connectfest.api.download_exhibitor_badge?code={urllib.parse.quote(str(p2_code))}&pass_index=2" if is_p2_assigned else ""
+
 			p2 = {
 				"pass_index": 2,
 				"pass_number": 2,
@@ -1161,6 +1223,7 @@ def get_current_user_profile(**kwargs):
 				"full_name": p2_name or "Co-Exhibitor (Unassigned)",
 				"visitor_image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
 				"image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
+				"exhibitor_pass_url": p2_badge_url,
 				"mobile_no": sb.get("pass_2_mobile") or "" if is_p2_assigned else "",
 				"email": sb.get("pass_2_email") or "" if is_p2_assigned else "",
 				"company_name": sb.company_name or company_name,
@@ -1233,8 +1296,24 @@ def get_current_user_profile(**kwargs):
 		})
 
 	event_passes = []
+	from connectfest.services.notifications import get_base_url
+	b_url = get_base_url()
 	for e in events_raw:
 		chk_in = cint(e.get("checked_in") or 0)
+		e_code = e.pass_code or e.registration_id or e.name
+		raw_ev_pass = e.get("event_pass_url") or ""
+		if not raw_ev_pass:
+			try:
+				from connectfest.services.event_badge import generate_event_badge_image
+				raw_ev_pass = generate_event_badge_image(e)
+				if raw_ev_pass and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+					frappe.db.set_value("ConnectFest BNI Event Registration", e.get("name"), "event_pass_url", raw_ev_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+		e_mod = e.get("modified")
+		e_mod_ts = int(e_mod.timestamp()) if (e_mod and hasattr(e_mod, "timestamp")) else int(now_datetime().timestamp())
+		ev_pass_url = f"{format_full_url(raw_ev_pass)}?v={e_mod_ts}" if raw_ev_pass else f"{b_url}/files/ConnectFest_Pass_QR_{e_code}.png"
 		event_passes.append({
 			"registration_id": e.registration_id or e.name,
 			"full_name": (e.full_name if (e.get("full_name") and "@" not in e.get("full_name")) else user_full_name),
@@ -1246,6 +1325,7 @@ def get_current_user_profile(**kwargs):
 			"location": e.location or "",
 			"industry": e.industry or "",
 			"segment": e.segment or "",
+			"event_pass_url": ev_pass_url,
 			"status": e.status or ("Checked In" if chk_in else "Registered"),
 			"checked_in": chk_in,
 			"is_attended": bool(chk_in),
@@ -2771,6 +2851,23 @@ def update_profile(**kwargs):
 					""", stall_params)
 				invalidate_stalls_cache()
 
+			# Regenerate Exhibitor Badge Pass image if logo, name or company changed
+			if any(k in updates_exhibitor for k in ("company_logo", "full_name", "company_name", "pass_1_image")):
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					for r in ex_regs:
+						full_r = frappe.db.get_value("ConnectFest Registration", r["name"], [
+							"name", "registration_id", "full_name", "company_name", "company_logo",
+							"location", "stall_number", "stall_category", "payment_status", "pass_code",
+							"qr_payload", "is_bni_member", "is_cnr_member", "pass_1_image", "exhibitor_pass_url"
+						], as_dict=True)
+						if full_r and full_r.get("stall_number") and full_r.get("payment_status") == "Paid":
+							new_eb = generate_exhibitor_badge_image(full_r, pass_index=1)
+							if new_eb:
+								frappe.db.set_value("ConnectFest Registration", r["name"], "exhibitor_pass_url", new_eb)
+				except Exception:
+					pass
+
 		# 8. Apply Updates to ConnectFest Visitor Registration(s)
 		vis_regs = frappe.db.sql("""
 			SELECT name, registration_id
@@ -2795,16 +2892,19 @@ def update_profile(**kwargs):
 				v_cached.update(updates_visitor)
 				set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{v_id}", v_cached)
 
-			# Regenerate visitor badge pass image if name or company changed
-			if "full_name" in updates_visitor or "company_name" in updates_visitor:
+			# Regenerate visitor badge pass image if photo, name, or company changed
+			if any(k in updates_visitor for k in ("visitor_image", "full_name", "company_name", "which_day")):
 				try:
 					from connectfest.services.visitor_badge import generate_visitor_badge_image
 					for v in vis_regs:
-						full_v = frappe.db.get_value("ConnectFest Visitor Registration", v["name"], ["name", "full_name", "company_name", "pass_code", "qr_payload"], as_dict=True)
+						full_v = frappe.db.get_value("ConnectFest Visitor Registration", v["name"], [
+							"name", "registration_id", "full_name", "company_name", "visitor_image",
+							"pass_code", "qr_payload", "which_day"
+						], as_dict=True)
 						if full_v:
 							new_b = generate_visitor_badge_image(full_v)
 							if new_b:
-								frappe.db.set_value("ConnectFest Visitor Registration", v["name"], "visitor_image", new_b)
+								frappe.db.set_value("ConnectFest Visitor Registration", v["name"], "visitor_image_pass", new_b)
 				except Exception:
 					pass
 
@@ -2829,6 +2929,22 @@ def update_profile(**kwargs):
 					SET {', '.join(evt_clauses)}
 					WHERE name IN %(names)s
 				""", evt_params)
+
+			# Regenerate Event Badge Pass image if name or company changed
+			try:
+				from connectfest.services.event_badge import generate_event_badge_image
+				for e in evt_regs:
+					full_e = frappe.db.get_value("ConnectFest BNI Event Registration", e["name"], [
+						"name", "registration_id", "full_name", "company_name", "chapter_name",
+						"region_name", "location", "industry", "segment", "event_name",
+						"pass_code", "qr_payload"
+					], as_dict=True)
+					if full_e:
+						new_evb = generate_event_badge_image(full_e)
+						if new_evb and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+							frappe.db.set_value("ConnectFest BNI Event Registration", e["name"], "event_pass_url", new_evb)
+			except Exception:
+				pass
 
 		frappe.db.commit()
 

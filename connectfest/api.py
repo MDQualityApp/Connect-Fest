@@ -175,6 +175,14 @@ from connectfest.services.visitor_badge import (
 	download_visitor_badge as _download_visitor_badge,
 	get_visitor_badge as _get_visitor_badge,
 )
+from connectfest.services.exhibitor_badge import (
+	download_exhibitor_badge as _download_exhibitor_badge,
+	generate_exhibitor_badge_image as _generate_exhibitor_badge_image,
+)
+from connectfest.services.event_badge import (
+	download_event_badge as _download_event_badge,
+	generate_event_badge_image as _generate_event_badge_image,
+)
 from connectfest.services.wati import (
 	resend_booking_whatsapp as _resend_booking_whatsapp,
 	send_booking_confirmation_whatsapp as _send_booking_confirmation_whatsapp,
@@ -1173,6 +1181,36 @@ def download_visitor_pass(pass_code=None, registration_id=None, mobile_no=None, 
 def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
 	"""Public API: Get structured visitor pass badge data with direct QR and PDF download URLs."""
 	return _get_visitor_badge(pass_code=pass_code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_exhibitor_badge(code=None, registration_id=None, stall_number=None, pass_index=1, **kwargs):
+	"""
+	Downloads the official Exhibitor Pass Badge image (PNG).
+	Accessible publicly by code, registration_id, or stall_number.
+	"""
+	return _download_exhibitor_badge(code=code, registration_id=registration_id, stall_number=stall_number, pass_index=pass_index, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_exhibitor_pass(code=None, registration_id=None, stall_number=None, pass_index=1, **kwargs):
+	"""Alias for download_exhibitor_badge."""
+	return _download_exhibitor_badge(code=code, registration_id=registration_id, stall_number=stall_number, pass_index=pass_index, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_event_badge(code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""
+	Downloads the official BNI / CNR Event Pass Badge card image (PNG).
+	Accessible publicly by code, registration_id, mobile_no, or email.
+	"""
+	return _download_event_badge(code=code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def download_event_pass(code=None, registration_id=None, mobile_no=None, email=None, **kwargs):
+	"""Alias for download_event_badge."""
+	return _download_event_badge(code=code, registration_id=registration_id, mobile_no=mobile_no, email=email, **kwargs)
 
 
 

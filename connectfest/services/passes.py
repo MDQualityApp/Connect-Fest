@@ -114,25 +114,31 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	# 1. Check Visitor Pass (ConnectFest Visitor Registration)
 	# =========================================================================
 	visitor = None
+	has_v_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
+	v_col_sql = ", visitor_image_pass" if has_v_col else ""
+
 	if code:
-		visitor = frappe.db.sql("""
+		visitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
 			FROM `tabConnectFest Visitor Registration`
 			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
 			LIMIT 1
 		""", {"code": code}, as_dict=True)
 
 	if not visitor and mob_scan:
-		visitor = frappe.db.sql("""
+		visitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
 			FROM `tabConnectFest Visitor Registration`
 			WHERE mobile_no = %(mob)s
 			ORDER BY creation DESC LIMIT 1
 		""", {"mob": mob_scan}, as_dict=True)
 
 	if not visitor and email_scan:
-		visitor = frappe.db.sql("""
+		visitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, visitor_image, email, mobile_no, which_day, pass_code, status, checked_in, checked_in_at, checked_in_by, area_of_interest
+			       {v_col_sql}
 			FROM `tabConnectFest Visitor Registration`
 			WHERE email = %(email)s
 			ORDER BY creation DESC LIMIT 1
@@ -140,6 +146,18 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 	if visitor:
 		rec = visitor[0]
+
+		raw_v_pass = rec.get("visitor_image_pass") or ""
+		if not raw_v_pass:
+			try:
+				from connectfest.services.visitor_badge import generate_visitor_badge_image
+				raw_v_pass = generate_visitor_badge_image(rec)
+				if raw_v_pass and frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass"):
+					frappe.db.set_value("ConnectFest Visitor Registration", rec.get("name"), "visitor_image_pass", raw_v_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+		vis_pass_url = format_full_url(raw_v_pass or rec.visitor_image)
 
 		# Day Validation: Day 1 vs Day 2 check
 		if scan_day:
@@ -162,6 +180,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"verified": False,
 				"pass_type": "visitor_pass",
 				"pass_title": "Visitor Gate Pass",
+				"visitor_pass_url": vis_pass_url,
 				"message": f"⚠️ ALREADY SCANNED! Visitor pass ({rec.pass_code} - {rec.full_name}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
 				"pass": {
 					"pass_code": rec.pass_code,
@@ -169,7 +188,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"pass_type": "visitor_pass",
 					"pass_title": "Visitor Gate Pass",
 					"full_name": rec.full_name,
-					"image": format_full_url(rec.visitor_image),
+					"visitor_pass_url": vis_pass_url,
 					"visitor_image": format_full_url(rec.visitor_image),
 					"which_day": rec.which_day or "Both days",
 					"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
@@ -199,6 +218,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			"verified": True,
 			"pass_type": "visitor_pass",
 			"pass_title": "Visitor Gate Pass",
+			"visitor_pass_url": vis_pass_url,
 			"message": f"✅ VISITOR PASS VERIFIED - WELCOME {rec.full_name.upper()} TO CONNECTFEST 2027!",
 			"pass": {
 				"pass_code": rec.pass_code,
@@ -206,7 +226,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"pass_type": "visitor_pass",
 				"pass_title": "Visitor Gate Pass",
 				"full_name": rec.full_name,
-				"image": format_full_url(rec.visitor_image),
+				"visitor_pass_url": vis_pass_url,
 				"visitor_image": format_full_url(rec.visitor_image),
 				"which_day": rec.which_day or "Both days",
 				"access": "VISITOR - BOTH DAYS" if (not rec.which_day or rec.which_day.lower() == "both days") else f"VISITOR - {rec.which_day.upper()}",
@@ -227,31 +247,37 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	# 2. Check BNI Event Pass (ConnectFest BNI Event Registration)
 	# =========================================================================
 	bni_event = None
+	has_ev_col = frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	ev_col_sql = ", event_pass_url" if has_ev_col else ""
+
 	if code:
-		bni_event = frappe.db.sql("""
+		bni_event = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, mobile_no, email,
 			       chapter_name, region_name, location, industry, segment, event_name,
 			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
 			FROM `tabConnectFest BNI Event Registration`
 			WHERE pass_code = %(code)s OR registration_id = %(code)s OR name = %(code)s
 			LIMIT 1
 		""", {"code": code}, as_dict=True)
 
 	if not bni_event and mob_scan:
-		bni_event = frappe.db.sql("""
+		bni_event = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, mobile_no, email,
 			       chapter_name, region_name, location, industry, segment, event_name,
 			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
 			FROM `tabConnectFest BNI Event Registration`
 			WHERE mobile_no = %(mob)s
 			ORDER BY creation DESC LIMIT 1
 		""", {"mob": mob_scan}, as_dict=True)
 
 	if not bni_event and email_scan:
-		bni_event = frappe.db.sql("""
+		bni_event = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, mobile_no, email,
 			       chapter_name, region_name, location, industry, segment, event_name,
 			       pass_code, status, checked_in, checked_in_at, checked_in_by
+			       {ev_col_sql}
 			FROM `tabConnectFest BNI Event Registration`
 			WHERE email = %(email)s
 			ORDER BY creation DESC LIMIT 1
@@ -260,12 +286,43 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	if bni_event:
 		rec = bni_event[0]
 
+		raw_ev_pass = rec.get("event_pass_url") or ""
+		if not raw_ev_pass:
+			try:
+				from connectfest.services.event_badge import generate_event_badge_image
+				raw_ev_pass = generate_event_badge_image(rec)
+				if raw_ev_pass and frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url"):
+					frappe.db.set_value("ConnectFest BNI Event Registration", rec.get("name"), "event_pass_url", raw_ev_pass)
+					frappe.db.commit()
+			except Exception:
+				pass
+		ev_pass_url = format_full_url(raw_ev_pass) if raw_ev_pass else ""
+
 		# Duplicate Scan Check
 		if rec.checked_in:
 			return {
 				"status": "duplicate_entry",
 				"verified": False,
+				"pass_type": "bni_event_pass",
+				"pass_title": "BNI Event Pass",
+				"event_pass_url": ev_pass_url,
 				"message": f"⚠️ ALREADY SCANNED! BNI Event pass ({rec.pass_code}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
+				"pass": {
+					"pass_code": rec.pass_code,
+					"registration_id": rec.registration_id or rec.name,
+					"full_name": rec.full_name,
+					"company_name": rec.company_name,
+					"chapter_name": rec.chapter_name,
+					"region_name": rec.region_name,
+					"mobile_no": rec.mobile_no,
+					"email": rec.email,
+					"event_name": rec.event_name,
+					"event_pass_url": ev_pass_url,
+					"checked_in": 1,
+					"checked_in_at": str(rec.checked_in_at or ""),
+					"checked_in_by": rec.get("checked_in_by") or "Gate Staff",
+					"venue": "Chennai Trade Centre, Nandambakkam",
+				},
 			}
 
 		frappe.db.set_value("ConnectFest BNI Event Registration", rec.name, {
@@ -280,6 +337,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			"status": "success",
 			"verified": True,
 			"pass_type": "bni_event_pass",
+			"event_pass_url": ev_pass_url,
 			"message": f"✅ BNI EVENT PASS VERIFIED - WELCOME TO {rec.get('event_name') or 'CONNECTFEST BNI EVENTS'}!",
 			"pass": {
 				"pass_code": rec.pass_code,
@@ -291,6 +349,8 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"mobile_no": rec.mobile_no,
 				"email": rec.email,
 				"event_name": rec.event_name,
+				"event_pass_url": ev_pass_url,
+				"checked_in": 1,
 				"checked_in_at": now_str,
 				"checked_in_by": sess_user,
 				"venue": "Chennai Trade Centre, Nandambakkam",
@@ -304,13 +364,17 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	clean_base_code = code.rsplit("-", 1)[0] if ("-P2" in code.upper() or code.endswith("-2")) else code
 	no_hyphen_code = code.replace("-", "").strip().upper()
 
+	has_exh_pass_col = frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	exh_pass_col_sql = ", exhibitor_pass_url, pass_2_pass_url" if has_exh_pass_col else ""
+
 	if is_pass_2_scan:
-		exhibitor = frappe.db.sql("""
+		exhibitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
 			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
 			       checked_in, checked_in_at, checked_in_by, pass_1_image,
 			       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email, pass_2_pass_code, pass_2_qr_payload,
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+			       {exh_pass_col_sql}
 			FROM `tabConnectFest Registration`
 			WHERE pass_2_pass_code = %(code)s
 			   OR REPLACE(pass_2_pass_code, '-', '') = %(no_hyphen)s
@@ -322,12 +386,13 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		""", {"code": code, "no_hyphen": no_hyphen_code, "p2_like": f"%{code}%", "base": clean_base_code}, as_dict=True)
 
 	if not exhibitor and code:
-		exhibitor = frappe.db.sql("""
+		exhibitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
 			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
 			       checked_in, checked_in_at, checked_in_by, pass_1_image,
 			       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email, pass_2_pass_code, pass_2_qr_payload,
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+			       {exh_pass_col_sql}
 			FROM `tabConnectFest Registration`
 			WHERE pass_code = %(code)s 
 			   OR REPLACE(pass_code, '-', '') = %(no_hyphen)s
@@ -340,24 +405,26 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		""", {"code": code, "no_hyphen": no_hyphen_code}, as_dict=True)
 
 	if not exhibitor and mob_scan:
-		exhibitor = frappe.db.sql("""
+		exhibitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
 			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
 			       checked_in, checked_in_at, checked_in_by, pass_1_image,
 			       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email, pass_2_pass_code, pass_2_qr_payload,
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+			       {exh_pass_col_sql}
 			FROM `tabConnectFest Registration`
 			WHERE mobile_no = %(mob)s OR pass_2_mobile = %(mob)s
 			ORDER BY creation DESC LIMIT 1
 		""", {"mob": mob_scan}, as_dict=True)
 
 	if not exhibitor and email_scan:
-		exhibitor = frappe.db.sql("""
+		exhibitor = frappe.db.sql(f"""
 			SELECT name, registration_id, full_name, company_name, company_logo, location, mobile_no, email,
 			       stall_number, stall_category, payment_status, status, pass_code, qr_payload,
 			       checked_in, checked_in_at, checked_in_by, pass_1_image,
 			       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email, pass_2_pass_code, pass_2_qr_payload,
 			       pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+			       {exh_pass_col_sql}
 			FROM `tabConnectFest Registration`
 			WHERE email = %(email)s OR pass_2_email = %(email)s
 			ORDER BY creation DESC LIMIT 1
@@ -417,12 +484,26 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"message": f"❌ ACCESS DENIED: Co-Exhibitor Pass 2 for Stall '{rec.stall_number}' is not yet assigned to a person. Primary exhibitor ({rec.full_name}) must set friend/staff name and photo first.",
 				}
 
+			# Auto-generate or resolve Pass 2 Badge Image
+			pass_2_badge = rec.get("pass_2_pass_url") or ""
+			if not pass_2_badge and rec.get("pass_2_name"):
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					pass_2_badge = generate_exhibitor_badge_image(rec, pass_index=2)
+					if pass_2_badge and frappe.db.has_column("ConnectFest Registration", "pass_2_pass_url"):
+						frappe.db.set_value("ConnectFest Registration", rec.get("name"), "pass_2_pass_url", pass_2_badge)
+						frappe.db.commit()
+				except Exception:
+					pass
+			badge_2_url = format_full_url(pass_2_badge) if pass_2_badge else ""
+
 			if cint(rec.get("pass_2_checked_in")):
 				return {
 					"status": "duplicate_entry",
 					"verified": False,
 					"pass_type": "exhibitor_pass",
 					"pass_index": 2,
+					"exhibitor_pass_url": badge_2_url,
 					"message": f"⚠️ ALREADY SCANNED! Co-Exhibitor Pass 2 ({rec.pass_2_name}) for Stall {rec.stall_number} was already scanned at {rec.pass_2_checked_in_at} by {rec.get('pass_2_checked_in_by') or 'Gate Staff'}. Duplicate entry denied.",
 					"pass": {
 						"registration_id": rec.registration_id or rec.name,
@@ -432,6 +513,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 						"full_name": rec.pass_2_name,
 						"image": format_full_url(rec.pass_2_image),
 						"visitor_image": format_full_url(rec.pass_2_image),
+						"exhibitor_pass_url": badge_2_url,
 						"stall_number": rec.stall_number,
 						"stall_category": rec.stall_category,
 						"payment_status": rec.payment_status,
@@ -454,6 +536,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"pass_type": "exhibitor_pass",
 				"pass_index": 2,
 				"pass_title": "Co-Exhibitor Pass (Booth Staff)",
+				"exhibitor_pass_url": badge_2_url,
 				"message": f"✅ CO-EXHIBITOR PASS VERIFIED - WELCOME {rec.pass_2_name.upper()}! STALL {rec.stall_number} ({rec.stall_category})",
 				"pass": {
 					"pass_code": rec.get("pass_2_pass_code") or f"{rec.registration_id}-P2",
@@ -463,6 +546,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"full_name": rec.pass_2_name,
 					"image": format_full_url(rec.pass_2_image),
 					"visitor_image": format_full_url(rec.pass_2_image),
+					"exhibitor_pass_url": badge_2_url,
 					"company_name": rec.company_name,
 					"company_logo": format_full_url(rec.company_logo),
 					"location": rec.location or "",
@@ -484,6 +568,19 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 		else:
 			# === Pass 1 (Primary Exhibitor) Verification ===
+			# Auto-generate or resolve Pass 1 Badge Image
+			pass_1_badge = rec.get("exhibitor_pass_url") or ""
+			if not pass_1_badge:
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					pass_1_badge = generate_exhibitor_badge_image(rec, pass_index=1)
+					if pass_1_badge and frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url"):
+						frappe.db.set_value("ConnectFest Registration", rec.get("name"), "exhibitor_pass_url", pass_1_badge)
+						frappe.db.commit()
+				except Exception:
+					pass
+			badge_1_url = format_full_url(pass_1_badge) if pass_1_badge else ""
+
 			if cint(rec.checked_in):
 				p2_info = f" (Note: Co-Exhibitor Pass 2 for {rec.pass_2_name} is still unused)" if (rec.get("pass_2_name") and not cint(rec.get("pass_2_checked_in"))) else ""
 				return {
@@ -491,6 +588,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"verified": False,
 					"pass_type": "exhibitor_pass",
 					"pass_index": 1,
+					"exhibitor_pass_url": badge_1_url,
 					"message": f"⚠️ ALREADY SCANNED! Primary Exhibitor pass ({rec.pass_code or rec.registration_id} - {rec.full_name}) was already scanned at {rec.checked_in_at} by {rec.get('checked_in_by') or 'Gate Staff'}. Duplicate entry denied.{p2_info}",
 					"pass": {
 						"registration_id": rec.registration_id or rec.name,
@@ -500,6 +598,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 						"full_name": rec.full_name,
 						"company_name": rec.company_name,
 						"company_logo": format_full_url(rec.company_logo),
+						"exhibitor_pass_url": badge_1_url,
 						"stall_number": rec.stall_number,
 						"stall_category": rec.stall_category,
 						"payment_status": rec.payment_status,
@@ -513,7 +612,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"checked_in": 1,
 				"checked_in_at": now_str,
 				"checked_in_by": sess_user,
-				"status": "Checked In",
+				"status": "Attended",
 			})
 			frappe.db.commit()
 
@@ -523,6 +622,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 				"pass_type": "exhibitor_pass",
 				"pass_index": 1,
 				"pass_title": "Primary Exhibitor Pass",
+				"exhibitor_pass_url": badge_1_url,
 				"message": f"✅ EXHIBITOR PASS VERIFIED - WELCOME {rec.full_name.upper()}! STALL {rec.stall_number} ({rec.stall_category})",
 				"pass": {
 					"pass_code": rec.pass_code or rec.registration_id or rec.name,
@@ -534,6 +634,7 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 					"company_logo": format_full_url(rec.company_logo),
 					"visitor_image": format_full_url(rec.get("pass_1_image") or rec.company_logo),
 					"image": format_full_url(rec.get("pass_1_image") or rec.company_logo),
+					"exhibitor_pass_url": badge_1_url,
 					"location": rec.location or "",
 					"stall_number": rec.stall_number,
 					"stall_category": rec.stall_category,
@@ -1000,6 +1101,8 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			params["mobile"] = mb
 
 		where_str = " OR ".join(where_clauses) if where_clauses else "1=0"
+		has_exh_pass_col = frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url") if hasattr(frappe, "db") and frappe.db else True
+		exh_pass_col_sql = ", exhibitor_pass_url, pass_2_pass_url" if has_exh_pass_col else ""
 
 		stalls = frappe.db.sql(f"""
 			SELECT registration_id, full_name, company_name, company_logo, location,
@@ -1009,6 +1112,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 			       bill, gst, pass_code, qr_payload, checked_in, checked_in_at, checked_in_by,
 			       pass_1_image, pass_2_name, pass_2_image, pass_2_mobile, pass_2_email,
 			       pass_2_pass_code, pass_2_qr_payload, pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+			       {exh_pass_col_sql}
 			FROM `tabConnectFest Registration`
 			WHERE ({where_str})
 			ORDER BY creation DESC
@@ -1117,6 +1221,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"pass_2_checked_in_by": sb.get("pass_2_checked_in_by") or None,
 					"venue": "Chennai Trade Centre, Nandambakkam",
 					"dates": "20 & 21 Feb 2027",
+					"exhibitor_pass_url": format_full_url(sb.get("exhibitor_pass_url")),
 				})
 
 		exhibitor_passes = []
@@ -1136,6 +1241,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"company_logo": sb.get("company_logo"),
 					"visitor_image": format_full_url(sb.get("pass_1_image") or sb.get("company_logo")),
 					"image": format_full_url(sb.get("pass_1_image") or sb.get("company_logo")),
+					"exhibitor_pass_url": format_full_url(sb.get("exhibitor_pass_url")),
 					"location": sb.get("location") or "",
 					"stall_number": sb.get("stall_number"),
 					"stall_category": sb.get("stall_category"),
@@ -1177,6 +1283,7 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 					"full_name": p2_name or "Co-Exhibitor (Unassigned)",
 					"visitor_image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
 					"image": format_full_url(sb.get("pass_2_image")) if is_p2_assigned else "",
+					"exhibitor_pass_url": format_full_url(sb.get("pass_2_pass_url")) if is_p2_assigned else "",
 					"mobile_no": sb.get("pass_2_mobile") or "" if is_p2_assigned else "",
 					"email": sb.get("pass_2_email") or "" if is_p2_assigned else "",
 					"company_name": sb.get("company_name"),
@@ -1328,6 +1435,8 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 			return {"status": "error", "message": "registration_id, stall_number, email, or login required to view exhibitor badge"}
 
 	where_str = " OR ".join(where_clauses)
+	has_exh_pass_col = frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url") if hasattr(frappe, "db") and frappe.db else True
+	exh_pass_col_sql = ", exhibitor_pass_url, pass_2_pass_url" if has_exh_pass_col else ""
 	records = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, company_logo, location,
 		       mobile_no, email, is_bni_member, region_name, chapter_name,
@@ -1336,6 +1445,7 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		       checked_in, checked_in_at, checked_in_by, pass_1_image,
 		       pass_2_name, pass_2_image, pass_2_mobile, pass_2_email,
 		       pass_2_pass_code, pass_2_qr_payload, pass_2_checked_in, pass_2_checked_in_at, pass_2_checked_in_by
+		       {exh_pass_col_sql}
 		FROM `tabConnectFest Registration`
 		WHERE ({where_str})
 		ORDER BY creation DESC
@@ -1377,6 +1487,20 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	except Exception:
 		pass
 
+	# Ensure Pass 1 Badge Image
+	raw_exh_pass = rec.get("exhibitor_pass_url") or ""
+	if not raw_exh_pass:
+		try:
+			from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+			raw_exh_pass = generate_exhibitor_badge_image(rec, pass_index=1)
+			if raw_exh_pass and frappe.db.has_column("ConnectFest Registration", "exhibitor_pass_url"):
+				frappe.db.set_value("ConnectFest Registration", rec.get("name"), "exhibitor_pass_url", raw_exh_pass)
+				frappe.db.commit()
+		except Exception:
+			pass
+	badge_1_url = format_full_url(raw_exh_pass) if raw_exh_pass else ""
+	dl_1_url = f"{base_url}/api/method/connectfest.api.download_exhibitor_badge?code={urllib.parse.quote(str(rec.get('pass_code') or rec.get('registration_id')))}"
+
 	# Pass 1: Primary Exhibitor Pass
 	pcode1 = rec.get("pass_code") or rec.get("registration_id")
 	raw_qr1 = rec.get("qr_payload")
@@ -1395,6 +1519,7 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"company_logo": format_full_url(rec.get("company_logo")),
 		"visitor_image": format_full_url(rec.get("pass_1_image") or rec.get("company_logo")),
 		"image": format_full_url(rec.get("pass_1_image") or rec.get("company_logo")),
+		"exhibitor_pass_url": badge_1_url,
 		"location": rec.get("location") or "",
 		"stall_number": rec.get("stall_number"),
 		"stall_category": rec.get("stall_category"),
@@ -1429,6 +1554,20 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	qr2 = pcode2 if (not raw_qr2 or "CONNECTFEST" in str(raw_qr2)) else raw_qr2
 	chk2 = cint(rec.get("pass_2_checked_in") or 0)
 
+	# Ensure Pass 2 Badge Image
+	raw_p2_pass = rec.get("pass_2_pass_url") or ""
+	if is_p2_assigned and not raw_p2_pass:
+		try:
+			from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+			raw_p2_pass = generate_exhibitor_badge_image(rec, pass_index=2)
+			if raw_p2_pass and frappe.db.has_column("ConnectFest Registration", "pass_2_pass_url"):
+				frappe.db.set_value("ConnectFest Registration", rec.get("name"), "pass_2_pass_url", raw_p2_pass)
+				frappe.db.commit()
+		except Exception:
+			pass
+	badge_2_url = format_full_url(raw_p2_pass) if (is_p2_assigned and raw_p2_pass) else ""
+	dl_2_url = f"{base_url}/api/method/connectfest.api.download_exhibitor_badge?code={urllib.parse.quote(str(pcode2))}&pass_index=2" if is_p2_assigned else ""
+
 	pass_2 = {
 		"pass_index": 2,
 		"pass_number": 2,
@@ -1439,6 +1578,7 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 		"full_name": p2_name or "Co-Exhibitor (Unassigned)",
 		"visitor_image": format_full_url(rec.get("pass_2_image")) if is_p2_assigned else "",
 		"image": format_full_url(rec.get("pass_2_image")) if is_p2_assigned else "",
+		"exhibitor_pass_url": badge_2_url,
 		"mobile_no": rec.get("pass_2_mobile") or "" if is_p2_assigned else "",
 		"email": rec.get("pass_2_email") or "" if is_p2_assigned else "",
 		"company_name": rec.get("company_name"),

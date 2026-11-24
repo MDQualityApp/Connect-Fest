@@ -92,8 +92,27 @@ def register_stall(**kwargs):
 	company_name = safe_str(data.get("company_name") or data.get("company"))
 	mobile_no = safe_str(data.get("mobile_no") or data.get("phone") or data.get("mobile"))
 	email = safe_str(data.get("email")).lower()
-	raw_logo = safe_str(data.get("company_logo") or data.get("logo"))
-	company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}")
+	raw_logo = (
+		data.get("company_logo")
+		or data.get("logo")
+		or data.get("pass_1_image")
+		or data.get("image")
+		or data.get("photo")
+		or data.get("visitor_image")
+		or data.get("avatar")
+		or data.get("user_image")
+	)
+	company_logo = save_image_from_base64_or_url(raw_logo, file_name_prefix=f"logo_{mobile_no[-4:] if len(mobile_no)>=4 else 'stall'}") if raw_logo else ""
+	if not company_logo and email and hasattr(frappe, "db") and frappe.db:
+		try:
+			company_logo = (
+				frappe.db.get_value("User", email, "user_image")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"email": email}, "visitor_image")
+				or frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": mobile_no}, "visitor_image")
+				or ""
+			)
+		except Exception:
+			company_logo = ""
 	location = safe_str(data.get("location"))
 	bill = safe_str(data.get("bill") or data.get("billing_name") or data.get("bill_to"))
 	gst = safe_str(data.get("gst") or data.get("gst_number") or data.get("gstin"))
@@ -410,6 +429,10 @@ def register_stall(**kwargs):
 
 	has_stall_selected = bool(stall_number or stall_category)
 
+	# Optional Attendee Pass 1 Photo
+	raw_p1_img = data.get("pass_1_image") or data.get("photo") or data.get("image") or data.get("visitor_image") or data.get("user_image") or data.get("avatar") or ""
+	pass_1_image = save_image_from_base64_or_url(raw_p1_img, file_name_prefix=f"exh1_{mobile_no[-4:] if len(mobile_no)>=4 else 'pass'}") if raw_p1_img else ""
+
 	# Optional Co-Exhibitor Pass 2 details
 	pass_2_name = (data.get("pass_2_name") or data.get("co_exhibitor_name") or data.get("second_person_name") or data.get("friend_name") or "").strip()
 	raw_p2_img = data.get("pass_2_image") or data.get("co_exhibitor_image") or data.get("second_person_image") or data.get("friend_image") or ""
@@ -425,6 +448,7 @@ def register_stall(**kwargs):
 		"full_name": full_name,
 		"company_name": company_name,
 		"company_logo": company_logo,
+		"pass_1_image": company_logo,
 		"location": location,
 		"bill": bill,
 		"gst": gst,
@@ -452,7 +476,7 @@ def register_stall(**kwargs):
 		"checked_in": 0,
 		"checked_in_at": None,
 		"checked_in_by": None,
-		"pass_1_image": "",
+		"pass_1_image": pass_1_image,
 		"pass_2_name": pass_2_name,
 		"pass_2_image": pass_2_image,
 		"pass_2_mobile": pass_2_mobile,
@@ -469,6 +493,21 @@ def register_stall(**kwargs):
 		"docstatus": 0,
 		"idx": 0,
 	}
+
+	# Exhibitor Pass Badge is ONLY generated after payment is Paid and stall is confirmed
+	is_paid_stall = bool(stall_number and (record.get("payment_status") == "Paid"))
+	exhibitor_pass_url = ""
+	pass_2_pass_url = ""
+	if is_paid_stall:
+		try:
+			from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+			exhibitor_pass_url = generate_exhibitor_badge_image(record, pass_index=1)
+			record["exhibitor_pass_url"] = exhibitor_pass_url
+			if pass_2_name:
+				pass_2_pass_url = generate_exhibitor_badge_image(record, pass_index=2)
+				record["pass_2_pass_url"] = pass_2_pass_url
+		except Exception:
+			pass
 
 	# Direct Reliable Insert into Database & Redis Cache
 	try:
@@ -501,10 +540,16 @@ def register_stall(**kwargs):
 		response_data = {
 			"status": "success",
 			"registration_id": actual_reg_id,
+			"stall_number": stall_number or "",
+			"pass_code": record.get("pass_code"),
 			"message": "Exhibitor registration successful!",
 			"logged_in": True,
 			"x_auth_token": auth_token,
 		}
+		if is_paid_stall and exhibitor_pass_url:
+			response_data["exhibitor_pass_url"] = format_full_url(exhibitor_pass_url)
+		if is_paid_stall and pass_2_name and pass_2_pass_url:
+			response_data["pass_2_pass_url"] = format_full_url(pass_2_pass_url)
 
 		if create_order and stall_number:
 			from connectfest.services.payments import create_razorpay_order
@@ -1095,6 +1140,7 @@ def select_stall(registration_id=None, stall_number=None, **kwargs):
 	if hold_res.get("status") == "error":
 		return hold_res
 
+	# Stall selected and held for 10 minutes (Badge is generated once payment is confirmed)
 	return {
 		"status": "success",
 		"message": f"Stall {stall_num} ({tier}) selected successfully for {reg_id}" if tier else f"Stall {stall_num} selected successfully for {reg_id}",

@@ -111,6 +111,45 @@ class ConnectFestRegistration(Document):
 			from connectfest.services.auth import ensure_frappe_user
 			ensure_frappe_user(self.email, self.full_name, self.mobile_no, role="Website User")
 
+		# Auto-generate or Regenerate Exhibitor Pass Badge Image if stall is booked and payment is Paid
+		if self.stall_number and self.payment_status == "Paid":
+			doc_before = self.get_doc_before_save()
+			needs_regen_p1 = (
+				not getattr(self, "exhibitor_pass_url", None)
+				or not doc_before
+				or doc_before.full_name != self.full_name
+				or doc_before.company_name != self.company_name
+				or doc_before.company_logo != self.company_logo
+				or getattr(doc_before, "pass_1_image", None) != getattr(self, "pass_1_image", None)
+				or doc_before.stall_number != self.stall_number
+				or getattr(doc_before, "is_cnr_member", None) != getattr(self, "is_cnr_member", None)
+			)
+			if needs_regen_p1:
+				try:
+					from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+					b_url = generate_exhibitor_badge_image(self, pass_index=1)
+					if b_url:
+						self.exhibitor_pass_url = b_url
+				except Exception:
+					pass
+
+			if getattr(self, "pass_2_name", None):
+				needs_regen_p2 = (
+					not getattr(self, "pass_2_pass_url", None)
+					or not doc_before
+					or getattr(doc_before, "pass_2_name", None) != self.pass_2_name
+					or getattr(doc_before, "pass_2_image", None) != getattr(self, "pass_2_image", None)
+					or doc_before.stall_number != self.stall_number
+				)
+				if needs_regen_p2:
+					try:
+						from connectfest.services.exhibitor_badge import generate_exhibitor_badge_image
+						b2_url = generate_exhibitor_badge_image(self, pass_index=2)
+						if b2_url:
+							self.pass_2_pass_url = b2_url
+					except Exception:
+						pass
+
 	def set_pricing(self):
 		# Immutability Rule: If payment is already Confirmed/Paid, the transaction amount is strictly locked!
 		# Admin price changes or surcharge updates must NEVER retroactively alter paid bookings!
