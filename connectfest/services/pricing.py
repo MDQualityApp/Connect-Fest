@@ -20,6 +20,18 @@ PRICING_CACHE_ALL_KEY = "connectfest:tier_pricing:all"
 # Standard reference templates (used ONLY by admin_restore_defaults on explicit request)
 DEFAULT_TIERS_TEMPLATE = [
 	{
+		"tier_name": "Title Sponsor",
+		"price": 250000.0,
+		"gst_percent": 18.0,
+		"description": "Title Sponsor Arena, Exclusive Branding, 6x6m Premium Pavilion, Prime Placement",
+	},
+	{
+		"tier_name": "Silver",
+		"price": 100000.0,
+		"gst_percent": 18.0,
+		"description": "Silver Pavilion, East Facing, 4x3m Booth, High Visibility, Premium Aisles",
+	},
+	{
 		"tier_name": "Premium",
 		"price": 45000.0,
 		"gst_percent": 18.0,
@@ -69,11 +81,16 @@ def ensure_tier_pricing_exists(tier_name, price=None, description=None):
 
 
 def invalidate_pricing_cache():
-	"""Invalidates Redis cache keys for tier pricing."""
+	"""Invalidates Redis cache keys for tier pricing and stall inventory."""
 	try:
 		cache = frappe.cache()
 		cache.delete(cache.make_key(PRICING_CACHE_DICT_KEY))
 		cache.delete(cache.make_key(PRICING_CACHE_ALL_KEY))
+	except Exception:
+		pass
+	try:
+		from connectfest.services.stalls import invalidate_stalls_cache
+		invalidate_stalls_cache()
 	except Exception:
 		pass
 
@@ -173,20 +190,6 @@ def get_tier_pricing():
 	except Exception:
 		pass
 
-	# Check ConnectFest Settings as dynamic fallback
-	try:
-		settings = frappe.get_single("ConnectFest Settings")
-		s_map = {}
-		if getattr(settings, "price_title_sponsor", None): s_map["Title Sponsor"] = flt(settings.price_title_sponsor)
-		if settings.price_silver: s_map["Silver"] = flt(settings.price_silver)
-		if settings.price_premium: s_map["Premium"] = flt(settings.price_premium)
-		if settings.price_standard: s_map["Standard"] = flt(settings.price_standard)
-		if settings.price_regular: s_map["Regular"] = flt(settings.price_regular)
-		if s_map:
-			return s_map
-	except Exception:
-		pass
-
 	return {}
 
 
@@ -233,22 +236,16 @@ def get_tier_details(tier_name):
 			"is_active": tier_doc.get("is_active", 1),
 		}
 
-	# Dynamic lookup from ConnectFest Stall if tier was set on stall
-	stall_price = frappe.db.get_value("ConnectFest Stall", {"tier": t}, "price")
-	base = flt(stall_price or 0.0)
-	gst_pct = 18.0
-	gst_amt = round(base * (gst_pct / 100.0), 2)
-	total_amt = round(base + gst_amt, 2)
 	return {
 		"tier_name": t,
-		"base_price": base,
-		"price": base,
-		"gst_percent": gst_pct,
-		"gst_amount": gst_amt,
-		"total_amount": total_amt,
-		"amount_in_paise": int(total_amt * 100),
-		"description": f"{t} Exhibition Stall",
-		"is_active": 1,
+		"base_price": 0.0,
+		"price": 0.0,
+		"gst_percent": 18.0,
+		"gst_amount": 0.0,
+		"total_amount": 0.0,
+		"amount_in_paise": 0,
+		"description": "",
+		"is_active": 0,
 	}
 
 
@@ -389,29 +386,6 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 
 		# Sync new price to all available stalls of this tier
 		frappe.db.set_value("ConnectFest Stall", {"tier": doc.tier_name, "status": "Available"}, "price", doc.price, update_modified=False)
-
-		# Sync to ConnectFest Settings if standard tier
-		t_lower = doc.tier_name.lower()
-		settings = frappe.get_single("ConnectFest Settings")
-		if "title" in t_lower or "sponsor" in t_lower:
-			if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = doc.price
-		elif t_lower == "silver": settings.price_silver = doc.price
-		elif t_lower == "premium": settings.price_premium = doc.price
-		elif t_lower == "standard": settings.price_standard = doc.price
-		elif t_lower == "regular": settings.price_regular = doc.price
-
-		try:
-			settings.save(ignore_permissions=True)
-		except frappe.TimestampMismatchError:
-			settings.reload()
-			if "title" in t_lower or "sponsor" in t_lower:
-				if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = doc.price
-			elif t_lower == "silver": settings.price_silver = doc.price
-			elif t_lower == "premium": settings.price_premium = doc.price
-			elif t_lower == "standard": settings.price_standard = doc.price
-			elif t_lower == "regular": settings.price_regular = doc.price
-			settings.save(ignore_permissions=True)
-
 		frappe.db.commit()
 
 		invalidate_pricing_cache()
@@ -500,14 +474,6 @@ def restore_default_pricing():
 		doc.is_active = 1
 		doc.insert(ignore_permissions=True)
 
-	# Sync ConnectFest Settings
-	settings = frappe.get_single("ConnectFest Settings")
-	if hasattr(settings, "price_title_sponsor"): settings.price_title_sponsor = 250000.0
-	settings.price_silver = 100000.0
-	settings.price_premium = 45000.0
-	settings.price_standard = 35000.0
-	settings.price_regular = 25000.0
-	settings.save(ignore_permissions=True)
 	frappe.db.commit()
 
 	invalidate_pricing_cache()

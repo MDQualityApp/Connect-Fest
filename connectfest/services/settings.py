@@ -16,13 +16,7 @@ from connectfest.services.auth import check_admin_permission
 
 
 # Allowed fields for this specific Admin Settings API
-ALLOWED_PRICING_FIELDS = {
-	"price_title_sponsor": flt,
-	"price_silver": flt,
-	"price_premium": flt,
-	"price_standard": flt,
-	"price_regular": flt,
-}
+ALLOWED_PRICING_FIELDS = {}
 
 ALLOWED_EVENT_FIELDS = {
 	"event_name": cstr,
@@ -57,9 +51,9 @@ DISALLOWED_FIELDS = {
 
 def _get_clean_settings_data(settings_doc):
 	"""Extracts only the allowed sections and fields from ConnectFest Settings."""
-	pricing_data = {
-		f: flt(settings_doc.get(f) or 0.0) for f in ALLOWED_PRICING_FIELDS
-	}
+	from connectfest.services.pricing import get_all_tier_pricing
+	tier_info = get_all_tier_pricing()
+	pricing_data = {t["tier_name"]: t["price"] for t in tier_info.get("tiers", [])}
 	event_data = {
 		"event_name": cstr(settings_doc.get("event_name") or ""),
 		"event_dates": cstr(settings_doc.get("event_dates") or ""),
@@ -216,19 +210,5 @@ def admin_update_settings(**kwargs):
 
 
 def _sync_pricing_to_stalls_and_tiers(settings_doc):
-	"""Syncs updated settings pricing to ConnectFest Tier Pricing and available stalls."""
-	tier_map = {
-		"Title Sponsor": flt(settings_doc.get("price_title_sponsor")),
-		"Silver": flt(settings_doc.get("price_silver")),
-		"Premium": flt(settings_doc.get("price_premium")),
-		"Standard": flt(settings_doc.get("price_standard")),
-		"Regular": flt(settings_doc.get("price_regular")),
-	}
-
-	for tier_name, price in tier_map.items():
-		if price > 0:
-			# Sync ConnectFest Tier Pricing doctype
-			if frappe.db.exists("ConnectFest Tier Pricing", tier_name):
-				frappe.db.set_value("ConnectFest Tier Pricing", tier_name, "price", price, update_modified=False)
-			# Sync all currently available stalls of this tier
-			frappe.db.set_value("ConnectFest Stall", {"tier": tier_name, "status": "Available"}, "price", price, update_modified=False)
+	"""No-op: All tier pricing is managed dynamically via ConnectFest Tier Pricing DocType."""
+	pass

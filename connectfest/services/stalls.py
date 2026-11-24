@@ -360,17 +360,15 @@ def get_stalls(**kwargs):
 
 		holds_released = 0
 		for stall in stalls:
-			t = (stall.tier or "Standard").strip() or "Standard"
-			if t not in tier_summary:
-				tier_summary[t] = {"total": 0, "available": 0, "booked": 0, "price": flt(stall.price or pricing.get(t, 0))}
-
-			tier_price = pricing.get(t, stall.price)
-			# Stall-specific custom price override:
+			t = (stall.tier or "").strip()
 			stall_custom_price = flt(stall.get("price", 0))
 			if stall_custom_price > 0:
 				stall["price"] = stall_custom_price
+			elif t in pricing:
+				stall["price"] = flt(pricing[t])
 			else:
-				stall["price"] = flt(tier_price)
+				stall["price"] = 0.0
+
 			stall["crn"] = cint(stall.get("crn", 0))
 			stall["x"] = flt(stall.get("x") or 0.0)
 			stall["y"] = flt(stall.get("y") or 0.0)
@@ -402,13 +400,15 @@ def get_stalls(**kwargs):
 
 			# Only count unblocked stalls in public stats
 			if not stall.is_blocked_by_admin and stall.status != "Blocked":
-				tier_summary[t]["total"] += 1
+				if t in tier_summary:
+					tier_summary[t]["total"] += 1
+					if stall.status == "Booked":
+						tier_summary[t]["booked"] += 1
+					elif stall.status == "Available":
+						tier_summary[t]["available"] += 1
 				if stall.status == "Booked":
 					total_booked += 1
 					total_revenue += flt(stall.price)
-					tier_summary[t]["booked"] += 1
-				elif stall.status == "Available":
-					tier_summary[t]["available"] += 1
 
 			# Zone assignment
 			if not stall.get("zone"):
@@ -2013,21 +2013,6 @@ def setup_default_stalls(preserve_booked=True, seed_stalls=False):
 		try:
 			settings = frappe.get_single("ConnectFest Settings")
 			updated = False
-			if not getattr(settings, "price_title_sponsor", None):
-				settings.price_title_sponsor = 250000.0
-				updated = True
-			if not settings.price_silver:
-				settings.price_silver = 100000.0
-				updated = True
-			if not settings.price_premium:
-				settings.price_premium = 45000.0
-				updated = True
-			if not settings.price_standard:
-				settings.price_standard = 35000.0
-				updated = True
-			if not settings.price_regular:
-				settings.price_regular = 25000.0
-				updated = True
 			if not settings.event_name:
 				settings.event_name = "ConnectFest 2027"
 				updated = True
