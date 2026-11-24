@@ -2771,6 +2771,19 @@ def update_profile(**kwargs):
 				if "user_image" not in updates_user:
 					updates_user["user_image"] = saved_vis_img
 				updated_fields["visitor_image"] = saved_vis_img
+				# Also sync as pass_1_image for exhibitor if not explicitly provided
+				if "pass_1_image" not in updates_exhibitor:
+					updates_exhibitor["pass_1_image"] = saved_vis_img
+
+		raw_p1 = data.get("pass_1_image") or data.get("photo") or data.get("avatar")
+		if raw_p1 is not None:
+			prefix = f"p1_{target_user.split('@')[0][:8]}" if "@" in target_user else "pass1"
+			saved_p1 = save_image_from_base64_or_url(str(raw_p1), file_name_prefix=prefix)
+			if saved_p1:
+				updates_exhibitor["pass_1_image"] = saved_p1
+				if "user_image" not in updates_user:
+					updates_user["user_image"] = saved_p1
+				updated_fields["pass_1_image"] = saved_p1
 
 		visitor_day = data.get("which_day")
 		valid_days = ["20 Feb", "21 Feb", "Both days", "Day 1", "Day 2"]

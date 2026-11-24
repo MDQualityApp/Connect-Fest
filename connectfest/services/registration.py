@@ -1377,15 +1377,30 @@ def register_visitor(**kwargs):
 
 		from connectfest.services.passes import get_pass_qr_url
 		existing_code = rec.get("pass_code") or rec.get("registration_id")
-		return {
+		existing_auth_token = None
+		try:
+			from connectfest.services.auth import generate_auth_token
+			existing_auth_token = generate_auth_token(rec_email, role_type="Visitor")
+		except Exception:
+			pass
+		raw_v_badge = rec.get("visitor_image_pass") or rec.get("visitor_image") or ""
+		already_res = {
 			"status": "already_registered",
 			"message": "You are already registered for ConnectFest 2027! Maximum 1 visitor pass is allowed per attendee. Please log in using Email OTP to access your entrance pass.",
 			"registration_id": rec.get("registration_id"),
 			"pass_code": existing_code,
+			"visitor_pass_url": format_full_url(raw_v_badge) if raw_v_badge else "",
 			"qr_url": get_pass_qr_url(existing_code),
 			"qr_download_url": f"{base_url}/api/method/connectfest.api.download_pass_qr?code={urllib.parse.quote(str(existing_code))}",
 			"badge_download_url": f"{base_url}/api/method/connectfest.api.download_visitor_badge?code={urllib.parse.quote(str(existing_code))}",
 		}
+		if existing_auth_token:
+			already_res["x_auth_token"] = existing_auth_token
+			already_res["token"] = existing_auth_token
+			already_res["auth_token"] = existing_auth_token
+			if hasattr(frappe, "local") and hasattr(frappe.local, "response") and isinstance(frappe.local.response, dict):
+				frappe.local.response["x_auth_token"] = existing_auth_token
+		return already_res
 
 	# Email OTP Verification:
 	# If caller is NOT logged in, visitor registration strictly requires Email OTP verification!
@@ -1532,19 +1547,12 @@ def register_visitor(**kwargs):
 		# Pure stateless X-Auth-Token for visitors
 		logged_in = True
 		auth_token = None
-		if not is_exhibitor:
-			try:
-				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-				from connectfest.services.auth import generate_auth_token
-				auth_token = generate_auth_token(email, role_type="Visitor")
-			except Exception:
-				pass
-		else:
-			# Exhibitor: ensure user exists
-			try:
-				ensure_frappe_user(email, full_name, mobile_no, role="Website User")
-			except Exception:
-				pass
+		try:
+			ensure_frappe_user(email, full_name, mobile_no, role="Website User")
+			from connectfest.services.auth import generate_auth_token
+			auth_token = generate_auth_token(email, role_type="Exhibitor" if is_exhibitor else "Visitor")
+		except Exception:
+			pass
 
 		res_payload = {
 			"status": "success",
@@ -1555,10 +1563,15 @@ def register_visitor(**kwargs):
 			"is_exhibitor": is_exhibitor,
 			"has_bought_stall": has_bought_stall,
 			"user_type": "exhibitor" if is_exhibitor else "visitor",
+			"visitor_pass_url": pass_info.get("visitor_pass_url") or "",
 			"pass_info": pass_info,
 		}
 		if auth_token:
 			res_payload["x_auth_token"] = auth_token
+			res_payload["token"] = auth_token
+			res_payload["auth_token"] = auth_token
+			if hasattr(frappe, "local") and hasattr(frappe.local, "response") and isinstance(frappe.local.response, dict):
+				frappe.local.response["x_auth_token"] = auth_token
 		return res_payload
 	except Exception as e:
 		err_msg = str(e).strip() or type(e).__name__

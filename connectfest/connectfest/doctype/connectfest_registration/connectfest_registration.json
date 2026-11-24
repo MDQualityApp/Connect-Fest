@@ -143,7 +143,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Registered\nAttended\nCancelled",
+   "options": "Registered\nConfirmed\nAttended\nCancelled",
    "search_index": 1
   },
   {
