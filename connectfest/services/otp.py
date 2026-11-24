@@ -1080,16 +1080,7 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 	login_identity = "Administrator" if is_admin else target_email
 	auth_token = generate_auth_token(login_identity, role_type="admin" if is_admin else role_label)
 
-	if frappe.db.exists("User", login_identity):
-		try:
-			from frappe.auth import LoginManager
-			if not getattr(frappe.local, "login_manager", None):
-				frappe.local.login_manager = LoginManager()
-			frappe.local.login_manager.login_as(login_identity)
-		except Exception:
-			pass
-		frappe.set_user(login_identity)
-
+	# Pure stateless X-Auth-Token (No browser session or cookie creation)
 	frappe.local.response["http_status_code"] = 200
 	return {
 		"status": "success",

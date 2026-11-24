@@ -1385,33 +1385,15 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
 			try:
-				LoginManager().authenticate(usr, pwd)
-				LoginManager().post_login()
-			except (frappe.AuthenticationError, frappe.DoesNotExistError):
+				from frappe.utils.password import check_password
+				check_password(usr, pwd)
+			except Exception:
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
-		elif usr:
-			# Passwordless / direct attendee session login
-			if frappe.db.exists("User", usr):
-				try:
-					if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-						frappe.local.login_manager.login_as(usr)
-					else:
-						frappe.local.login_manager = LoginManager()
-						frappe.local.login_manager.login_as(usr)
-				except Exception:
-					pass
-				frappe.set_user(usr)
 
 		auth_token = None
 		if usr:
 			auth_token = generate_auth_token(usr, role_type="Attendee")
-			if auth_token and hasattr(frappe.local, "cookie_manager"):
-				try:
-					frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
-					frappe.local.cookie_manager.set_cookie("user_id", usr, samesite="None", secure=True)
-				except Exception:
-					pass
 
 		dash = get_my_dashboard(email=usr, mobile_no=mob)
 		return {
@@ -1419,7 +1401,6 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			"message": "Login successful",
 			"user": usr or mob,
 			"x_auth_token": auth_token,
-			"session_user": getattr(frappe.session, "user", "Guest"),
 			"dashboard": dash,
 		}
 	except Exception as e:
@@ -1606,26 +1587,8 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 		except Exception:
 			pass
 
-		# Complete login and establish admin session
+		# Complete login - pure X-Auth-Token
 		auth_token = generate_auth_token(usr, role_type="admin")
-		try:
-			if hasattr(frappe.local, "login_manager") and frappe.local.login_manager:
-				frappe.local.login_manager.login_as(usr)
-			else:
-				frappe.local.login_manager = LoginManager()
-				frappe.local.login_manager.login_as(usr)
-		except Exception:
-			pass
-		frappe.set_user(usr)
-
-		if hasattr(frappe.local, "cookie_manager"):
-			try:
-				frappe.local.cookie_manager.set_cookie("sid", auth_token, samesite="None", secure=True)
-				frappe.local.cookie_manager.set_cookie("user_id", usr, samesite="None", secure=True)
-				frappe.local.cookie_manager.set_cookie("system_user", "yes", samesite="None", secure=True)
-			except Exception:
-				pass
-
 		return {
 			"status": "success",
 			"verified_2fa": True,
@@ -1633,7 +1596,7 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			"admin_user": usr,
 			"x_auth_token": auth_token,
 			"roles": [r for r in roles if r in ("Administrator", "System Manager", "Website Manager")],
-			"session_user": getattr(frappe.session, "user", usr),
+			"session_user": getattr(frappe.session, "user", "Guest"),
 		}
 	except Exception as e:
 		return log_and_return_error("ConnectFest Admin Login Error", e)
