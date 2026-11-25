@@ -2766,6 +2766,12 @@ def admin_get_user_access(email=None, **kwargs):
 				**perm,
 			}
 		else:
+			import math
+			page = max(1, cint(data.get("page") or kwargs.get("page") or 1))
+			raw_limit = data.get("limit") or data.get("page_size") or kwargs.get("limit") or kwargs.get("page_size")
+			limit = min(200, max(1, cint(raw_limit or 20)))
+			offset = (page - 1) * limit
+
 			staff_roles = tuple(
 				list(CONNECTFEST_MODULE_ROLES.values())
 				+ list(CONNECTFEST_SCANNER_ROLES.values())
@@ -2779,8 +2785,12 @@ def admin_get_user_access(email=None, **kwargs):
 				ORDER BY u.full_name
 			""", {"roles": staff_roles}, as_dict=True)
 
+			total = len(all_staff)
+			paged_staff = all_staff[offset:offset + limit]
+			total_pages = math.ceil(total / limit) if limit > 0 else 1
+
 			result = []
-			for u in all_staff:
+			for u in paged_staff:
 				perm = get_user_permissions_summary(u.name)
 				result.append({
 					"name": u.name,
@@ -2792,7 +2802,12 @@ def admin_get_user_access(email=None, **kwargs):
 				})
 			return {
 				"status": "success",
-				"total": len(result),
+				"total": total,
+				"page": page,
+				"limit": limit,
+				"total_pages": total_pages,
+				"has_next": (page * limit) < total,
+				"has_prev": page > 1,
 				"users": result,
 			}
 	except Exception as e:
@@ -3067,19 +3082,31 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 def admin_get_scanner_users(**kwargs):
 	"""
 	Admin API: Returns a list of all users who have Gate Scanner (all or scoped) privileges.
+	Supports pagination via `page` and `limit` / `page_size`.
 	"""
 	err = check_admin_permission("scanner users directory")
 	if err:
 		return err
 
+	import math
+	data = extract_request_data(kwargs)
+	page = max(1, cint(data.get("page") or kwargs.get("page") or 1))
+	raw_limit = data.get("limit") or data.get("page_size") or kwargs.get("limit") or kwargs.get("page_size")
+	limit = min(200, max(1, cint(raw_limit or 20)))
+	offset = (page - 1) * limit
+
 	scanner_role_names = list(CONNECTFEST_SCANNER_ROLES.values()) + list(CONNECTFEST_LEGACY_SCANNER_ROLES)
-	scanner_users = frappe.db.sql("""
+	all_scanner_users = frappe.db.sql("""
 		SELECT DISTINCT u.name as email, u.full_name, u.mobile_no, u.phone, u.enabled, u.creation, u.last_login
 		FROM `tabUser` u
 		JOIN `tabHas Role` r ON r.parent = u.name
 		WHERE r.role IN %(roles)s
 		ORDER BY u.creation DESC
 	""", {"roles": tuple(scanner_role_names)}, as_dict=True)
+
+	total_scanners = len(all_scanner_users)
+	total_pages = math.ceil(total_scanners / limit) if limit > 0 else 1
+	scanner_users = all_scanner_users[offset:offset + limit]
 
 	for u in scanner_users:
 		mail = u.get("email")
@@ -3108,7 +3135,13 @@ def admin_get_scanner_users(**kwargs):
 
 	return {
 		"status": "success",
-		"total_scanners": len(scanner_users),
+		"total_scanners": total_scanners,
+		"total": total_scanners,
+		"page": page,
+		"limit": limit,
+		"total_pages": total_pages,
+		"has_next": (page * limit) < total_scanners,
+		"has_prev": page > 1,
 		"scanners": scanner_users,
 	}
 

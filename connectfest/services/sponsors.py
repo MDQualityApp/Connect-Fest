@@ -296,10 +296,10 @@ def get_sponsors(**kwargs):
 	raw_page = data.get("page")
 	raw_limit = data.get("limit") or data.get("page_size")
 	page = max(1, cint(raw_page)) if raw_page else 1
-	limit = min(200, max(1, cint(raw_limit))) if raw_limit else 0
+	limit = min(200, max(1, cint(raw_limit))) if raw_limit else (20 if raw_page else 0)
 	offset = (page - 1) * limit if limit > 0 else 0
 
-	is_default_query = not category and not search and featured_only is None and page == 1 and limit == 0
+	is_default_query = not category and not search and featured_only is None and not raw_page and not raw_limit
 	cache = frappe.cache()
 	cache_key = cache.make_key(SPONSORS_CACHE_KEY)
 
@@ -354,9 +354,19 @@ def get_sponsors(**kwargs):
 	""", as_dict=True)
 	available_categories = ["All"] + [c.sponsor_category for c in db_cats]
 
+	import math
+	effective_limit = limit if limit > 0 else total_count
+	total_pages = math.ceil(total_count / limit) if limit > 0 else 1
+
 	res = {
 		"status": "success",
 		"total_sponsors": total_count,
+		"total": total_count,
+		"page": page,
+		"limit": effective_limit,
+		"total_pages": total_pages,
+		"has_next": (page * limit) < total_count if limit > 0 else False,
+		"has_prev": page > 1 if limit > 0 else False,
 		"featured_count": featured_count,
 		"categories": available_categories,
 		"active_category": category or "All",

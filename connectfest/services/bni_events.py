@@ -110,6 +110,7 @@ def register_bni_event(**kwargs):
 	industry = safe_str(data.get("industry"))
 	segment = safe_str(data.get("segment"))
 	event_name = safe_str(data.get("event_name") or "ConnectFest BNI Events 2027")
+	raw_photo = data.get("photo") or data.get("profile_photo") or data.get("image") or data.get("avatar")
 
 	# =========================================================================
 	# STEP 1: CNR MEMBERSHIP VERIFICATION (Strictly Mandatory for Events!)
@@ -213,12 +214,20 @@ def register_bni_event(**kwargs):
 	pass_random = frappe.generate_hash(length=8).upper()
 	pass_code = f"BNI-PASS-{pass_random}"
 
+	photo_url = ""
+	try:
+		from connectfest.services.common import save_image_from_base64_or_url
+		photo_url = save_image_from_base64_or_url(raw_photo, file_name_prefix=f"evt_{mobile_no[-4:] if len(mobile_no) >= 4 else 'pass'}") or ""
+	except Exception:
+		photo_url = safe_str(raw_photo).strip() if isinstance(raw_photo, str) else ""
+
 	doc = frappe.get_doc({
 		"doctype": "ConnectFest BNI Event Registration",
 		"full_name": full_name,
 		"company_name": company_name,
 		"mobile_no": mobile_no,
 		"email": email,
+		"photo": photo_url,
 		"event_name": event_name,
 		"chapter_name": chapter_name,
 		"region_name": region_name,
@@ -280,6 +289,7 @@ def register_bni_event(**kwargs):
 		"registration_id": doc.name,
 		"pass_code": pass_code,
 		"event_pass_url": format_full_url(event_pass_url) if event_pass_url else "",
+		"photo": format_full_url(photo_url) if photo_url else "",
 		"full_name": full_name,
 		"visitor_name": full_name,
 		"name": full_name,
@@ -302,6 +312,7 @@ def register_bni_event(**kwargs):
 		"registration_id": doc.name,
 		"pass_code": pass_code,
 		"event_pass_url": format_full_url(event_pass_url) if event_pass_url else "",
+		"photo": format_full_url(photo_url) if photo_url else "",
 		"full_name": full_name,
 		"visitor_name": full_name,
 		"name": full_name,
@@ -617,9 +628,9 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 		return {"status": "error", "message": "id, registration_id, mobile_no, email, or pass_code is required"}
 
 	fields = [
-		"name", "registration_id", "full_name", "company_name", "mobile_no", "email",
+		"name", "registration_id", "full_name", "company_name", "mobile_no", "email", "photo",
 		"chapter_name", "region_name", "location", "industry", "segment", "event_name",
-		"pass_code", "status", "checked_in", "checked_in_at", "checked_in_by", "creation"
+		"pass_code", "event_pass_url", "status", "checked_in", "checked_in_at", "checked_in_by", "creation"
 	]
 
 	record = None
@@ -686,6 +697,7 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 		"registration_id": record.get("registration_id") or record.get("name"),
 		"id": record.get("registration_id") or record.get("name"),
 		"event_pass_url": format_full_url(raw_ev_pass) if raw_ev_pass else "",
+		"photo": format_full_url(record.get("photo")) if record.get("photo") else "",
 		"qr_payload": qr_payload,
 	}
 
@@ -747,7 +759,7 @@ def admin_get_bni_event_registrations(**kwargs):
 	where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
 	items = frappe.db.sql(f"""
-		SELECT name, registration_id, full_name, company_name, mobile_no, email,
+		SELECT name, registration_id, full_name, company_name, mobile_no, email, photo,
 		       chapter_name, region_name, location, industry, segment, event_name,
 		       pass_code, status, checked_in, checked_in_at, checked_in_by, creation
 		FROM `tabConnectFest BNI Event Registration`
@@ -755,6 +767,8 @@ def admin_get_bni_event_registrations(**kwargs):
 		ORDER BY creation DESC
 		LIMIT {limit} OFFSET {start}
 	""", values, as_dict=True)
+	for item in items:
+		item["photo"] = format_full_url(item.get("photo")) if item.get("photo") else ""
 
 	total_count = frappe.db.sql(f"""
 		SELECT COUNT(name) as cnt

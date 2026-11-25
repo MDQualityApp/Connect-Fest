@@ -11,6 +11,7 @@
   "company_name",
   "mobile_no",
   "email",
+  "photo",
   "column_break_1",
   "event_name",
   "chapter_name",
@@ -66,6 +67,11 @@
    "options": "Email",
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "photo",
+   "fieldtype": "Attach Image",
+   "label": "Photo"
   },
   {
    "fieldname": "column_break_1",

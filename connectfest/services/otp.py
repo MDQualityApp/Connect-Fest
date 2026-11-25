@@ -2,6 +2,7 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor
 import frappe
+from frappe.utils import cint
 from connectfest.services.common import extract_request_data, check_rate_limit, parse_boolean
 
 OTP_CACHE_PREFIX = "connectfest:otp:"
