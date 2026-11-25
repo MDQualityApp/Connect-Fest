@@ -30,7 +30,8 @@
   "wati_api_host",
   "column_break_wati",
   "wati_api_token",
-  "wati_template_name"
+  "wati_template_name",
+  "wati_visitor_template_name"
  ],
  "fields": [
   {
@@ -178,10 +179,17 @@
   },
   {
    "default": "welcome",
-   "description": "Approved template name in WATI (e.g. welcome, connectfest_stall_booking)",
+   "description": "Approved stall booking template name in WATI (e.g. welcome, connectfest_booking_confirmed_v3)",
    "fieldname": "wati_template_name",
    "fieldtype": "Data",
-   "label": "WATI Template Name"
+   "label": "Stall Booking WhatsApp Template Name"
+  },
+  {
+   "default": "connectfest_visitor_pass",
+   "description": "Approved visitor gate pass template name in WATI (e.g. connectfest_visitor_pass)",
+   "fieldname": "wati_visitor_template_name",
+   "fieldtype": "Data",
+   "label": "Visitor WhatsApp Template Name"
   }
  ],
  "index_web_pages_for_search": 0,

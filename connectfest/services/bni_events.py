@@ -445,32 +445,9 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 	Validates pass, prevents duplicate check-in, and records check-in timestamp.
 	Restricted strictly to Event Administrators and authorized Gate Scanners.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
 
-	# Check sid in headers/body/cookies if sess_user is Guest
-	if not sess_user or sess_user == "Guest":
-		req_sid = None
-		if hasattr(frappe, "request") and frappe.request:
-			try:
-				req_sid = (
-					frappe.get_request_header("sid")
-					or frappe.get_request_header("X-Frappe-Session-Id")
-					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
-				)
-				if not req_sid:
-					auth_hdr = frappe.get_request_header("Authorization", "")
-					if auth_hdr.startswith("Bearer "):
-						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-			except Exception:
-				pass
-		if req_sid and req_sid != "Guest":
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					sess_user = res[0][0]
-			except Exception:
-				pass
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	# Skip auth for internal tests/calls if explicitly flagged
 	skip_auth = kwargs.get("is_internal") or kwargs.get("skip_auth") or getattr(frappe.flags, "in_test", False)
@@ -481,15 +458,15 @@ def verify_bni_event_pass(pass_code=None, **kwargs):
 			return {
 				"status": "unauthorized",
 				"verified": False,
-				"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+				"message": "Authentication required! Please log in as an Administrator or authorized Event Scanner.",
 			}
 
-		if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+		if not has_scanner_scope(sess_user, "event"):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
 				"verified": False,
-				"message": "Access Denied: Your account does not have scanner privileges! Contact Event Administrator to grant scanner access.",
+				"message": "Access Denied: Your account does not have BNI Event Pass Scanner privileges!",
 			}
 
 	data = extract_request_data(kwargs)
@@ -676,12 +653,12 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 			"message": f"BNI Event Pass not found for identifier '{reg_id or mob or mail or code}'"
 		}
 
-	# If matching only by mobile or email without code/registration_id, ensure session matches or is admin/scanner
+	# If matching only by mobile or email without code/registration_id, ensure session matches or is admin/event-scanner
 	if not code and not reg_id:
-		from connectfest.services.auth import is_admin_user, is_scanner_user
-		sess_u = getattr(frappe.session, "user", "")
+		from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
+		sess_u, _ = resolve_authenticated_session_user(**kwargs)
 		rec_email = (record.get("email") or "").lower()
-		if sess_u == "Guest" or (sess_u.lower() != rec_email and not is_admin_user(sess_u) and not is_scanner_user(sess_u)):
+		if not sess_u or sess_u == "Guest" or (sess_u.lower() != rec_email and not has_scanner_scope(sess_u, "event")):
 			frappe.local.response["http_status_code"] = 401
 			return {
 				"status": "unauthorized",
@@ -726,45 +703,22 @@ def admin_get_bni_event_registrations(**kwargs):
 	Admin & Scanner API: List BNI Event registrations with search, filter, and check-in stats.
 	Restricted strictly to Event Administrators and authorized Gate Scanners.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
 
-	# Resolve user from sid if Guest
-	if not sess_user or sess_user == "Guest":
-		req_sid = None
-		if hasattr(frappe, "request") and frappe.request:
-			try:
-				req_sid = (
-					frappe.get_request_header("sid")
-					or frappe.get_request_header("X-Frappe-Session-Id")
-					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
-				)
-				if not req_sid:
-					auth_hdr = frappe.get_request_header("Authorization", "")
-					if auth_hdr.startswith("Bearer "):
-						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-			except Exception:
-				pass
-		if req_sid and req_sid != "Guest":
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					sess_user = res[0][0]
-			except Exception:
-				pass
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
 		return {
 			"status": "unauthorized",
-			"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+			"message": "Authentication required! Please log in as an Administrator or authorized Event Scanner.",
 		}
 
-	if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+	if not has_scanner_scope(sess_user, "event"):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": "Access Denied: You do not have privileges! Only Administrators and authorized Gate Scanners can view event registrations.",
+			"message": "Access Denied: Your account does not have BNI Event Pass Scanner privileges!",
 		}
 
 	data = extract_request_data(kwargs)

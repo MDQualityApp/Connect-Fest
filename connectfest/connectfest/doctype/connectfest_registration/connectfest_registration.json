@@ -1,421 +1,421 @@
 {
- "actions": [],
- "allow_rename": 0,
- "autoname": "format:CF-{#####}",
- "creation": "2026-10-16 17:25:00",
- "doctype": "DocType",
- "engine": "InnoDB",
- "field_order": [
-  "registration_id",
-  "full_name",
-  "company_name",
-  "company_logo",
-  "location",
-  "gst",
-  "bill",
-  "industry",
-  "segment",
-  "column_break_contact",
-  "mobile_no",
-  "email",
-  "status",
-  "bni_details_section",
-  "is_bni_member",
-  "is_cnr_member",
-  "region_name",
-  "column_break_bni",
-  "chapter_name",
-  "event_source_section",
-  "source_of_info",
-  "stall_package_section",
-  "stall_number",
-  "stall_category",
-  "amount",
-  "payment_section",
-  "payment_status",
-  "payment_mode",
-  "razorpay_order_id",
-  "column_break_pay",
-  "razorpay_payment_id",
-  "razorpay_signature",
-  "payment_date",
-  "gate_checkin_section",
-  "pass_code",
-  "qr_payload",
-  "checked_in",
-  "column_break_checkin",
-  "checked_in_at",
-  "checked_in_by",
-  "pass_1_image",
-  "exhibitor_pass_url",
-  "pass_2_section",
-  "pass_2_name",
-  "pass_2_image",
-  "pass_2_mobile",
-  "pass_2_email",
-  "pass_2_pass_code",
-  "pass_2_qr_payload",
-  "pass_2_checked_in",
-  "pass_2_checked_in_at",
-  "pass_2_checked_in_by",
-  "pass_2_pass_url"
- ],
- "fields": [
-  {
-   "fieldname": "registration_id",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Registration ID",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "full_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Name",
-   "reqd": 1
-  },
-  {
-   "fieldname": "company_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Company Name",
-   "reqd": 1
-  },
-  {
-   "fieldname": "company_logo",
-   "fieldtype": "Attach Image",
-   "in_list_view": 1,
-   "label": "Company Logo"
-  },
-  {
-   "fieldname": "location",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Location",
-   "reqd": 0
-  },
-  {
-   "fieldname": "gst",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "GST",
-   "reqd": 0
-  },
-  {
-   "fieldname": "bill",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Bill",
-   "reqd": 0
-  },
-  {
-   "fieldname": "industry",
-   "fieldtype": "Data",
-   "label": "Industry"
-  },
-  {
-   "fieldname": "segment",
-   "fieldtype": "Data",
-   "label": "Segment"
-  },
-  {
-   "fieldname": "column_break_contact",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "mobile_no",
-   "fieldtype": "Data",
-   "label": "Mobile Number",
-   "search_index": 1
-  },
-  {
-   "fieldname": "email",
-   "fieldtype": "Data",
-   "label": "Email",
-   "options": "Email",
-   "search_index": 1
-  },
-  {
-   "default": "Registered",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Status",
-   "options": "Registered\nConfirmed\nAttended\nCancelled",
-   "search_index": 1
-  },
-  {
-   "fieldname": "bni_details_section",
-   "fieldtype": "Section Break",
-   "label": "BNI & CNR Membership Details"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_bni_member",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "BNI Member (Yes / No)"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_cnr_member",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "CNR Member - Yes / No (Chennai North Region)",
-   "read_only": 1,
-   "description": "Verified automatically against ConnectFest CNR Member DocType"
-  },
-  {
-   "depends_on": "eval:doc.is_bni_member == 1",
-   "fieldname": "region_name",
-   "fieldtype": "Data",
-   "label": "Region Name",
-   "mandatory_depends_on": "eval:doc.is_bni_member == 1"
-  },
-  {
-   "fieldname": "column_break_bni",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.is_bni_member == 1",
-   "fieldname": "chapter_name",
-   "fieldtype": "Data",
-   "label": "Chapter Name",
-   "mandatory_depends_on": "eval:doc.is_bni_member == 1"
-  },
-  {
-   "fieldname": "event_source_section",
-   "fieldtype": "Section Break",
-   "label": "Event Feedback"
-  },
-  {
-   "fieldname": "source_of_info",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "How did you know about this event?",
-   "options": "Social Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther",
-   "reqd": 1
-  },
-  {
-   "fieldname": "stall_package_section",
-   "fieldtype": "Section Break",
-   "label": "Stall Package"
-  },
-  {
-   "fieldname": "stall_number",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Stall Number",
-   "options": "ConnectFest Stall",
-   "reqd": 0,
-   "search_index": 1
-  },
-  {
-   "default": "",
-   "fieldname": "stall_category",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Stall Category",
-   "reqd": 0,
-   "search_index": 1
-  },
-  {
-   "fieldname": "amount",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Amount (INR)",
-   "read_only": 1,
-   "default": "0"
-  },
-  {
-   "fieldname": "payment_section",
-   "fieldtype": "Section Break",
-   "label": "Payment Details"
-  },
-  {
-   "default": "",
-   "fieldname": "payment_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Payment Status",
-   "options": "\nPending\nPaid\nFailed\nRefunded",
-   "search_index": 1
-  },
-  {
-   "default": "",
-   "fieldname": "payment_mode",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Payment Mode",
-   "options": "\nOnline\nCash\nCheque\nBank Transfer"
-  },
-  {
-   "fieldname": "razorpay_order_id",
-   "fieldtype": "Data",
-   "label": "Razorpay Order ID",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_pay",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "razorpay_payment_id",
-   "fieldtype": "Data",
-   "label": "Razorpay Payment ID",
-   "read_only": 1
-  },
-  {
-   "fieldname": "razorpay_signature",
-   "fieldtype": "Data",
-   "label": "Razorpay Signature",
-   "read_only": 1
-  },
-  {
-   "fieldname": "payment_date",
-   "fieldtype": "Datetime",
-   "label": "Payment Date",
-   "read_only": 1
-  },
-  {
-   "fieldname": "gate_checkin_section",
-   "fieldtype": "Section Break",
-   "label": "Gate Entry & Check-In"
-  },
-  {
-   "fieldname": "pass_code",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Pass Code",
-   "search_index": 1
-  },
-  {
-   "fieldname": "qr_payload",
-   "fieldtype": "Small Text",
-   "label": "QR Payload"
-  },
-  {
-   "default": "0",
-   "fieldname": "checked_in",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Checked In"
-  },
-  {
-   "fieldname": "column_break_checkin",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "checked_in_at",
-   "fieldtype": "Datetime",
-   "label": "Checked In At"
-  },
-  {
-   "fieldname": "checked_in_by",
-   "fieldtype": "Data",
-   "label": "Checked In By"
-  },
-  {
-   "fieldname": "pass_1_image",
-   "fieldtype": "Attach Image",
-   "label": "Pass 1 Photo"
-  },
-  {
-   "fieldname": "exhibitor_pass_url",
-   "fieldtype": "Attach Image",
-   "label": "Exhibitor Pass Badge"
-  },
-  {
-   "fieldname": "pass_2_section",
-   "fieldtype": "Section Break",
-   "label": "Co-Exhibitor Pass 2"
-  },
-  {
-   "fieldname": "pass_2_name",
-   "fieldtype": "Data",
-   "label": "Pass 2 Holder Name"
-  },
-  {
-   "fieldname": "pass_2_image",
-   "fieldtype": "Attach Image",
-   "label": "Pass 2 Photo"
-  },
-  {
-   "fieldname": "pass_2_mobile",
-   "fieldtype": "Data",
-   "label": "Pass 2 Mobile"
-  },
-  {
-   "fieldname": "pass_2_email",
-   "fieldtype": "Data",
-   "label": "Pass 2 Email"
-  },
-  {
-   "fieldname": "pass_2_pass_code",
-   "fieldtype": "Data",
-   "label": "Pass 2 Code",
-   "search_index": 1
-  },
-  {
-   "fieldname": "pass_2_qr_payload",
-   "fieldtype": "Small Text",
-   "label": "Pass 2 QR Payload"
-  },
-  {
-   "default": "0",
-   "fieldname": "pass_2_checked_in",
-   "fieldtype": "Check",
-   "label": "Pass 2 Checked In"
-  },
-  {
-   "fieldname": "pass_2_checked_in_at",
-   "fieldtype": "Datetime",
-   "label": "Pass 2 Checked In At"
-  },
-  {
-   "fieldname": "pass_2_checked_in_by",
-   "fieldtype": "Data",
-   "label": "Pass 2 Checked In By"
-  },
-  {
-   "fieldname": "pass_2_pass_url",
-   "fieldtype": "Attach Image",
-   "label": "Co-Exhibitor Pass Badge"
-  }
- ],
- "index_web_pages_for_search": 0,
- "links": [],
- "modified": "2026-10-16 17:25:00",
- "modified_by": "Administrator",
- "module": "ConnectFest",
- "name": "ConnectFest Registration",
- "naming_rule": "Expression",
- "owner": "Administrator",
- "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "read": 1,
-   "role": "All"
-  }
- ],
- "sort_field": "creation",
- "sort_order": "DESC",
- "states": [],
- "title_field": "full_name",
- "search_fields": "full_name,email,mobile_no,company_name",
- "track_changes": 1
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "format:CF-{#####}",
+    "creation": "2026-10-16 17:25:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "registration_id",
+        "full_name",
+        "company_name",
+        "company_logo",
+        "location",
+        "gst",
+        "bill",
+        "industry",
+        "segment",
+        "column_break_contact",
+        "mobile_no",
+        "email",
+        "status",
+        "bni_details_section",
+        "is_bni_member",
+        "is_cnr_member",
+        "region_name",
+        "column_break_bni",
+        "chapter_name",
+        "event_source_section",
+        "source_of_info",
+        "stall_package_section",
+        "stall_number",
+        "stall_category",
+        "amount",
+        "payment_section",
+        "payment_status",
+        "payment_mode",
+        "razorpay_order_id",
+        "column_break_pay",
+        "razorpay_payment_id",
+        "razorpay_signature",
+        "payment_date",
+        "gate_checkin_section",
+        "pass_code",
+        "qr_payload",
+        "checked_in",
+        "column_break_checkin",
+        "checked_in_at",
+        "checked_in_by",
+        "pass_1_image",
+        "exhibitor_pass_url",
+        "pass_2_section",
+        "pass_2_name",
+        "pass_2_image",
+        "pass_2_mobile",
+        "pass_2_email",
+        "pass_2_pass_code",
+        "pass_2_qr_payload",
+        "pass_2_checked_in",
+        "pass_2_checked_in_at",
+        "pass_2_checked_in_by",
+        "pass_2_pass_url"
+    ],
+    "fields": [
+        {
+            "fieldname": "registration_id",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Registration ID",
+            "read_only": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "full_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "company_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Company Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "company_logo",
+            "fieldtype": "Attach Image",
+            "in_list_view": 1,
+            "label": "Company Logo"
+        },
+        {
+            "fieldname": "location",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Location",
+            "reqd": 0
+        },
+        {
+            "fieldname": "gst",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "GST",
+            "reqd": 0
+        },
+        {
+            "fieldname": "bill",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Bill",
+            "reqd": 0
+        },
+        {
+            "fieldname": "industry",
+            "fieldtype": "Data",
+            "label": "Industry"
+        },
+        {
+            "fieldname": "segment",
+            "fieldtype": "Data",
+            "label": "Segment"
+        },
+        {
+            "fieldname": "column_break_contact",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "mobile_no",
+            "fieldtype": "Data",
+            "label": "Mobile Number",
+            "search_index": 1
+        },
+        {
+            "fieldname": "email",
+            "fieldtype": "Data",
+            "label": "Email",
+            "options": "Email",
+            "search_index": 1
+        },
+        {
+            "default": "Registered",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "Registered\nConfirmed\nAttended\nCancelled",
+            "search_index": 1
+        },
+        {
+            "fieldname": "bni_details_section",
+            "fieldtype": "Section Break",
+            "label": "BNI & CNR Membership Details"
+        },
+        {
+            "default": "0",
+            "fieldname": "is_bni_member",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "BNI Member (Yes / No)"
+        },
+        {
+            "default": "0",
+            "fieldname": "is_cnr_member",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "CNR Member - Yes / No (Chennai North Region)",
+            "read_only": 1,
+            "description": "Verified automatically against ConnectFest CNR Member DocType"
+        },
+        {
+            "depends_on": "eval:doc.is_bni_member == 1",
+            "fieldname": "region_name",
+            "fieldtype": "Data",
+            "label": "Region Name",
+            "mandatory_depends_on": "eval:doc.is_bni_member == 1"
+        },
+        {
+            "fieldname": "column_break_bni",
+            "fieldtype": "Column Break"
+        },
+        {
+            "depends_on": "eval:doc.is_bni_member == 1",
+            "fieldname": "chapter_name",
+            "fieldtype": "Data",
+            "label": "Chapter Name",
+            "mandatory_depends_on": "eval:doc.is_bni_member == 1"
+        },
+        {
+            "fieldname": "event_source_section",
+            "fieldtype": "Section Break",
+            "label": "Event Feedback"
+        },
+        {
+            "fieldname": "source_of_info",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "How did you know about this event?",
+            "options": "Social Media\nBNI Chapter\nFriends / Family\nWhatsApp\nEmail Campaign\nWebsite\nWord of Mouth\nOther",
+            "reqd": 1
+        },
+        {
+            "fieldname": "stall_package_section",
+            "fieldtype": "Section Break",
+            "label": "Stall Package"
+        },
+        {
+            "fieldname": "stall_number",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Stall Number",
+            "options": "ConnectFest Stall",
+            "reqd": 0,
+            "search_index": 1
+        },
+        {
+            "default": "",
+            "fieldname": "stall_category",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Stall Category",
+            "reqd": 0,
+            "search_index": 1
+        },
+        {
+            "fieldname": "amount",
+            "fieldtype": "Currency",
+            "in_list_view": 1,
+            "label": "Amount (INR)",
+            "read_only": 1,
+            "default": "0"
+        },
+        {
+            "fieldname": "payment_section",
+            "fieldtype": "Section Break",
+            "label": "Payment Details"
+        },
+        {
+            "default": "",
+            "fieldname": "payment_status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Payment Status",
+            "options": "\nPending\nPaid\nFailed\nRefunded",
+            "search_index": 1
+        },
+        {
+            "default": "",
+            "fieldname": "payment_mode",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Payment Mode",
+            "options": "\nOnline\nCash\nCheque\nBank Transfer"
+        },
+        {
+            "fieldname": "razorpay_order_id",
+            "fieldtype": "Data",
+            "label": "Razorpay Order ID",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_pay",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "razorpay_payment_id",
+            "fieldtype": "Data",
+            "label": "Razorpay Payment ID",
+            "read_only": 1
+        },
+        {
+            "fieldname": "razorpay_signature",
+            "fieldtype": "Data",
+            "label": "Razorpay Signature",
+            "read_only": 1
+        },
+        {
+            "fieldname": "payment_date",
+            "fieldtype": "Datetime",
+            "label": "Payment Date",
+            "read_only": 1
+        },
+        {
+            "fieldname": "gate_checkin_section",
+            "fieldtype": "Section Break",
+            "label": "Gate Entry & Check-In"
+        },
+        {
+            "fieldname": "pass_code",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Pass Code",
+            "search_index": 1
+        },
+        {
+            "fieldname": "qr_payload",
+            "fieldtype": "Small Text",
+            "label": "QR Payload"
+        },
+        {
+            "default": "0",
+            "fieldname": "checked_in",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Checked In"
+        },
+        {
+            "fieldname": "column_break_checkin",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "checked_in_at",
+            "fieldtype": "Datetime",
+            "label": "Checked In At"
+        },
+        {
+            "fieldname": "checked_in_by",
+            "fieldtype": "Data",
+            "label": "Checked In By"
+        },
+        {
+            "fieldname": "pass_1_image",
+            "fieldtype": "Attach Image",
+            "label": "Pass 1 Photo"
+        },
+        {
+            "fieldname": "exhibitor_pass_url",
+            "fieldtype": "Attach Image",
+            "label": "Exhibitor Pass Badge"
+        },
+        {
+            "fieldname": "pass_2_section",
+            "fieldtype": "Section Break",
+            "label": "Co-Exhibitor Pass 2"
+        },
+        {
+            "fieldname": "pass_2_name",
+            "fieldtype": "Data",
+            "label": "Pass 2 Holder Name"
+        },
+        {
+            "fieldname": "pass_2_image",
+            "fieldtype": "Attach Image",
+            "label": "Pass 2 Photo"
+        },
+        {
+            "fieldname": "pass_2_mobile",
+            "fieldtype": "Data",
+            "label": "Pass 2 Mobile"
+        },
+        {
+            "fieldname": "pass_2_email",
+            "fieldtype": "Data",
+            "label": "Pass 2 Email"
+        },
+        {
+            "fieldname": "pass_2_pass_code",
+            "fieldtype": "Data",
+            "label": "Pass 2 Code",
+            "search_index": 1
+        },
+        {
+            "fieldname": "pass_2_qr_payload",
+            "fieldtype": "Small Text",
+            "label": "Pass 2 QR Payload"
+        },
+        {
+            "default": "0",
+            "fieldname": "pass_2_checked_in",
+            "fieldtype": "Check",
+            "label": "Pass 2 Checked In"
+        },
+        {
+            "fieldname": "pass_2_checked_in_at",
+            "fieldtype": "Datetime",
+            "label": "Pass 2 Checked In At"
+        },
+        {
+            "fieldname": "pass_2_checked_in_by",
+            "fieldtype": "Data",
+            "label": "Pass 2 Checked In By"
+        },
+        {
+            "fieldname": "pass_2_pass_url",
+            "fieldtype": "Attach Image",
+            "label": "Co-Exhibitor Pass Badge"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-10-16 17:25:00",
+    "modified_by": "Administrator",
+    "module": "ConnectFest",
+    "name": "ConnectFest Registration",
+    "naming_rule": "Expression",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "role": "All"
+        }
+    ],
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "title_field": "full_name",
+    "search_fields": "full_name,email,mobile_no,company_name",
+    "track_changes": 1
 }

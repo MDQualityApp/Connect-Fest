@@ -44,8 +44,15 @@ from connectfest.services.auth import (
 	ensure_frappe_user,
 	get_current_user_profile as _get_current_user_profile,
 	login_attendee as _login_attendee,
+	staff_login as _staff_login,
+	user_login as _user_login,
 	logout as _logout,
 	admin_login as _admin_login,
+	admin_create_user as _admin_create_user,
+	admin_update_user as _admin_update_user,
+	admin_change_user_password as _admin_change_user_password,
+	admin_get_roles as _admin_get_roles,
+	admin_get_user_access as _admin_get_user_access,
 	admin_toggle_user_status as _admin_toggle_user_status,
 	admin_get_all_users as _admin_get_all_users,
 	admin_get_user_details as _admin_get_user_details,
@@ -185,7 +192,9 @@ from connectfest.services.event_badge import (
 )
 from connectfest.services.wati import (
 	resend_booking_whatsapp as _resend_booking_whatsapp,
+	resend_visitor_whatsapp as _resend_visitor_whatsapp,
 	send_booking_confirmation_whatsapp as _send_booking_confirmation_whatsapp,
+	send_visitor_registration_whatsapp as _send_visitor_registration_whatsapp,
 	test_wati_connection as _test_wati_connection,
 )
 from connectfest.services.reports import (
@@ -608,6 +617,105 @@ def logout_attendee(**kwargs):
 def admin_login(email=None, password=None, otp=None, **kwargs):
 	"""Dedicated Admin Login with Two-Factor Authentication (Password + 2FA OTP)."""
 	return _admin_login(email=email, password=password, otp=otp, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def staff_login(email=None, password=None, **kwargs):
+	"""Password-based login for Admin-created Staff, Module Admins, and Pass Scanners."""
+	return _staff_login(email=email, password=password, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def user_login(email=None, password=None, **kwargs):
+	"""Alias for staff_login."""
+	return _user_login(email=email, password=password, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_user(email=None, password=None, mobile_no=None, full_name=None, roles=None, **kwargs):
+	"""Admin API: Create Staff / Module Admin / Scanner user with mandatory email+password & optional mobile."""
+	return _admin_create_user(email=email, password=password, mobile_no=mobile_no, full_name=full_name, roles=roles, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def create_user(**kwargs):
+	"""Alias for admin_create_user."""
+	return _admin_create_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_create_staff_user(**kwargs):
+	"""Alias for admin_create_user."""
+	return _admin_create_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_user(email=None, user_email=None, password=None, mobile_no=None, full_name=None, roles=None, enabled=None, **kwargs):
+	"""Admin API: Update existing user's roles, optional mobile_no, password, or active status."""
+	return _admin_update_user(
+		email=email, user_email=user_email, password=password,
+		mobile_no=mobile_no, full_name=full_name, roles=roles, enabled=enabled, **kwargs
+	)
+
+
+@frappe.whitelist(allow_guest=True)
+def update_user(**kwargs):
+	"""Alias for admin_update_user."""
+	return _admin_update_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_update_user_roles(**kwargs):
+	"""Alias for admin_update_user focused on role assignment."""
+	return _admin_update_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_assign_user_roles(**kwargs):
+	"""Alias for admin_update_user focused on role assignment."""
+	return _admin_update_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_roles(**kwargs):
+	"""Admin API: Returns all selectable scanner and module CRUD roles for user management UI."""
+	return _admin_get_roles(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_available_roles(**kwargs):
+	"""Alias for admin_get_roles."""
+	return _admin_get_roles(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_change_user_password(email=None, user_email=None, new_password=None, **kwargs):
+	"""Admin API: Change a user's password. Revokes all existing sessions."""
+	return _admin_change_user_password(email=email, user_email=user_email, new_password=new_password, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def change_user_password(**kwargs):
+	"""Alias for admin_change_user_password."""
+	return _admin_change_user_password(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def admin_get_user_access(email=None, **kwargs):
+	"""Admin API: Returns full RBAC permission summary for a user. Omit email to list all staff users."""
+	return _admin_get_user_access(email=email, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_user_access(**kwargs):
+	"""Alias for admin_get_user_access."""
+	return _admin_get_user_access(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def who_has_access(**kwargs):
+	"""Alias for admin_get_user_access."""
+	return _admin_get_user_access(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1075,6 +1183,18 @@ def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
 def send_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
 	"""Alias for resend_booking_whatsapp."""
 	return _resend_booking_whatsapp(registration_id=registration_id, mobile_no=mobile_no, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def resend_visitor_whatsapp(registration_id=None, mobile_no=None, pass_code=None, **kwargs):
+	"""Public / Attendee API: Resend visitor pass confirmation WhatsApp message via WATI."""
+	return _resend_visitor_whatsapp(registration_id=registration_id, mobile_no=mobile_no, pass_code=pass_code, **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def send_visitor_whatsapp(registration_id=None, mobile_no=None, pass_code=None, **kwargs):
+	"""Alias for resend_visitor_whatsapp."""
+	return _resend_visitor_whatsapp(registration_id=registration_id, mobile_no=mobile_no, pass_code=pass_code, **kwargs)
 
 
 @frappe.whitelist(allow_guest=True)

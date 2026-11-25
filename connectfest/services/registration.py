@@ -1544,6 +1544,22 @@ def register_visitor(**kwargs):
 			except Exception:
 				pass
 
+		# Trigger WhatsApp Confirmation via WATI for visitor registration
+		try:
+			from connectfest.services.wati import send_visitor_registration_whatsapp
+			send_visitor_registration_whatsapp(
+				registration_id=reg_id,
+				mobile_no=mobile_no,
+				pass_code=pass_code,
+				reg_data=record,
+			)
+		except Exception as wati_err:
+			frappe.log_error(title="ConnectFest Visitor WhatsApp Error in Registration", message=str(wati_err))
+			try:
+				frappe.db.commit()
+			except Exception:
+				pass
+
 		# Pure stateless X-Auth-Token for visitors
 		logged_in = True
 		auth_token = None
@@ -1678,34 +1694,11 @@ def upload_visitor_image(file=None, filedata=None, filename=None, **kwargs):
 def admin_get_visitor_registrations(**kwargs):
 	"""
 	Admin & Scanner API: List Visitor registrations with search, filter, and check-in stats.
-	Restricted strictly to Event Administrators and authorized Gate Scanners.
+	Restricted strictly to Event Administrators and authorized Visitor Scanners.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
 
-	# Resolve user from sid if Guest
-	if not sess_user or sess_user == "Guest":
-		req_sid = None
-		if hasattr(frappe, "request") and frappe.request:
-			try:
-				req_sid = (
-					frappe.get_request_header("sid")
-					or frappe.get_request_header("X-Frappe-Session-Id")
-					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
-				)
-				if not req_sid:
-					auth_hdr = frappe.get_request_header("Authorization", "")
-					if auth_hdr.startswith("Bearer "):
-						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-			except Exception:
-				pass
-		if req_sid and req_sid != "Guest":
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					sess_user = res[0][0]
-			except Exception:
-				pass
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	# Internal skip auth flag for tests if needed
 	skip_auth = kwargs.get("is_internal") or kwargs.get("skip_auth") or getattr(frappe.flags, "in_test", False)
@@ -1715,14 +1708,14 @@ def admin_get_visitor_registrations(**kwargs):
 			frappe.local.response["http_status_code"] = 401
 			return {
 				"status": "unauthorized",
-				"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
+				"message": "Authentication required! Please log in as an Administrator or authorized Visitor Scanner.",
 			}
 
-		if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+		if not has_scanner_scope(sess_user, "visitor"):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
-				"message": "Access Denied: You do not have privileges! Only Administrators and authorized Gate Scanners can view visitor registrations.",
+				"message": "Access Denied: Your account does not have Visitor Scanner privileges!",
 			}
 
 	data = extract_request_data(kwargs)

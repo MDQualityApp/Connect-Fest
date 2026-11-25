@@ -506,10 +506,10 @@ def is_email_registered(email):
 def get_user_role_types(email, mobile_no=None, user_id=None):
 	"""
 	Returns an array of roles/types the user possesses:
-	e.g. ['Admin', 'Exhibitor', 'Visitor', 'Event']
+	e.g. ['Admin', 'Exhibitor', 'Visitor', 'Event', 'ConnectFest Gallery Admin']
 	"""
 	roles = []
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import is_admin_user, get_user_permissions_summary
 	clean_email = str(email or "").strip().lower()
 	uid = user_id or frappe.db.get_value("User", {"email": clean_email}, "name") or clean_email
 
@@ -522,8 +522,13 @@ def get_user_role_types(email, mobile_no=None, user_id=None):
 	if frappe.db.exists("ConnectFest BNI Event Registration", {"email": clean_email}) or (mobile_no and frappe.db.exists("ConnectFest BNI Event Registration", {"mobile_no": mobile_no})):
 		roles.append("Event")
 
+	perm_summary = get_user_permissions_summary(uid)
+	for r_name in perm_summary["roles"]:
+		if r_name not in ("Website User", "System User") and r_name not in roles:
+			roles.append(r_name)
+
 	if not roles:
-		if is_scanner_user(uid):
+		if perm_summary["is_scanner"]:
 			roles.append("Scanner")
 		else:
 			roles.append("User")
@@ -1034,14 +1039,24 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		or ""
 	)
 	uid = (reg_info.get("user_id") if reg_info else None) or frappe.db.get_value("User", {"email": target_email}, "name") or target_email
-	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid) if is_reg else []
-	is_scanner = bool(is_scanner_user(uid)) if is_reg else False
+	if uid and uid != "Administrator" and frappe.db.exists("User", uid):
+		if not cint(frappe.db.get_value("User", uid, "enabled")):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "disabled",
+				"is_verified": False,
+				"message": "This account has been disabled by the Administrator. Access denied.",
+			}
 
-	from connectfest.services.auth import is_admin_user
+	from connectfest.services.auth import is_admin_user, get_user_permissions_summary
+	perm_summary = get_user_permissions_summary(uid) if is_reg else get_user_permissions_summary(None)
+	roles_arr = get_user_role_types(target_email, mobile_no=user_mob, user_id=uid) if is_reg else []
+	is_scanner = bool(perm_summary["is_scanner"]) if is_reg else False
+
 	is_admin = bool(is_admin_user(target_email) or is_admin_user(uid))
 	if is_admin:
 		is_reg = True
-		admin_roles = [r for r in frappe.get_roles(uid) if r not in ("All", "Guest")]
+		admin_roles = perm_summary["roles"]
 		for ar in admin_roles:
 			if ar not in roles_arr:
 				roles_arr.append(ar)
@@ -1069,14 +1084,21 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		frappe.db.get_value("ConnectFest Registration", {"email": target_email}, "full_name")
 		or frappe.db.get_value("ConnectFest Visitor Registration", {"email": target_email}, "full_name")
 		or frappe.db.get_value("ConnectFest BNI Event Registration", {"email": target_email}, "full_name")
+		or frappe.db.get_value("User", uid, "full_name")
 		or frappe.db.get_value("User", target_email, "full_name")
 		or target_email.split("@")[0].title()
 	)
 
-	ensure_frappe_user(target_email, user_record_name, user_mob, role="Website User")
+	if not frappe.db.exists("User", uid):
+		ensure_frappe_user(target_email, user_record_name, user_mob, role="Website User")
 
 	from connectfest.services.auth import generate_auth_token
-	role_label = "Administrator" if is_admin else ("Exhibitor" if (roles_arr and "Exhibitor" in roles_arr) else "Attendee")
+	role_label = (
+		"Administrator" if is_admin
+		else ("Exhibitor" if (roles_arr and "Exhibitor" in roles_arr)
+		else ("sub_admin" if perm_summary["is_sub_admin"]
+		else ("scanner" if is_scanner else "Attendee")))
+	)
 	login_identity = "Administrator" if is_admin else target_email
 	auth_token = generate_auth_token(login_identity, role_type="admin" if is_admin else role_label)
 
@@ -1087,14 +1109,23 @@ def verify_email_otp(email=None, otp=None, **kwargs):
 		"is_verified": True,
 		"is_registered": True,
 		"is_admin": is_admin,
+		"is_super_admin": is_admin,
+		"is_sub_admin": perm_summary["is_sub_admin"],
+		"has_admin_access": perm_summary["has_admin_access"],
 		"message": "Email verification successful! You are logged in.",
 		"roles": roles_arr,
+		"user_roles": perm_summary["roles"],
+		"role_labels": perm_summary["role_labels"],
+		"access": perm_summary["access"],
+		"allowed_modules": perm_summary["allowed_modules"],
+		"scanner_access": perm_summary["scanner_access"],
+		"permissions": perm_summary["permissions"],
 		"is_scanner": is_scanner,
 		"x_auth_token": auth_token,
 		"user": target_email,
 		"email": target_email,
 		"full_name": user_record_name,
-		"home_page": "/admin" if is_admin else "/me",
+		"home_page": "/admin" if (is_admin or perm_summary["has_admin_access"]) else "/me",
 	}
 
 

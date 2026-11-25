@@ -484,6 +484,9 @@ def restore_default_pricing():
 # Legacy alias
 def update_dynamic_pricing(silver=None, premium=None, standard=None, regular=None, title_sponsor=None, sponsor=None, **kwargs):
 	"""Legacy alias supporting all 5 tiers update in one call."""
+	err = check_admin_permission("tier pricing updates")
+	if err:
+		return err
 	data = extract_request_data(kwargs)
 	s = flt(silver or data.get("silver") or 0)
 	p = flt(premium or data.get("premium") or 0)

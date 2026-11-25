@@ -44,6 +44,7 @@ DISALLOWED_FIELDS = {
 	"wati_api_host",
 	"wati_api_token",
 	"wati_template_name",
+	"wati_visitor_template_name",
 	"email_verified_validity_minutes",
 	"frontend_dashboard_url",
 }

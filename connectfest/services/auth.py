@@ -173,6 +173,519 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 		return clean_email
 
 
+CONNECTFEST_SUPER_ADMIN_ROLES = ("Administrator", "System Manager", "ConnectFest Admin")
+
+CONNECTFEST_MODULE_ROLES = {
+	"gallery": "ConnectFest Gallery Admin",
+	"stall": "ConnectFest Stall Admin",
+	"sponsor": "ConnectFest Sponsor Admin",
+	"cnr": "ConnectFest CNR Admin",
+	"terms": "ConnectFest Terms Admin",
+	"dashboard": "ConnectFest Dashboard Admin",
+	"user_directory": "ConnectFest User Directory Admin",
+}
+
+CONNECTFEST_SCANNER_ROLES = {
+	"exhibitor": "ConnectFest Exhibitor Scanner",
+	"visitor": "ConnectFest Visitor Scanner",
+	"event": "ConnectFest Event Scanner",
+}
+
+CONNECTFEST_LEGACY_SCANNER_ROLES = ("ConnectFest Gate Scanner", "Gate Scanner")
+
+CONNECTFEST_ROLE_LABELS = {
+	"ConnectFest Admin": "Super Admin",
+	"ConnectFest Gallery Admin": "Gallery Admin (CRUD)",
+	"ConnectFest Stall Admin": "Stall & Tier Pricing Admin (CRUD)",
+	"ConnectFest Sponsor Admin": "Sponsor Admin (CRUD)",
+	"ConnectFest CNR Admin": "CNR Member Admin (CRUD)",
+	"ConnectFest Terms Admin": "Terms & Conditions Admin (CRUD)",
+	"ConnectFest Dashboard Admin": "Dashboard Admin",
+	"ConnectFest User Directory Admin": "User Directory Admin",
+	"ConnectFest Exhibitor Scanner": "Exhibitor Pass Scanner",
+	"ConnectFest Visitor Scanner": "Visitor Pass Scanner",
+	"ConnectFest Event Scanner": "BNI Event Pass Scanner",
+	"ConnectFest Gate Scanner": "All Passes Gate Scanner",
+}
+
+CONNECTFEST_ALL_MANAGED_ROLES = (
+	"ConnectFest Admin",
+	"System Manager",
+	"ConnectFest Gallery Admin",
+	"ConnectFest Stall Admin",
+	"ConnectFest Sponsor Admin",
+	"ConnectFest CNR Admin",
+	"ConnectFest Terms Admin",
+	"ConnectFest Dashboard Admin",
+	"ConnectFest User Directory Admin",
+	"ConnectFest Exhibitor Scanner",
+	"ConnectFest Visitor Scanner",
+	"ConnectFest Event Scanner",
+	"ConnectFest Gate Scanner",
+)
+
+ROLE_ALIASES = {
+	# Gallery CRUD
+	"gallery": "ConnectFest Gallery Admin",
+	"gallery_admin": "ConnectFest Gallery Admin",
+	"gallery_crud": "ConnectFest Gallery Admin",
+	"connectfest_gallery_admin": "ConnectFest Gallery Admin",
+	# Stall + Tier Pricing CRUD
+	"stall": "ConnectFest Stall Admin",
+	"stalls": "ConnectFest Stall Admin",
+	"stall_admin": "ConnectFest Stall Admin",
+	"stall_crud": "ConnectFest Stall Admin",
+	"tier_pricing": "ConnectFest Stall Admin",
+	"pricing": "ConnectFest Stall Admin",
+	"stall_pricing": "ConnectFest Stall Admin",
+	"stall_and_pricing": "ConnectFest Stall Admin",
+	"connectfest_stall_admin": "ConnectFest Stall Admin",
+	# Sponsor CRUD (including common spelling variants)
+	"sponsor": "ConnectFest Sponsor Admin",
+	"sponsors": "ConnectFest Sponsor Admin",
+	"sponser": "ConnectFest Sponsor Admin",
+	"sponsers": "ConnectFest Sponsor Admin",
+	"sponsor_admin": "ConnectFest Sponsor Admin",
+	"sponser_admin": "ConnectFest Sponsor Admin",
+	"sponsor_crud": "ConnectFest Sponsor Admin",
+	"connectfest_sponsor_admin": "ConnectFest Sponsor Admin",
+	# CNR Member CRUD (including crn/bni_member variants)
+	"cnr": "ConnectFest CNR Admin",
+	"crn": "ConnectFest CNR Admin",
+	"cnr_member": "ConnectFest CNR Admin",
+	"cnr_members": "ConnectFest CNR Admin",
+	"crn_member": "ConnectFest CNR Admin",
+	"crn_members": "ConnectFest CNR Admin",
+	"bni_member": "ConnectFest CNR Admin",
+	"bni_members": "ConnectFest CNR Admin",
+	"cnr_admin": "ConnectFest CNR Admin",
+	"crn_admin": "ConnectFest CNR Admin",
+	"cnr_crud": "ConnectFest CNR Admin",
+	"connectfest_cnr_admin": "ConnectFest CNR Admin",
+	# Terms & Conditions CRUD
+	"terms": "ConnectFest Terms Admin",
+	"terms_and_conditions": "ConnectFest Terms Admin",
+	"terms_conditions": "ConnectFest Terms Admin",
+	"tnc": "ConnectFest Terms Admin",
+	"terms_admin": "ConnectFest Terms Admin",
+	"terms_crud": "ConnectFest Terms Admin",
+	"connectfest_terms_admin": "ConnectFest Terms Admin",
+	# Dashboard
+	"dashboard": "ConnectFest Dashboard Admin",
+	"dashboard_admin": "ConnectFest Dashboard Admin",
+	"connectfest_dashboard_admin": "ConnectFest Dashboard Admin",
+	# User Directory
+	"user_directory": "ConnectFest User Directory Admin",
+	"user_dir": "ConnectFest User Directory Admin",
+	"directory": "ConnectFest User Directory Admin",
+	"user_directory_admin": "ConnectFest User Directory Admin",
+	"connectfest_user_directory_admin": "ConnectFest User Directory Admin",
+	# Pass Scanners
+	"exhibitor": "ConnectFest Exhibitor Scanner",
+	"exhibitor_scan": "ConnectFest Exhibitor Scanner",
+	"exhibitor_scanner": "ConnectFest Exhibitor Scanner",
+	"exhibitor_pass": "ConnectFest Exhibitor Scanner",
+	"scan_exhibitor": "ConnectFest Exhibitor Scanner",
+	"connectfest_exhibitor_scanner": "ConnectFest Exhibitor Scanner",
+	"visitor": "ConnectFest Visitor Scanner",
+	"visitor_scan": "ConnectFest Visitor Scanner",
+	"visitor_scanner": "ConnectFest Visitor Scanner",
+	"visitor_pass": "ConnectFest Visitor Scanner",
+	"scan_visitor": "ConnectFest Visitor Scanner",
+	"connectfest_visitor_scanner": "ConnectFest Visitor Scanner",
+	"event": "ConnectFest Event Scanner",
+	"event_scan": "ConnectFest Event Scanner",
+	"event_scanner": "ConnectFest Event Scanner",
+	"bni_event": "ConnectFest Event Scanner",
+	"bni_event_scanner": "ConnectFest Event Scanner",
+	"event_attendee": "ConnectFest Event Scanner",
+	"event_pass": "ConnectFest Event Scanner",
+	"scan_event": "ConnectFest Event Scanner",
+	"connectfest_event_scanner": "ConnectFest Event Scanner",
+	"gate_scanner": "ConnectFest Gate Scanner",
+	"scanner": "ConnectFest Gate Scanner",
+	"all_scanner": "ConnectFest Gate Scanner",
+	"full_scanner": "ConnectFest Gate Scanner",
+	"connectfest_gate_scanner": "ConnectFest Gate Scanner",
+	# Super Admin
+	"admin": "ConnectFest Admin",
+	"super_admin": "ConnectFest Admin",
+	"connectfest_admin": "ConnectFest Admin",
+	"system_manager": "System Manager",
+}
+
+ROLE_TO_ACCESS_KEY = {
+	"ConnectFest Admin": "super_admin",
+	"System Manager": "system_manager",
+	"Administrator": "administrator",
+	"ConnectFest Gallery Admin": "gallery",
+	"ConnectFest Stall Admin": "stall",
+	"ConnectFest Sponsor Admin": "sponsor",
+	"ConnectFest CNR Admin": "cnr",
+	"ConnectFest Terms Admin": "terms",
+	"ConnectFest Dashboard Admin": "dashboard",
+	"ConnectFest User Directory Admin": "user_directory",
+	"ConnectFest Exhibitor Scanner": "exhibitor_scanner",
+	"ConnectFest Visitor Scanner": "visitor_scanner",
+	"ConnectFest Event Scanner": "event_scanner",
+	"ConnectFest Gate Scanner": "gate_scanner",
+}
+
+RESOURCE_MODULE_MAP = {
+	# Gallery CRUD
+	"gallery management": "gallery",
+	# Stall + Tier Pricing CRUD
+	"stall management": "stall",
+	"stall creation": "stall",
+	"stall updates": "stall",
+	"stall deletion": "stall",
+	"stall crn controls": "stall",
+	"stall block/unblock controls": "stall",
+	"stall hold configuration": "stall",
+	"bulk stall creation": "stall",
+	"admin stall inventory": "stall",
+	"admin stall details": "stall",
+	"tier pricing creation": "stall",
+	"tier pricing updates": "stall",
+	"tier pricing deletion": "stall",
+	"pricing updates": "stall",
+	"dynamic pricing updates": "stall",
+	# Sponsor CRUD
+	"sponsor management": "sponsor",
+	"sponsor registration management": "sponsor",
+	"blocked ip management": "sponsor",
+	# CNR Member CRUD ONLY
+	"bni member management": "cnr",
+	"bni members view": "cnr",
+	"bni member details": "cnr",
+	"bni member update": "cnr",
+	"bni member deletion": "cnr",
+	# Terms & Conditions CRUD
+	"terms and conditions": "terms",
+	# Dashboard
+	"admin dashboard data": "dashboard",
+	# User Directory
+	"user directory access": "user_directory",
+	"user status controls": "user_directory",
+	"user details access": "user_directory",
+}
+
+
+def ensure_connectfest_roles(role_names=None):
+	"""Ensures all required ConnectFest RBAC roles exist in Frappe's Role doctype."""
+	targets = role_names or CONNECTFEST_ALL_MANAGED_ROLES
+	for r_name in targets:
+		if not r_name or frappe.db.exists("Role", r_name):
+			continue
+		doc = frappe.get_doc({
+			"doctype": "Role",
+			"role_name": r_name,
+			"desk_access": 1 if r_name in ("System Manager", "ConnectFest Admin") else 0,
+		})
+		doc.insert(ignore_permissions=True)
+
+
+def _resolve_user_doc_name(user=None):
+	"""Resolves an email or username alias to its canonical Frappe User document name."""
+	u = user or (getattr(frappe.session, "user", None) if hasattr(frappe, "session") else None)
+	if not u or u == "Guest":
+		return None
+	raw = str(u).strip()
+	clean = raw.lower()
+	if clean in ("administrator", "admin"):
+		return "Administrator"
+	if "@" in clean:
+		admin_email = frappe.db.get_value("User", "Administrator", "email")
+		if admin_email and admin_email.strip().lower() == clean:
+			return "Administrator"
+		by_name = frappe.db.get_value("User", {"name": raw}, "name") or frappe.db.get_value("User", {"name": clean}, "name")
+		if by_name:
+			return by_name
+		by_email = frappe.db.get_value("User", {"email": clean}, "name")
+		if by_email:
+			return by_email
+	if frappe.db.exists("User", raw):
+		return raw
+	if frappe.db.exists("User", clean):
+		return clean
+	return raw
+
+
+def _get_clean_user_roles(user=None):
+	"""Returns all active Frappe roles for user excluding Frappe's built-in All/Guest."""
+	u = _resolve_user_doc_name(user)
+	if not u or not frappe.db.exists("User", u):
+		return []
+	return [r for r in frappe.get_roles(u) if r not in ("All", "Guest")]
+
+
+def _sync_user_scanner_cache(user_name, roles):
+	"""Keeps legacy Redis gate-scanner set in sync so scoped scanners are not over-privileged."""
+	if not user_name:
+		return
+	try:
+		cache = frappe.cache()
+		if any(r in CONNECTFEST_LEGACY_SCANNER_ROLES for r in (roles or [])):
+			cache.sadd("connectfest:scanner_users", user_name)
+		else:
+			cache.srem("connectfest:scanner_users", user_name)
+	except Exception:
+		pass
+
+
+def _truthy_flag(val):
+	"""Converts flexible boolean/string flag values into True/False."""
+	if isinstance(val, bool):
+		return val
+	if isinstance(val, (int, float)):
+		return val != 0
+	s = str(val or "").strip().lower()
+	return s in ("1", "true", "yes", "on", "enable", "enabled", "allow")
+
+
+def normalize_connectfest_roles(raw_roles=None, data=None, **kwargs):
+	"""
+	Parses role lists, comma/JSON strings, permission dicts, and boolean flags
+	into canonical Frappe Role names. Returns (canonical_roles, unknown_tokens).
+	"""
+	combined = {}
+	if isinstance(data, dict):
+		combined.update(data)
+	combined.update(kwargs)
+
+	tokens = []
+
+	def _collect(item):
+		if item is None:
+			return
+		if isinstance(item, (list, tuple, set)):
+			for sub in item:
+				_collect(sub)
+			return
+		if isinstance(item, dict):
+			for k, v in item.items():
+				if isinstance(v, (bool, int, float)):
+					if _truthy_flag(v):
+						tokens.append(str(k))
+				elif isinstance(v, str) and v.strip().lower() in ("1", "true", "yes", "on", "enable", "enabled", "allow"):
+					tokens.append(str(k))
+				elif isinstance(v, str) and v.strip().lower() in ("0", "false", "no", "off", "disable", "disabled", "deny", ""):
+					continue
+				else:
+					tokens.append(str(v))
+			return
+		s = str(item).strip()
+		if not s:
+			return
+		if (s.startswith("[") and s.endswith("]")) or (s.startswith("{") and s.endswith("}")):
+			try:
+				import json
+				_collect(json.loads(s))
+				return
+			except Exception:
+				pass
+		for part in s.split(","):
+			part = part.strip()
+			if part:
+				tokens.append(part)
+
+	for source in (
+		raw_roles,
+		combined.get("roles"),
+		combined.get("role"),
+		combined.get("access"),
+		combined.get("permissions"),
+		combined.get("modules"),
+	):
+		_collect(source)
+
+	scan_type_val = combined.get("scan_type") or combined.get("scanner_type") or combined.get("scanner_scope")
+	if scan_type_val:
+		if isinstance(scan_type_val, str) and scan_type_val.strip().lower() in ("all", "both"):
+			tokens.extend(["exhibitor_scanner", "visitor_scanner", "event_scanner"])
+		else:
+			_collect(scan_type_val)
+
+	flag_map = {
+		"gallery": "ConnectFest Gallery Admin",
+		"gallery_access": "ConnectFest Gallery Admin",
+		"stall": "ConnectFest Stall Admin",
+		"stall_access": "ConnectFest Stall Admin",
+		"tier_pricing": "ConnectFest Stall Admin",
+		"tier_pricing_access": "ConnectFest Stall Admin",
+		"pricing": "ConnectFest Stall Admin",
+		"sponsor": "ConnectFest Sponsor Admin",
+		"sponser": "ConnectFest Sponsor Admin",
+		"sponsor_access": "ConnectFest Sponsor Admin",
+		"sponser_access": "ConnectFest Sponsor Admin",
+		"cnr": "ConnectFest CNR Admin",
+		"crn": "ConnectFest CNR Admin",
+		"cnr_member": "ConnectFest CNR Admin",
+		"crn_member": "ConnectFest CNR Admin",
+		"cnr_access": "ConnectFest CNR Admin",
+		"crn_access": "ConnectFest CNR Admin",
+		"terms": "ConnectFest Terms Admin",
+		"terms_and_conditions": "ConnectFest Terms Admin",
+		"terms_access": "ConnectFest Terms Admin",
+		"dashboard": "ConnectFest Dashboard Admin",
+		"dashboard_access": "ConnectFest Dashboard Admin",
+		"user_directory": "ConnectFest User Directory Admin",
+		"user_dir": "ConnectFest User Directory Admin",
+		"directory": "ConnectFest User Directory Admin",
+		"user_directory_access": "ConnectFest User Directory Admin",
+		"exhibitor_scanner": "ConnectFest Exhibitor Scanner",
+		"scan_exhibitor": "ConnectFest Exhibitor Scanner",
+		"exhibitor_scan": "ConnectFest Exhibitor Scanner",
+		"visitor_scanner": "ConnectFest Visitor Scanner",
+		"scan_visitor": "ConnectFest Visitor Scanner",
+		"visitor_scan": "ConnectFest Visitor Scanner",
+		"event_scanner": "ConnectFest Event Scanner",
+		"scan_event": "ConnectFest Event Scanner",
+		"event_scan": "ConnectFest Event Scanner",
+		"bni_event_scanner": "ConnectFest Event Scanner",
+		"gate_scanner": "ConnectFest Gate Scanner",
+		"all_scanner": "ConnectFest Gate Scanner",
+	}
+	resolved = []
+	unknown = []
+
+	for fk, role_name in flag_map.items():
+		if fk in combined and _truthy_flag(combined.get(fk)):
+			if role_name not in resolved:
+				resolved.append(role_name)
+
+	for tok in tokens:
+		norm = str(tok).strip().lower().replace("-", "_").replace("&", "_and_").replace(" ", "_")
+		while "__" in norm:
+			norm = norm.replace("__", "_")
+		mapped = ROLE_ALIASES.get(norm)
+		if not mapped and tok in CONNECTFEST_ALL_MANAGED_ROLES:
+			mapped = tok
+		if mapped:
+			if mapped not in resolved:
+				resolved.append(mapped)
+		elif norm not in ("website_user", "user"):
+			unknown.append(str(tok).strip())
+
+	return resolved, unknown
+
+
+def get_user_scanner_scopes(user=None):
+	"""Returns set of allowed gate pass scopes ({'exhibitor', 'visitor', 'event'}) for user."""
+	u = _resolve_user_doc_name(user)
+	if not u:
+		return set()
+	if is_admin_user(u):
+		return set(CONNECTFEST_SCANNER_ROLES.keys())
+
+	roles = set(_get_clean_user_roles(u))
+	if any(r in roles for r in CONNECTFEST_LEGACY_SCANNER_ROLES):
+		return set(CONNECTFEST_SCANNER_ROLES.keys())
+
+	scopes = {scope for scope, role_name in CONNECTFEST_SCANNER_ROLES.items() if role_name in roles}
+	if scopes:
+		return scopes
+
+	if not any(r in roles for r in CONNECTFEST_MODULE_ROLES.values()):
+		try:
+			cache = frappe.cache()
+			raw_u = str(user or u).strip()
+			if cache.sismember("connectfest:scanner_users", u) or cache.sismember("connectfest:scanner_users", raw_u):
+				return set(CONNECTFEST_SCANNER_ROLES.keys())
+		except Exception:
+			pass
+	return set()
+
+
+def has_scanner_scope(user=None, scope=None):
+	"""Checks whether user can scan gate passes (overall or for a specific pass scope)."""
+	scopes = get_user_scanner_scopes(user)
+	if not scope:
+		return bool(scopes)
+	return str(scope).strip().lower() in scopes
+
+
+def has_module_access(user=None, module=None):
+	"""Checks whether user is Super Admin or holds the specific module CRUD admin role."""
+	u = _resolve_user_doc_name(user)
+	if not u:
+		return False
+	if is_admin_user(u):
+		return True
+	role_name = CONNECTFEST_MODULE_ROLES.get(str(module or "").strip().lower())
+	if not role_name:
+		return False
+	return role_name in _get_clean_user_roles(u)
+
+
+def is_staff_user(user=None):
+	"""Returns True if user is Super Admin, Module Admin, or Pass Scanner."""
+	u = _resolve_user_doc_name(user)
+	if not u:
+		return False
+	if is_admin_user(u) or has_scanner_scope(u):
+		return True
+	roles = set(_get_clean_user_roles(u))
+	return any(r in roles for r in CONNECTFEST_MODULE_ROLES.values())
+
+
+def get_user_permissions_summary(user=None):
+	"""Builds canonical RBAC summary (roles, access keys, allowed_modules, scanner_access) for API responses."""
+	u = _resolve_user_doc_name(user)
+	raw_roles = _get_clean_user_roles(u) if u else []
+	super_admin = is_admin_user(u) if u else False
+	scanner_scopes = get_user_scanner_scopes(u) if u else set()
+
+	modules_allowed = []
+	for mod_key, role_name in CONNECTFEST_MODULE_ROLES.items():
+		if super_admin or role_name in raw_roles:
+			modules_allowed.append(mod_key)
+			if mod_key == "stall":
+				modules_allowed.append("tier_pricing")
+
+	access_keys = []
+	for r in raw_roles:
+		k = ROLE_TO_ACCESS_KEY.get(r)
+		if k and k not in access_keys:
+			access_keys.append(k)
+	if "stall" in access_keys and "tier_pricing" not in access_keys:
+		access_keys.append("tier_pricing")
+
+	role_labels = [CONNECTFEST_ROLE_LABELS.get(r, r) for r in raw_roles]
+	is_sub_admin = (not super_admin) and any(r in CONNECTFEST_MODULE_ROLES.values() for r in raw_roles)
+
+	permissions = {
+		"gallery": "gallery" in modules_allowed,
+		"stall": "stall" in modules_allowed,
+		"tier_pricing": "tier_pricing" in modules_allowed,
+		"sponsor": "sponsor" in modules_allowed,
+		"cnr": "cnr" in modules_allowed,
+		"terms": "terms" in modules_allowed,
+		"dashboard": "dashboard" in modules_allowed,
+		"user_directory": "user_directory" in modules_allowed,
+		"exhibitor_scanner": "exhibitor" in scanner_scopes,
+		"visitor_scanner": "visitor" in scanner_scopes,
+		"event_scanner": "event" in scanner_scopes,
+	}
+
+	return {
+		"roles": raw_roles,
+		"role_labels": role_labels,
+		"access": access_keys,
+		"allowed_modules": modules_allowed,
+		"scanner_access": {
+			"exhibitor": "exhibitor" in scanner_scopes,
+			"visitor": "visitor" in scanner_scopes,
+			"event": "event" in scanner_scopes,
+		},
+		"permissions": permissions,
+		"is_super_admin": super_admin,
+		"is_sub_admin": is_sub_admin,
+		"has_admin_access": super_admin or is_sub_admin,
+		"is_scanner": bool(scanner_scopes),
+	}
+
+
 def is_admin_user(user=None):
 	"""Checks if a user has Administrator or System Manager privileges."""
 	u = user or getattr(frappe.session, "user", None)
@@ -196,26 +709,8 @@ def is_admin_user(user=None):
 
 
 def is_scanner_user(user=None):
-	"""Checks if a user has Gate Scanner or Administrator privileges."""
-	u = user or getattr(frappe.session, "user", None)
-	if not u or u == "Guest":
-		return False
-	if "@" in str(u):
-		resolved = frappe.db.get_value("User", {"email": str(u).strip().lower()}, "name")
-		if resolved:
-			u = resolved
-	if is_admin_user(u):
-		return True
-	roles = frappe.get_roles(u)
-	if "ConnectFest Gate Scanner" in roles or "Gate Scanner" in roles:
-		return True
-	try:
-		cache = frappe.cache()
-		if cache.sismember("connectfest:scanner_users", u):
-			return True
-	except Exception:
-		pass
-	return False
+	"""Checks if a user has any Gate Scanner or Administrator privileges."""
+	return has_scanner_scope(user)
 
 
 def check_scanner_status(email=None, **kwargs):
@@ -223,11 +718,7 @@ def check_scanner_status(email=None, **kwargs):
 	Public API to check if an email or mobile has Gate Scanner or Administrator privileges.
 	Accessible by guest / unauthenticated users.
 	Accepts email, email_id, user_email, mobile_no, phone.
-	Returns: {
-		"status": "success",
-		"email": target_email,
-		"is_scanner": True / False
-	}
+	Returns scanner access status and allowed pass scopes.
 	"""
 	data = extract_request_data(kwargs)
 	target_email = str(email or data.get("email") or data.get("email_id") or data.get("user_email") or "").strip().lower()
@@ -258,12 +749,16 @@ def check_scanner_status(email=None, **kwargs):
 			"message": "A valid email address or user account is required to check scanner access.",
 		}
 
-	is_scanner = bool(is_scanner_user(target_email))
+	scopes = get_user_scanner_scopes(target_email)
+	perm_summary = get_user_permissions_summary(target_email)
 
 	return {
 		"status": "success",
 		"email": target_email,
-		"is_scanner": is_scanner,
+		"is_scanner": bool(scopes),
+		"scanner_access": perm_summary["scanner_access"],
+		"roles": perm_summary["roles"],
+		"permissions": perm_summary["permissions"],
 	}
 
 
@@ -719,39 +1214,53 @@ def revoke_auth_token(token_or_sid=None, user=None):
 			pass
 
 
-def check_admin_permission(resource_name="this administrative resource", **kwargs):
-	"""
-	Verifies that the current session belongs to an authenticated Administrator.
-	Supports Bearer token, X-Auth-Token, token param, sid, or session cookie.
-	If authorized Admin, returns None.
-	If unauthorized (Guest/not logged in), returns 401 Unauthorized.
-	If logged in user is non-admin, strictly returns 403 Forbidden.
-	"""
+def resolve_authenticated_session_user(**kwargs):
+	"""Resolves authenticated user identity from request token or active Frappe session."""
 	data = extract_request_data(kwargs) if hasattr(frappe, "local") else {}
 	req_token = extract_token_from_request(data=data, **kwargs)
 	if req_token:
 		resolved = resolve_token_or_session(req_token)
 		if not resolved or resolved == "Guest":
-			frappe.local.response["http_status_code"] = 401
-			return {
-				"status": "unauthorized",
-				"is_logged_in": False,
-				"user": "Guest",
-				"message": f"Authentication required! Please log in as an Administrator to access {resource_name}.",
-			}
-		sess_user = resolved
-	else:
-		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or sess_user == "Guest":
-			sess_user = authenticate_token_request(**kwargs)
+			return None, True
+		return resolved, True
+
+	sess_user = getattr(frappe.session, "user", None)
+	if not sess_user or sess_user == "Guest":
+		sess_user = authenticate_token_request(**kwargs)
+	if not sess_user or sess_user == "Guest":
+		return None, False
+	return sess_user, False
+
+
+def check_admin_permission(resource_name="this administrative resource", **kwargs):
+	"""
+	Verifies that the current session belongs to an Administrator or a sub-admin
+	with CRUD access for the requested resource module.
+	"""
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	if sess_user and sess_user != "Guest":
-		if is_admin_user(sess_user):
+		resolved_user = _resolve_user_doc_name(sess_user) or sess_user
+		if resolved_user != "Administrator":
+			enabled_val = frappe.db.get_value("User", resolved_user, "enabled")
+			if enabled_val is not None and cint(enabled_val) == 0:
+				frappe.local.response["http_status_code"] = 403
+				return {
+					"status": "forbidden",
+					"message": "Your account has been disabled. Please contact an administrator.",
+				}
+
+		if is_admin_user(resolved_user):
 			return None
+
+		req_module = RESOURCE_MODULE_MAP.get(str(resource_name or "").strip().lower())
+		if req_module and has_module_access(resolved_user, req_module):
+			return None
+
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": f"Access Denied: You are not an administrator and cannot access {resource_name}!",
+			"message": f"Access Denied: You do not have permission to access {resource_name}!",
 		}
 
 	frappe.local.response["http_status_code"] = 401
@@ -1344,6 +1853,11 @@ def get_current_user_profile(**kwargs):
 	if "/visitor_badges/" in raw_user_img:
 		raw_user_img = ""
 
+	perm_summary = get_user_permissions_summary(target_user)
+	user_roles = perm_summary["roles"]
+	if role_type == "Attendee" and (perm_summary["is_sub_admin"] or perm_summary["is_scanner"]) and perm_summary["role_labels"]:
+		role_type = perm_summary["role_labels"][0]
+
 	res = {
 		"status": "success",
 		"is_logged_in": True,
@@ -1354,9 +1868,17 @@ def get_current_user_profile(**kwargs):
 		"mobile_no": user_mobile,
 		"user_image": format_full_url(raw_user_img),
 		"roles": user_roles,
+		"role_labels": perm_summary["role_labels"],
+		"access": perm_summary["access"],
+		"allowed_modules": perm_summary["allowed_modules"],
+		"scanner_access": perm_summary["scanner_access"],
+		"permissions": perm_summary["permissions"],
 		"role_type": role_type,
 		"is_admin": is_admin,
-		"is_scanner": is_scanner,
+		"is_super_admin": is_admin,
+		"is_sub_admin": perm_summary["is_sub_admin"],
+		"has_admin_access": perm_summary["has_admin_access"],
+		"is_scanner": perm_summary["is_scanner"],
 
 		# Business / Attendee Profile
 		"company_name": company_name or (visitor_passes[0]["company_name"] if visitor_passes else ""),
@@ -1461,19 +1983,25 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			return verify_otp(mobile_no=mob, otp=otp)
 
 		if pwd and usr:
-			if not frappe.db.exists("User", usr):
+			user_lookup = _resolve_user_doc_name(usr)
+			if not user_lookup or not frappe.db.exists("User", user_lookup):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
 			try:
 				from frappe.utils.password import check_password
-				check_password(usr, pwd)
+				check_password(user_lookup, pwd)
 			except Exception:
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid email or password"}
 
+		perm_summary = get_user_permissions_summary(usr) if usr else get_user_permissions_summary(None)
+		tok_role = (
+			"admin" if perm_summary["is_super_admin"]
+			else ("sub_admin" if perm_summary["is_sub_admin"] else ("scanner" if perm_summary["is_scanner"] else "Attendee"))
+		)
 		auth_token = None
 		if usr:
-			auth_token = generate_auth_token(usr, role_type="Attendee")
+			auth_token = generate_auth_token(usr, role_type=tok_role)
 
 		dash = get_my_dashboard(email=usr, mobile_no=mob)
 		return {
@@ -1481,16 +2009,98 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 			"message": "Login successful",
 			"user": usr or mob,
 			"x_auth_token": auth_token,
+			"roles": perm_summary["roles"],
+			"role_labels": perm_summary["role_labels"],
+			"access": perm_summary["access"],
+			"allowed_modules": perm_summary["allowed_modules"],
+			"scanner_access": perm_summary["scanner_access"],
+			"permissions": perm_summary["permissions"],
+			"is_admin": perm_summary["is_super_admin"],
+			"is_sub_admin": perm_summary["is_sub_admin"],
+			"has_admin_access": perm_summary["has_admin_access"],
+			"is_scanner": perm_summary["is_scanner"],
 			"dashboard": dash,
 		}
 	except Exception as e:
 		return log_and_return_error("ConnectFest Login Error", e)
 
 
+def staff_login(email=None, password=None, **kwargs):
+	"""
+	Password-based login for Admin-created Staff, Module Admins, and Pass Scanners.
+	Requires mandatory email (or username) and password; returns X-Auth-Token and full RBAC permissions.
+	"""
+	try:
+		data = extract_request_data(kwargs)
+		usr = (email or data.get("email") or data.get("usr") or data.get("username") or "").strip().lower()
+		pwd = (password if password is not None else (data.get("pwd") or data.get("password") or "")).strip()
+
+		if not usr:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Email is required for login"}
+		if not pwd:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Password is required for login"}
+
+		actual_usr = _resolve_user_doc_name(usr)
+		if not actual_usr or not frappe.db.exists("User", actual_usr):
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "error", "message": "Invalid email or password"}
+
+		if actual_usr != "Administrator" and not cint(frappe.db.get_value("User", actual_usr, "enabled")):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "disabled",
+				"message": "This account has been disabled by the Administrator. Access denied.",
+			}
+
+		try:
+			from frappe.utils.password import check_password
+			check_password(actual_usr, pwd)
+		except (frappe.AuthenticationError, frappe.DoesNotExistError):
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "error", "message": "Invalid email or password"}
+
+		user_doc_vals = frappe.db.get_value("User", actual_usr, ["email", "full_name", "mobile_no", "phone"], as_dict=True) or {}
+		user_email = (user_doc_vals.get("email") or actual_usr).strip()
+		perm_summary = get_user_permissions_summary(actual_usr)
+		role_tok = (
+			"admin" if perm_summary["is_super_admin"]
+			else ("sub_admin" if perm_summary["is_sub_admin"] else ("scanner" if perm_summary["is_scanner"] else "Attendee"))
+		)
+		auth_token = generate_auth_token(actual_usr, role_type=role_tok)
+
+		role_type = (
+			"Administrator" if perm_summary["is_super_admin"]
+			else (perm_summary["role_labels"][0] if perm_summary["role_labels"] else "User")
+		)
+
+		return {
+			"status": "success",
+			"message": "Login successful",
+			"user": user_email,
+			"email": user_email,
+			"full_name": user_doc_vals.get("full_name") or "",
+			"mobile_no": user_doc_vals.get("mobile_no") or user_doc_vals.get("phone") or "",
+			"x_auth_token": auth_token,
+			"token": auth_token,
+			"role_type": role_type,
+			"is_admin": perm_summary["is_super_admin"],
+			**perm_summary,
+		}
+	except Exception as e:
+		return log_and_return_error("ConnectFest Staff Login Error", e)
+
+
+def user_login(email=None, password=None, **kwargs):
+	"""Alias for staff_login."""
+	return staff_login(email=email, password=password, **kwargs)
+
+
 def admin_login(email=None, password=None, otp=None, **kwargs):
 	"""
-	Dedicated Secure Admin Login with Two-Factor Authentication (Password + 2FA OTP).
-	Strictly restricted to users with 'System Manager' or 'Administrator' roles.
+	Dedicated Secure Admin & Staff Login with Two-Factor Authentication (Password + 2FA OTP).
+	Supports Super Admins, Module Sub-Admins, and Gate Scanners.
 	"""
 	import random
 	try:
@@ -1516,6 +2126,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			return {"status": "error", "message": "Invalid admin email or password"}
 		usr = actual_usr
 
+		if usr != "Administrator" and not cint(frappe.db.get_value("User", usr, "enabled")):
+			frappe.local.response["http_status_code"] = 403
+			return {
+				"status": "disabled",
+				"message": "This account has been disabled by the Administrator. Access denied.",
+			}
+
 		if pwd:
 			try:
 				from frappe.utils.password import check_password
@@ -1524,13 +2141,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid admin email or password"}
 
-		# Step 2: Verify Admin Role Privilege
+		# Step 2: Verify Staff / Admin Role Privilege
 		roles = frappe.get_roles(usr)
-		if "System Manager" not in roles and "Administrator" not in roles and "ConnectFest Admin" not in roles:
+		if not is_staff_user(usr):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
-				"message": "Access Denied: This administrative portal is strictly restricted to System Administrators!"
+				"message": "Access Denied: This administrative portal is restricted to Administrators, Module Admins, and Gate Scanners!"
 			}
 
 		from connectfest.services.otp import is_otp_blocked, increment_failed_attempts, clear_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
@@ -1668,18 +2285,528 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			pass
 
 		# Complete login - pure X-Auth-Token
-		auth_token = generate_auth_token(usr, role_type="admin")
+		perm_summary = get_user_permissions_summary(usr)
+		role_tok = (
+			"admin" if perm_summary["is_super_admin"]
+			else ("sub_admin" if perm_summary["is_sub_admin"] else ("scanner" if perm_summary["is_scanner"] else "Attendee"))
+		)
+		auth_token = generate_auth_token(usr, role_type=role_tok)
 		return {
 			"status": "success",
 			"verified_2fa": True,
 			"message": f"Admin 2FA Authentication successful. Welcome {usr}!",
 			"admin_user": usr,
 			"x_auth_token": auth_token,
-			"roles": [r for r in roles if r in ("Administrator", "System Manager", "Website Manager")],
+			"is_admin": perm_summary["is_super_admin"],
+			**perm_summary,
 			"session_user": getattr(frappe.session, "user", "Guest"),
 		}
 	except Exception as e:
 		return log_and_return_error("ConnectFest Admin Login Error", e)
+
+
+def _format_staff_user_response(user_doc, perm_summary=None):
+	"""Formats User record + RBAC summary for admin user management APIs."""
+	ps = perm_summary or get_user_permissions_summary(user_doc.name)
+	return {
+		"name": user_doc.name,
+		"email": user_doc.email or user_doc.name,
+		"full_name": user_doc.full_name or "",
+		"mobile_no": user_doc.mobile_no or "",
+		"enabled": cint(user_doc.enabled),
+		"is_active": bool(cint(user_doc.enabled)),
+		**ps,
+	}
+
+
+def _apply_user_roles_and_cache(user_doc, target_roles):
+	"""Replaces managed ConnectFest/existing roles cleanly while syncing Redis cache."""
+	ensure_connectfest_roles(target_roles)
+	preserved = ["Administrator"] if ("Administrator" in [r.role for r in (user_doc.roles or [])] and "Administrator" not in target_roles) else []
+	final_roles = []
+	for r_name in preserved + list(target_roles):
+		if r_name not in final_roles:
+			final_roles.append(r_name)
+	user_doc.set("roles", [{"role": r_name} for r_name in final_roles])
+	user_doc.user_type = "System User" if any(r in ("System Manager", "Administrator") for r in final_roles) else "Website User"
+	_sync_user_scanner_cache(user_doc.name, final_roles)
+	return final_roles
+
+
+def admin_create_user(
+	email=None,
+	password=None,
+	mobile_no=None,
+	full_name=None,
+	roles=None,
+	**kwargs,
+):
+	"""
+	Admin API: Create a Staff, Module Admin (Gallery / Stall+Pricing / Sponsor / CNR / Terms),
+	or Gate Pass Scanner (Exhibitor / Visitor / Event) user with mandatory email + password
+	and optional mobile_no (stored as NULL when omitted to respect UNIQUE constraints).
+	"""
+	try:
+		err = check_admin_permission("user management")
+		if err:
+			return err
+
+		data = extract_request_data(kwargs)
+		clean_email = str(email or data.get("email") or data.get("user_email") or data.get("usr") or "").strip().lower()
+		pwd = password if password is not None else (data.get("password") or data.get("pwd") or data.get("new_password"))
+		pwd = str(pwd).strip() if pwd is not None else ""
+		raw_mob = mobile_no if mobile_no is not None else (data.get("mobile_no") or data.get("phone") or data.get("mobile"))
+		clean_mob = str(raw_mob).strip() if raw_mob is not None else ""
+
+		if not clean_email or "@" not in clean_email or "." not in clean_email.split("@")[-1]:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "A valid email address is mandatory."}
+
+		if not pwd or len(pwd) < 4:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "A password (minimum 4 characters) is required."}
+
+		if frappe.db.exists("User", clean_email) or frappe.db.exists("User", {"email": clean_email}):
+			frappe.local.response["http_status_code"] = 409
+			return {
+				"status": "error",
+				"message": f"User with email '{clean_email}' already exists. Use admin_update_user to update roles or password.",
+			}
+
+		if clean_mob:
+			dup_mob_user = frappe.db.get_value("User", {"mobile_no": clean_mob}, "name")
+			if dup_mob_user:
+				frappe.local.response["http_status_code"] = 409
+				return {
+					"status": "error",
+					"message": f"Mobile number '{clean_mob}' is already linked to another user ({dup_mob_user}).",
+				}
+
+		raw_roles_input = roles if roles is not None else data.get("roles")
+		resolved_roles, unknown_roles = normalize_connectfest_roles(raw_roles_input, data=data, **kwargs)
+		if unknown_roles:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": f"Unrecognized role(s): {', '.join(unknown_roles)}",
+				"valid_role_keys": list(CONNECTFEST_MODULE_ROLES.keys()) + ["exhibitor_scanner", "visitor_scanner", "event_scanner", "gate_scanner"],
+			}
+		if not resolved_roles:
+			frappe.local.response["http_status_code"] = 400
+			return {
+				"status": "error",
+				"message": "Please select at least one role or access scope (e.g., gallery, stall, sponsor, cnr, terms, exhibitor_scanner, visitor_scanner, event_scanner).",
+				"valid_role_keys": list(CONNECTFEST_MODULE_ROLES.keys()) + ["exhibitor_scanner", "visitor_scanner", "event_scanner", "gate_scanner"],
+			}
+
+		ensure_connectfest_roles(resolved_roles)
+
+		raw_fn = (
+			full_name
+			or data.get("full_name")
+			or " ".join(p for p in [str(data.get("first_name") or "").strip(), str(data.get("last_name") or "").strip()] if p)
+		)
+		clean_fn = str(raw_fn or "").strip()
+		if not clean_fn or "@" in clean_fn:
+			clean_fn = clean_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+		fn_parts = clean_fn.split(" ", 1)
+		first_name = fn_parts[0]
+		last_name = fn_parts[1] if len(fn_parts) > 1 else ""
+
+		raw_enabled = data.get("enabled") if "enabled" in data else 1
+		is_enabled = 1 if _truthy_flag(raw_enabled) else 0
+
+		mob_val = clean_mob if clean_mob else None
+		user_type = "System User" if any(r in ("System Manager", "Administrator") for r in resolved_roles) else "Website User"
+
+		user_doc = frappe.get_doc({
+			"doctype": "User",
+			"email": clean_email,
+			"username": clean_email,
+			"first_name": first_name,
+			"last_name": last_name,
+			"full_name": clean_fn,
+			"mobile_no": mob_val,
+			"phone": mob_val,
+			"enabled": is_enabled,
+			"user_type": user_type,
+			"send_welcome_email": 0,
+			"roles": [{"role": r} for r in resolved_roles],
+		})
+		user_doc.flags.ignore_permissions = True
+		user_doc.flags.ignore_password_policy = True
+		user_doc.insert(ignore_permissions=True)
+
+		from frappe.utils.password import update_password
+		update_password(user_doc.name, pwd)
+
+		_sync_user_scanner_cache(user_doc.name, resolved_roles)
+		frappe.clear_cache(user=user_doc.name)
+		frappe.db.commit()
+
+		perm_summary = get_user_permissions_summary(user_doc.name)
+		frappe.local.response["http_status_code"] = 201
+		return {
+			"status": "success",
+			"message": f"User '{clean_email}' created successfully.",
+			"user": _format_staff_user_response(user_doc, perm_summary),
+			**perm_summary,
+		}
+	except Exception as e:
+		return log_and_return_error("ConnectFest Admin Create User Error", e)
+
+
+def create_user(**kwargs):
+	"""Alias for admin_create_user."""
+	return admin_create_user(**kwargs)
+
+
+def admin_create_staff_user(**kwargs):
+	"""Alias for admin_create_user."""
+	return admin_create_user(**kwargs)
+
+
+def admin_update_user(
+	email=None,
+	user_email=None,
+	password=None,
+	mobile_no=None,
+	full_name=None,
+	roles=None,
+	enabled=None,
+	**kwargs,
+):
+	"""
+	Admin API: Update an existing user's roles/access, optional mobile_no,
+	full_name, enabled state, or password.
+	"""
+	try:
+		err = check_admin_permission("user management")
+		if err:
+			return err
+
+		data = extract_request_data(kwargs)
+		raw_target = str(email or user_email or data.get("email") or data.get("user_email") or data.get("user") or "").strip().lower()
+		if not raw_target:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "User email is required."}
+
+		target_name = _resolve_user_doc_name(raw_target)
+		if not target_name or not frappe.db.exists("User", target_name):
+			frappe.local.response["http_status_code"] = 404
+			return {"status": "error", "message": f"User '{raw_target}' not found."}
+		if target_name in ("Administrator", "Guest"):
+			frappe.local.response["http_status_code"] = 403
+			return {"status": "forbidden", "message": "System core accounts cannot be modified via this API."}
+
+		user_doc = frappe.get_doc("User", target_name)
+
+		has_role_payload = (
+			roles is not None
+			or any(k in data or k in kwargs for k in (
+				"roles", "role", "access", "permissions", "modules",
+				"scan_type", "scanner_type", "scanner_scope",
+				"gallery", "gallery_access", "stall", "stall_access",
+				"tier_pricing", "tier_pricing_access", "pricing",
+				"sponsor", "sponser", "sponsor_access", "sponser_access",
+				"cnr", "crn", "cnr_member", "crn_member", "cnr_access", "crn_access",
+				"terms", "terms_and_conditions", "terms_access",
+				"exhibitor_scanner", "visitor_scanner", "event_scanner", "gate_scanner",
+			))
+		)
+
+		if has_role_payload:
+			raw_roles_input = roles if roles is not None else data.get("roles")
+			resolved_roles, unknown_roles = normalize_connectfest_roles(raw_roles_input, data=data, **kwargs)
+			if unknown_roles:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": f"Unrecognized role(s): {', '.join(unknown_roles)}",
+				}
+			if not resolved_roles:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "At least one valid role/access must remain assigned when updating roles.",
+				}
+			_apply_user_roles_and_cache(user_doc, resolved_roles)
+
+		if mobile_no is not None or any(k in data or k in kwargs for k in ("mobile_no", "phone", "mobile")):
+			raw_mob = mobile_no if mobile_no is not None else (data.get("mobile_no") if "mobile_no" in data else (data.get("phone") if "phone" in data else data.get("mobile")))
+			clean_mob = str(raw_mob).strip() if raw_mob is not None else ""
+			if clean_mob:
+				dup = frappe.db.get_value("User", {"mobile_no": clean_mob, "name": ["!=", target_name]}, "name")
+				if dup:
+					frappe.local.response["http_status_code"] = 409
+					return {
+						"status": "error",
+						"message": f"Mobile number '{clean_mob}' is already linked to another user ({dup}).",
+					}
+				user_doc.mobile_no = clean_mob
+				user_doc.phone = clean_mob
+			else:
+				user_doc.mobile_no = None
+				user_doc.phone = None
+
+		if full_name or data.get("full_name"):
+			clean_fn = str(full_name or data.get("full_name")).strip()
+			fn_parts = clean_fn.split(" ", 1)
+			user_doc.first_name = fn_parts[0]
+			user_doc.last_name = fn_parts[1] if len(fn_parts) > 1 else ""
+			user_doc.full_name = clean_fn
+
+		raw_en = enabled if enabled is not None else (data.get("enabled") if "enabled" in data else None)
+		if raw_en is not None:
+			user_doc.enabled = 1 if _truthy_flag(raw_en) else 0
+			if user_doc.enabled == 0:
+				revoke_auth_token(user=target_name)
+
+		user_doc.flags.ignore_permissions = True
+		user_doc.flags.ignore_password_policy = True
+		user_doc.save(ignore_permissions=True)
+
+		pwd = password if password is not None else (data.get("password") or data.get("pwd") or data.get("new_password"))
+		if pwd is not None and str(pwd).strip():
+			clean_pwd = str(pwd).strip()
+			if len(clean_pwd) < 4:
+				frappe.local.response["http_status_code"] = 400
+				return {"status": "error", "message": "Password must be at least 4 characters."}
+			from frappe.utils.password import update_password
+			update_password(target_name, clean_pwd)
+
+		frappe.clear_cache(user=target_name)
+		frappe.db.commit()
+
+		perm_summary = get_user_permissions_summary(target_name)
+		return {
+			"status": "success",
+			"message": f"User '{target_name}' updated successfully.",
+			"user": _format_staff_user_response(user_doc, perm_summary),
+			**perm_summary,
+		}
+	except Exception as e:
+		return log_and_return_error("ConnectFest Admin Update User Error", e)
+
+
+def update_user(**kwargs):
+	"""Alias for admin_update_user."""
+	return admin_update_user(**kwargs)
+
+
+def admin_update_user_roles(**kwargs):
+	"""Alias for admin_update_user focused on role updates."""
+	return admin_update_user(**kwargs)
+
+
+def admin_assign_user_roles(**kwargs):
+	"""Alias for admin_update_user focused on role assignment."""
+	return admin_update_user(**kwargs)
+
+
+def admin_get_roles(**kwargs):
+	"""
+	Admin API: Lists all selectable ConnectFest RBAC roles and module CRUD permissions
+	for user creation and role assignment forms.
+	"""
+	err = check_admin_permission("user management")
+	if err:
+		return err
+
+	ensure_connectfest_roles()
+	return {
+		"status": "success",
+		"scanner_roles": [
+			{
+				"key": "exhibitor_scanner",
+				"role": "ConnectFest Exhibitor Scanner",
+				"label": "Exhibitor Pass Scanner",
+				"description": "Can scan and view ONLY Exhibitor passes.",
+			},
+			{
+				"key": "visitor_scanner",
+				"role": "ConnectFest Visitor Scanner",
+				"label": "Visitor Pass Scanner",
+				"description": "Can scan and view ONLY Visitor passes.",
+			},
+			{
+				"key": "event_scanner",
+				"role": "ConnectFest Event Scanner",
+				"label": "BNI Event Pass Scanner",
+				"description": "Can scan and view ONLY BNI Event passes.",
+			},
+		],
+		"module_roles": [
+			{
+				"key": "gallery",
+				"role": "ConnectFest Gallery Admin",
+				"label": "Gallery Admin (CRUD)",
+				"description": "Gallery CRUD operations only.",
+			},
+			{
+				"key": "stall",
+				"role": "ConnectFest Stall Admin",
+				"label": "Stall & Tier Pricing Admin (CRUD)",
+				"description": "Stall CRUD and Tier Pricing CRUD operations only.",
+				"includes": ["stall", "tier_pricing"],
+			},
+			{
+				"key": "sponsor",
+				"role": "ConnectFest Sponsor Admin",
+				"label": "Sponsor Admin (CRUD)",
+				"description": "Sponsor CRUD operations only.",
+			},
+			{
+				"key": "cnr",
+				"role": "ConnectFest CNR Admin",
+				"label": "CNR Member Admin (CRUD)",
+				"description": "CNR / BNI Member CRUD operations only.",
+			},
+			{
+				"key": "terms",
+				"role": "ConnectFest Terms Admin",
+				"label": "Terms & Conditions Admin (CRUD)",
+				"description": "Terms & Conditions CRUD operations only.",
+			},
+			{
+				"key": "dashboard",
+				"role": "ConnectFest Dashboard Admin",
+				"label": "Dashboard Admin",
+				"description": "Access to admin dashboard data and stall metrics.",
+			},
+			{
+				"key": "user_directory",
+				"role": "ConnectFest User Directory Admin",
+				"label": "User Directory Admin",
+				"description": "View, enable/disable users and access user directory.",
+			},
+		],
+	}
+
+
+def get_available_roles(**kwargs):
+	"""Alias for admin_get_roles."""
+	return admin_get_roles(**kwargs)
+
+
+def admin_change_user_password(email=None, user_email=None, new_password=None, password=None, **kwargs):
+	"""Admin API: Change another user's password. Requires admin token."""
+	try:
+		err = check_admin_permission("user management")
+		if err:
+			return err
+		data = extract_request_data(kwargs)
+		target = str(email or user_email or data.get("email") or data.get("user_email") or "").strip().lower()
+		new_pwd = str(new_password or password or data.get("new_password") or data.get("password") or "").strip()
+		if not target:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "User email is required."}
+		if not new_pwd or len(new_pwd) < 4:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "New password must be at least 4 characters."}
+		resolved = _resolve_user_doc_name(target)
+		if not resolved or not frappe.db.exists("User", resolved):
+			frappe.local.response["http_status_code"] = 404
+			return {"status": "error", "message": f"User '{target}' not found."}
+		if resolved in ("Administrator", "Guest"):
+			frappe.local.response["http_status_code"] = 403
+			return {"status": "forbidden", "message": "System accounts cannot be modified via this API."}
+		from frappe.utils.password import update_password
+		update_password(resolved, new_pwd)
+		revoke_auth_token(user=resolved)
+		frappe.db.commit()
+		return {
+			"status": "success",
+			"message": f"Password for '{resolved}' updated successfully. All existing sessions have been revoked.",
+			"user": resolved,
+		}
+	except Exception as e:
+		return log_and_return_error("ConnectFest Admin Change Password Error", e)
+
+
+def change_user_password(**kwargs):
+	"""Alias for admin_change_user_password."""
+	return admin_change_user_password(**kwargs)
+
+
+def admin_get_user_access(email=None, **kwargs):
+	"""
+	Admin API: Returns the full RBAC permission summary for a specific user.
+	Reads roles from Frappe tabHas Role (Frappe-native storage).
+	If email is omitted, returns all staff users and their access.
+	"""
+	try:
+		err = check_admin_permission("user directory access")
+		if err:
+			return err
+		data = extract_request_data(kwargs)
+		target = str(email or data.get("email") or data.get("user_email") or "").strip().lower()
+
+		if target:
+			resolved = _resolve_user_doc_name(target)
+			if not resolved or not frappe.db.exists("User", resolved):
+				frappe.local.response["http_status_code"] = 404
+				return {"status": "error", "message": f"User '{target}' not found."}
+			perm = get_user_permissions_summary(resolved)
+			u_doc = frappe.db.get_value("User", resolved, ["full_name", "mobile_no", "enabled", "email"], as_dict=True) or {}
+			raw_has_roles = frappe.db.sql("""
+				SELECT role FROM `tabHas Role`
+				WHERE parent = %s AND parenttype = 'User'
+				ORDER BY role
+			""", (resolved,), as_dict=True)
+			frappe_roles = [r.role for r in raw_has_roles]
+			return {
+				"status": "success",
+				"user": resolved,
+				"email": u_doc.get("email") or resolved,
+				"full_name": u_doc.get("full_name") or "",
+				"mobile_no": u_doc.get("mobile_no") or "",
+				"enabled": cint(u_doc.get("enabled", 1)),
+				"frappe_roles": frappe_roles,
+				**perm,
+			}
+		else:
+			staff_roles = tuple(
+				list(CONNECTFEST_MODULE_ROLES.values())
+				+ list(CONNECTFEST_SCANNER_ROLES.values())
+				+ list(CONNECTFEST_LEGACY_SCANNER_ROLES)
+			)
+			all_staff = frappe.db.sql("""
+				SELECT DISTINCT u.name, u.email, u.full_name, u.mobile_no, u.enabled
+				FROM `tabUser` u
+				JOIN `tabHas Role` r ON r.parent = u.name
+				WHERE r.parenttype = 'User' AND r.role IN %(roles)s
+				ORDER BY u.full_name
+			""", {"roles": staff_roles}, as_dict=True)
+
+			result = []
+			for u in all_staff:
+				perm = get_user_permissions_summary(u.name)
+				result.append({
+					"name": u.name,
+					"email": u.email or u.name,
+					"full_name": u.full_name or "",
+					"mobile_no": u.mobile_no or "",
+					"enabled": cint(u.enabled),
+					**perm,
+				})
+			return {
+				"status": "success",
+				"total": len(result),
+				"users": result,
+			}
+	except Exception as e:
+		return log_and_return_error("ConnectFest Admin Get User Access Error", e)
+
+
+def get_user_access(**kwargs):
+	"""Alias for admin_get_user_access."""
+	return admin_get_user_access(**kwargs)
+
+
+def who_has_access(**kwargs):
+	"""Alias for admin_get_user_access."""
+	return admin_get_user_access(**kwargs)
 
 
 def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kwargs):
@@ -1939,19 +3066,20 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 
 def admin_get_scanner_users(**kwargs):
 	"""
-	Admin API: Returns a list of all users who have Gate Scanner privileges.
+	Admin API: Returns a list of all users who have Gate Scanner (all or scoped) privileges.
 	"""
 	err = check_admin_permission("scanner users directory")
 	if err:
 		return err
 
+	scanner_role_names = list(CONNECTFEST_SCANNER_ROLES.values()) + list(CONNECTFEST_LEGACY_SCANNER_ROLES)
 	scanner_users = frappe.db.sql("""
-		SELECT u.name as email, u.full_name, u.mobile_no, u.phone, u.enabled, u.creation, u.last_login
+		SELECT DISTINCT u.name as email, u.full_name, u.mobile_no, u.phone, u.enabled, u.creation, u.last_login
 		FROM `tabUser` u
 		JOIN `tabHas Role` r ON r.parent = u.name
-		WHERE r.role = 'ConnectFest Gate Scanner'
+		WHERE r.role IN %(roles)s
 		ORDER BY u.creation DESC
-	""", as_dict=True)
+	""", {"roles": tuple(scanner_role_names)}, as_dict=True)
 
 	for u in scanner_users:
 		mail = u.get("email")
@@ -1965,8 +3093,18 @@ def admin_get_scanner_users(**kwargs):
 			WHERE checked_in_by = %s
 		""", (mail,), as_dict=True)[0].cnt
 
-		u["passes_scanned"] = vis_count + bni_count
-		u["scanner_role"] = "ConnectFest Gate Scanner"
+		ex_count = frappe.db.sql("""
+			SELECT
+				(SELECT COUNT(name) FROM `tabConnectFest Registration` WHERE checked_in_by = %(m)s)
+				+ (SELECT COUNT(name) FROM `tabConnectFest Registration` WHERE pass_2_checked_in_by = %(m)s) AS cnt
+		""", {"m": mail}, as_dict=True)[0].cnt
+
+		perm_summary = get_user_permissions_summary(mail)
+		u["passes_scanned"] = vis_count + bni_count + ex_count
+		u["scanner_scopes"] = sorted(list(get_user_scanner_scopes(mail)))
+		u["scanner_access"] = perm_summary["scanner_access"]
+		u["roles"] = perm_summary["roles"]
+		u["scanner_role"] = ", ".join([r for r in perm_summary["roles"] if "Scanner" in r]) or "ConnectFest Gate Scanner"
 
 	return {
 		"status": "success",
@@ -2097,6 +3235,7 @@ def admin_get_all_users(**kwargs):
 		vis_list = visitors_by_email.get(email_key, [])
 		vis_doc = vis_list[0] if vis_list else None
 		user_roles = roles_by_user.get(email_key, [])
+		perm_summary = get_user_permissions_summary(email_key) if frappe.db.exists("User", email_key) else get_user_permissions_summary(None)
 
 		is_admin = (
 			email_key == "administrator"
@@ -2104,10 +3243,16 @@ def admin_get_all_users(**kwargs):
 			or "System Manager" in user_roles
 			or "ConnectFest Admin" in user_roles
 		)
+		is_sub_admin = (not is_admin) and perm_summary["is_sub_admin"]
+		is_scanner_acc = (not is_admin) and perm_summary["is_scanner"]
 
 		# Determine primary user category
 		if is_admin:
 			category = "Admin"
+		elif is_sub_admin:
+			category = "Sub Admin"
+		elif is_scanner_acc:
+			category = "Scanner"
 		elif ex_doc:
 			category = "Exhibitor"
 		elif vis_doc:
@@ -2245,6 +3390,13 @@ def admin_get_all_users(**kwargs):
 			"is_active": bool(enabled),
 			"user_image": user_image,
 			"roles": user_roles or (["Website User"] if category != "Admin" else ["System Manager", "Administrator"]),
+			"role_labels": perm_summary["role_labels"],
+			"access": perm_summary["access"],
+			"allowed_modules": perm_summary["allowed_modules"],
+			"scanner_access": perm_summary["scanner_access"],
+			"permissions": perm_summary["permissions"],
+			"is_sub_admin": is_sub_admin,
+			"is_scanner": is_scanner_acc,
 			"creation": creation,
 			"last_login": last_login,
 			"exhibitor_details": exhibitor_info,
@@ -2257,6 +3409,8 @@ def admin_get_all_users(**kwargs):
 	total_exhibitors = sum(1 for u in unified_users if u["user_type"] == "Exhibitor")
 	total_visitors = sum(1 for u in unified_users if u["user_type"] == "Visitor")
 	total_admins = sum(1 for u in unified_users if u["user_type"] == "Admin")
+	total_sub_admins = sum(1 for u in unified_users if u.get("is_sub_admin"))
+	total_scanners = sum(1 for u in unified_users if u.get("is_scanner"))
 	total_bni = sum(1 for u in unified_users if u.get("is_bni_member"))
 	active_count = sum(1 for u in unified_users if u["enabled"] == 1)
 	disabled_count = sum(1 for u in unified_users if u["enabled"] == 0)
@@ -2272,8 +3426,19 @@ def admin_get_all_users(**kwargs):
 			filtered_users = [u for u in filtered_users if u["user_type"] == "Visitor"]
 		elif role_filter in ("admin", "admins", "administrator"):
 			filtered_users = [u for u in filtered_users if u["user_type"] == "Admin"]
+		elif role_filter in ("sub_admin", "sub_admins", "staff"):
+			filtered_users = [u for u in filtered_users if u.get("is_sub_admin")]
+		elif role_filter in ("scanner", "scanners"):
+			filtered_users = [u for u in filtered_users if u.get("is_scanner")]
 		elif role_filter in ("website_user", "general", "user"):
 			filtered_users = [u for u in filtered_users if u["user_type"] == "Website User"]
+		else:
+			norm_rf = role_filter.lower().replace("-", "_")
+			filtered_users = [
+				u for u in filtered_users
+				if norm_rf in (u.get("access") or [])
+				or any(norm_rf == str(r).lower().replace(" ", "_") for r in (u.get("roles") or []))
+			]
 
 	# 2. Status Filter
 	if status_filter is not None and str(status_filter).strip() != "":
@@ -2349,6 +3514,8 @@ def admin_get_all_users(**kwargs):
 			"total_exhibitors": total_exhibitors,
 			"total_visitors": total_visitors,
 			"total_admins": total_admins,
+			"total_sub_admins": total_sub_admins,
+			"total_scanners": total_scanners,
 			"total_bni_members": total_bni,
 			"active_users": active_count,
 			"disabled_users": disabled_count,
@@ -3164,6 +4331,8 @@ def admin_delete_user(**kwargs):
 		u_doc = frappe.get_doc("User", target_user)
 		if not mobile_no:
 			mobile_no = (u_doc.mobile_no or u_doc.phone or "").strip()
+		revoke_auth_token(user=target_user)
+		_sync_user_scanner_cache(target_user, [])
 		frappe.delete_doc("User", target_user, ignore_permissions=True, force=True)
 		user_deleted = True
 

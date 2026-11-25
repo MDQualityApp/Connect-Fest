@@ -204,10 +204,10 @@ def generate_event_badge_image(data):
 	font_cphone = _get_badge_font(bold=True, size=12)
 
 	draw.text((card_x1 + 45, white_top + 258), "Mr. S. Mariappan", fill=(15, 23, 42), font=font_cname)
-	draw.text((card_x1 + 45, white_top + 276), "+91 9840000000", fill=(220, 38, 38), font=font_cphone)
+	draw.text((card_x1 + 45, white_top + 276), "+91 8825668054", fill=(220, 38, 38), font=font_cphone)
 
 	draw.text((card_x2 - 180, white_top + 258), "Mr. R. Manooj", fill=(15, 23, 42), font=font_cname)
-	draw.text((card_x2 - 180, white_top + 276), "+91 9840000000", fill=(220, 38, 38), font=font_cphone)
+	draw.text((card_x2 - 180, white_top + 276), "+91 8939291011", fill=(220, 38, 38), font=font_cphone)
 
 	# Outer card subtle outline
 	draw.rounded_rectangle([card_x1, card_y1, card_x2, card_y2], radius=card_r, outline=(203, 213, 225), width=2)

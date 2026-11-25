@@ -38,9 +38,24 @@ def setup_site_config_defaults():
 
 
 def ensure_standard_roles():
-	"""Guarantees essential roles exist in tabRole without risking LinkValidationError."""
+	"""Guarantees essential ConnectFest RBAC & scanner roles exist in tabRole without risking LinkValidationError."""
+	roles_to_ensure = [
+		("Website User", 0, 0),
+		("ConnectFest Admin", 1, 1),
+		("ConnectFest Gate Scanner", 0, 1),
+		("ConnectFest Exhibitor Scanner", 0, 1),
+		("ConnectFest Visitor Scanner", 0, 1),
+		("ConnectFest Event Scanner", 0, 1),
+		("ConnectFest Gallery Admin", 0, 1),
+		("ConnectFest Stall Admin", 0, 1),
+		("ConnectFest Sponsor Admin", 0, 1),
+		("ConnectFest CNR Admin", 0, 1),
+		("ConnectFest Terms Admin", 0, 1),
+		("ConnectFest Dashboard Admin", 0, 1),
+		("ConnectFest User Directory Admin", 0, 1),
+	]
 	try:
-		for r_name, desk_acc, is_cust in [("Website User", 0, 0), ("ConnectFest Gate Scanner", 0, 1)]:
+		for r_name, desk_acc, is_cust in roles_to_ensure:
 			frappe.db.sql("""
 				INSERT IGNORE INTO `tabRole` 
 				(name, role_name, desk_access, is_custom, disabled, creation, modified, modified_by, owner) 

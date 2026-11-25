@@ -25,32 +25,9 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 	- Validates Day matching for visitor passes.
 	- Prevents duplicate check-in with exact timestamp and scanner user details.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import get_user_scanner_scopes, resolve_authenticated_session_user
 
-	# Check sid in headers/body if sess_user is Guest
-	if not sess_user or sess_user == "Guest":
-		req_sid = None
-		if hasattr(frappe, "request") and frappe.request:
-			try:
-				req_sid = (
-					frappe.get_request_header("sid")
-					or frappe.get_request_header("X-Frappe-Session-Id")
-					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
-				)
-				if not req_sid:
-					auth_hdr = frappe.get_request_header("Authorization", "")
-					if auth_hdr.startswith("Bearer "):
-						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-			except Exception:
-				pass
-		if req_sid and req_sid != "Guest":
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					sess_user = res[0][0]
-			except Exception:
-				pass
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
@@ -60,7 +37,8 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
 		}
 
-	if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+	allowed_scopes = get_user_scanner_scopes(sess_user)
+	if not allowed_scopes:
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
@@ -128,6 +106,16 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 		is_pass_2_scan = True
 
 	now_str = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+	denied_match = None
+
+	def _deny_scan_scope(pass_type_key, label):
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"verified": False,
+			"pass_type": pass_type_key,
+			"message": f"Access Denied: Your account is not authorized to scan {label} passes.",
+		}
 
 	# =========================================================================
 	# 1. Check Exhibitor Stall Pass (ConnectFest Registration - Max 2 Passes)
@@ -201,6 +189,12 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			WHERE email = %(email)s OR pass_2_email = %(email)s
 			ORDER BY creation DESC LIMIT 1
 		""", {"email": email_scan}, as_dict=True)
+
+	if exhibitor and "exhibitor" not in allowed_scopes:
+		if code:
+			return _deny_scan_scope("exhibitor_pass", "Exhibitor")
+		denied_match = denied_match or ("exhibitor_pass", "Exhibitor")
+		exhibitor = None
 
 	if exhibitor:
 		rec = exhibitor[0]
@@ -464,6 +458,18 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			ORDER BY creation DESC LIMIT 1
 		""", {"email": email_scan}, as_dict=True)
 
+	if bni_event and "event" not in allowed_scopes:
+		if code:
+			return _deny_scan_scope("bni_event_pass", "BNI Event")
+		denied_match = denied_match or ("bni_event_pass", "BNI Event")
+		bni_event = None
+
+	if bni_event and "event" not in allowed_scopes:
+		if code:
+			return _deny_scan_scope("bni_event_pass", "BNI Event")
+		denied_match = denied_match or ("bni_event_pass", "BNI Event")
+		bni_event = None
+
 	if bni_event:
 		rec = bni_event[0]
 
@@ -572,6 +578,12 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			ORDER BY creation DESC LIMIT 1
 		""", {"email": email_scan}, as_dict=True)
 
+	if visitor and "visitor" not in allowed_scopes:
+		if code:
+			return _deny_scan_scope("visitor_pass", "Visitor")
+		denied_match = denied_match or ("visitor_pass", "Visitor")
+		visitor = None
+
 	if visitor:
 		rec = visitor[0]
 
@@ -671,6 +683,9 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 			},
 		}
 
+	if denied_match:
+		return _deny_scan_scope(denied_match[0], denied_match[1])
+
 	# Pass Not Found
 	frappe.local.response["http_status_code"] = 404
 	return {
@@ -710,32 +725,9 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 	- Filter by who scanned: scanned_by='karthi@gmail.com'
 	- Search by name, email, phone, pass code, company
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, is_scanner_user
+	from connectfest.services.auth import get_user_scanner_scopes, resolve_authenticated_session_user
 
-	# Resolve user from sid if Guest
-	if not sess_user or sess_user == "Guest":
-		req_sid = None
-		if hasattr(frappe, "request") and frappe.request:
-			try:
-				req_sid = (
-					frappe.get_request_header("sid")
-					or frappe.get_request_header("X-Frappe-Session-Id")
-					or (frappe.request.cookies.get("sid") if hasattr(frappe.request, "cookies") and frappe.request.cookies else None)
-				)
-				if not req_sid:
-					auth_hdr = frappe.get_request_header("Authorization", "")
-					if auth_hdr.startswith("Bearer "):
-						req_sid = auth_hdr.split("Bearer ", 1)[1].strip()
-			except Exception:
-				pass
-		if req_sid and req_sid != "Guest":
-			try:
-				res = frappe.db.sql("SELECT user FROM `tabSessions` WHERE sid = %s LIMIT 1", (req_sid,))
-				if res and res[0][0]:
-					sess_user = res[0][0]
-			except Exception:
-				pass
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
@@ -744,11 +736,12 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 			"message": "Authentication required! Please log in as an Administrator or authorized Gate Scanner.",
 		}
 
-	if not (is_admin_user(sess_user) or is_scanner_user(sess_user)):
+	allowed_scopes = get_user_scanner_scopes(sess_user)
+	if not allowed_scopes:
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": "Access Denied: Your account does not have scanner privileges! Only Administrators and users with the 'ConnectFest Gate Scanner' role can view scanned users.",
+			"message": "Access Denied: Your account does not have scanner privileges!",
 		}
 
 	from frappe.utils import cint
@@ -758,13 +751,28 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 	search_q = (search or data.get("search") or data.get("q") or "").strip()
 	scanner_filter = (scanned_by or data.get("scanned_by") or data.get("checked_in_by") or "").strip().lower()
 
+	requested_scope = None
+	if filter_type in ("visitor", "visitors"):
+		requested_scope = "visitor"
+	elif filter_type in ("bni_event", "bni", "event", "events"):
+		requested_scope = "event"
+	elif filter_type in ("exhibitor", "exhibitors", "stall", "stalls"):
+		requested_scope = "exhibitor"
+
+	if requested_scope and requested_scope not in allowed_scopes:
+		frappe.local.response["http_status_code"] = 403
+		return {
+			"status": "forbidden",
+			"message": f"Access Denied: Your account is not authorized to view {requested_scope} pass scan logs.",
+		}
+
 	p = max(1, cint(data.get("page") or page or 1))
 	l = min(500, max(1, cint(data.get("limit") or limit or 50)))
 
 	records = []
 
 	# 1. Fetch from Visitor Registrations
-	if filter_type in ("all", "visitor", "visitors"):
+	if filter_type in ("all", "visitor", "visitors") and "visitor" in allowed_scopes:
 		vis_conds = []
 		vis_vals = {}
 		if filter_status in ("scanned", "checked_in", "checkedin", "1"):
@@ -809,7 +817,7 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 			})
 
 	# 2. Fetch from BNI Event Registrations
-	if filter_type in ("all", "bni_event", "bni", "event", "events"):
+	if filter_type in ("all", "bni_event", "bni", "event", "events") and "event" in allowed_scopes:
 		bni_conds = []
 		bni_vals = {}
 		if filter_status in ("scanned", "checked_in", "checkedin", "1"):
@@ -857,7 +865,7 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 			})
 
 	# 3. Fetch from Exhibitor Registrations
-	if filter_type in ("all", "exhibitor", "exhibitors", "stall", "stalls"):
+	if filter_type in ("all", "exhibitor", "exhibitors", "stall", "stalls") and "exhibitor" in allowed_scopes:
 		ex_conds = ["payment_status = 'Paid'"]
 		ex_vals = {}
 		if filter_status in ("scanned", "checked_in", "checkedin", "1"):
@@ -941,18 +949,22 @@ def get_scanned_users(status=None, pass_type=None, search=None, scanned_by=None,
 	total_not_scanned = total_matching - total_scanned
 
 	# Summary stats across whole database
-	vis_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration`")[0][0]
-	vis_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration` WHERE checked_in = 1")[0][0]
+	vis_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration`")[0][0] if "visitor" in allowed_scopes else 0
+	vis_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration` WHERE checked_in = 1")[0][0] if "visitor" in allowed_scopes else 0
 
-	bni_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration`")[0][0]
-	bni_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration` WHERE checked_in = 1")[0][0]
+	bni_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration`")[0][0] if "event" in allowed_scopes else 0
+	bni_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration` WHERE checked_in = 1")[0][0] if "event" in allowed_scopes else 0
 
-	ex_p1_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid'")[0][0]
-	ex_p1_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND checked_in = 1")[0][0]
-	ex_p2_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND pass_2_name IS NOT NULL AND pass_2_name != ''")[0][0]
-	ex_p2_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND pass_2_checked_in = 1")[0][0]
-	ex_tot = ex_p1_tot + ex_p2_tot
-	ex_chk = ex_p1_chk + ex_p2_chk
+	if "exhibitor" in allowed_scopes:
+		ex_p1_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid'")[0][0]
+		ex_p1_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND checked_in = 1")[0][0]
+		ex_p2_tot = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND pass_2_name IS NOT NULL AND pass_2_name != ''")[0][0]
+		ex_p2_chk = frappe.db.sql("SELECT COUNT(name) as cnt FROM `tabConnectFest Registration` WHERE payment_status = 'Paid' AND pass_2_checked_in = 1")[0][0]
+		ex_tot = ex_p1_tot + ex_p2_tot
+		ex_chk = ex_p1_chk + ex_p2_chk
+	else:
+		ex_tot = 0
+		ex_chk = 0
 
 	# Paginate
 	start = (p - 1) * l

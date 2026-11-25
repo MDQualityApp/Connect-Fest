@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import urllib.parse
 import requests
 import frappe
 from frappe.utils import flt, now_datetime
@@ -19,6 +20,7 @@ def get_wati_config():
 	host = None
 	token = None
 	template_name = None
+	visitor_template_name = None
 	enabled = True
 
 	# 1. First priority: ConnectFest Settings DocType
@@ -42,6 +44,9 @@ def get_wati_config():
 
 			if getattr(doc, "wati_template_name", None):
 				template_name = str(doc.wati_template_name).strip()
+
+			if getattr(doc, "wati_visitor_template_name", None):
+				visitor_template_name = str(doc.wati_visitor_template_name).strip()
 	except Exception:
 		pass
 
@@ -72,10 +77,18 @@ def get_wati_config():
 			or "welcome"
 		).strip()
 
+	if not visitor_template_name:
+		visitor_template_name = (
+			frappe.conf.get("wati_visitor_template_name")
+			or os.environ.get("WATI_VISITOR_TEMPLATE_NAME")
+			or "connectfest_visitor_pass"
+		).strip()
+
 	return {
 		"host": host,
 		"token": token,
 		"template_name": template_name,
+		"visitor_template_name": visitor_template_name,
 		"enabled": enabled,
 	}
 
@@ -155,6 +168,53 @@ def resolve_booking_template(preferred_name=None):
 			return fallback
 
 	return target_name or (approved[0]["name"] if approved else None)
+
+
+def resolve_visitor_template(preferred_name=None):
+	"""
+	Resolves the best available template for visitor gate pass confirmation:
+	1. Preferred name if specified.
+	2. Configured template in ConnectFest Settings (wati_visitor_template_name) or site_config/env.
+	3. Any approved template containing 'visitor', 'pass', 'ticket', 'gate_pass'.
+	4. Fallback to default approved template or 'connectfest_visitor_pass'.
+	"""
+	config = get_wati_config()
+	target_name = (preferred_name or "").strip()
+
+	if not target_name:
+		try:
+			if frappe.db.exists("DocType", "ConnectFest Settings"):
+				s_doc = frappe.get_doc("ConnectFest Settings")
+				target_name = (
+					getattr(s_doc, "wati_visitor_template_name", None)
+					or frappe.conf.get("wati_visitor_template_name")
+					or os.environ.get("WATI_VISITOR_TEMPLATE_NAME")
+					or ""
+				).strip()
+		except Exception:
+			pass
+
+	if not target_name:
+		target_name = "connectfest_visitor_pass"
+
+	approved = get_approved_templates()
+	approved_map = {t.get("name"): t for t in approved}
+
+	if target_name and target_name in approved_map:
+		return target_name
+
+	# Look for domain-specific templates for visitors
+	for t in approved:
+		tname = t.get("name", "").lower()
+		if any(keyword in tname for keyword in ["visitor", "gate_pass", "ticket", "entry_pass"]):
+			return t.get("name")
+
+	# Fallbacks available in WATI
+	for fallback in ["welcome", "default_welcome_v2", "welcome_wati_v3"]:
+		if fallback in approved_map:
+			return fallback
+
+	return target_name or (approved[0]["name"] if approved else "connectfest_visitor_pass")
 
 
 def send_wati_template_message(mobile, template_name=None, custom_params=None, broadcast_name=None):
@@ -402,6 +462,120 @@ def resend_booking_whatsapp(registration_id=None, mobile_no=None, **kwargs):
 		return {"status": "error", "message": "registration_id or mobile_no is required"}
 
 	return send_booking_confirmation_whatsapp(registration_id=reg_id, mobile_no=mob)
+
+
+def send_visitor_registration_whatsapp(registration_id=None, mobile_no=None, **kwargs):
+	"""
+	Sends WhatsApp visitor gate pass confirmation message to visitor via WATI.
+	Safe wrapper that never disrupts visitor registration or other flows.
+	"""
+	try:
+		reg_data = kwargs.get("reg_data") or {}
+
+		clean_reg = (registration_id or reg_data.get("registration_id") or reg_data.get("name") or "").strip()
+		clean_code = (kwargs.get("pass_code") or reg_data.get("pass_code") or "").strip()
+		clean_mob = (mobile_no or reg_data.get("mobile_no") or "").strip()
+
+		# Fetch visitor record from DB if needed
+		if (clean_reg or clean_code or clean_mob) and not reg_data.get("full_name"):
+			from connectfest.services.visitor_badge import get_visitor_badge_data
+			v_rec = get_visitor_badge_data(pass_code=clean_code, registration_id=clean_reg, mobile_no=clean_mob)
+			if v_rec:
+				reg_data.update(dict(v_rec))
+
+		# Override with kwargs
+		for k, v in kwargs.items():
+			if v and k != "reg_data":
+				reg_data[k] = v
+
+		mob = normalize_whatsapp_number(mobile_no or reg_data.get("mobile_no"))
+		if not mob:
+			return {
+				"status": "skipped",
+				"message": "No valid mobile number found for visitor WhatsApp notification",
+			}
+
+		full_name = (reg_data.get("full_name") or "Valued Visitor").strip()
+		company_name = (reg_data.get("company_name") or "").strip()
+		pcode = reg_data.get("pass_code") or reg_data.get("registration_id") or "CF-VISITOR"
+		reg_id = reg_data.get("registration_id") or reg_data.get("name") or pcode
+		which_day = (reg_data.get("which_day") or "Both days").strip()
+		access_text = "Both days" if (not which_day or which_day.lower() == "both days") else which_day
+
+		# Event details from Settings
+		event_name = "ConnectFest 2027"
+		event_dates = "20 & 21 Feb 2027"
+		event_venue = "Chennai Trade Centre, Nandambakkam"
+		try:
+			settings = frappe.get_single("ConnectFest Settings")
+			if settings:
+				event_name = settings.get("event_name") or event_name
+				event_dates = settings.get("event_dates") or event_dates
+				event_venue = settings.get("event_venue") or event_venue
+		except Exception:
+			pass
+
+		# Prepare rich parameter list covering both named & positional placeholders:
+		# {{1}} = Attendee Name
+		# {{2}} = Event Name
+		# {{3}} = Pass Code
+		# {{4}} = Event Dates
+		# {{5}} = Venue
+		custom_params = [
+			{"name": "name", "value": full_name},
+			{"name": "full_name", "value": full_name},
+			{"name": "event_name", "value": event_name},
+			{"name": "pass_code", "value": str(pcode)},
+			{"name": "registration_id", "value": str(reg_id)},
+			{"name": "event_dates", "value": str(event_dates)},
+			{"name": "venue", "value": str(event_venue)},
+			{"name": "access", "value": str(access_text)},
+			{"name": "which_day", "value": str(which_day)},
+			{"name": "company_name", "value": str(company_name)},
+			# Positional variables for Meta templates (WATI Fazil Approved Structure):
+			# {{1}} = Attendee Name
+			# {{2}} = Pass Code
+			# {{3}} = Access (Both days / Day 1 / Day 2)
+			# {{4}} = Event Dates
+			# {{5}} = Venue
+			{"name": "1", "value": full_name},
+			{"name": "2", "value": str(pcode)},
+			{"name": "3", "value": str(access_text)},
+			{"name": "4", "value": str(event_dates)},
+			{"name": "5", "value": str(event_venue)},
+		]
+
+		tmpl_name = resolve_visitor_template(kwargs.get("template_name"))
+
+		result = send_wati_template_message(
+			mobile=mob,
+			template_name=tmpl_name,
+			custom_params=custom_params,
+			broadcast_name=f"connectfest_vis_{pcode}_{int(time.time())}",
+		)
+		return result
+
+	except Exception as e:
+		frappe.log_error(title="ConnectFest Visitor WhatsApp Send Error", message=frappe.get_traceback())
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+@handle_api_errors("ConnectFest Resend Visitor WhatsApp Error")
+def resend_visitor_whatsapp(registration_id=None, mobile_no=None, pass_code=None, **kwargs):
+	"""
+	Public API endpoint to explicitly resend visitor pass WhatsApp message.
+	"""
+	data = extract_request_data(kwargs)
+	reg_id = (registration_id or data.get("registration_id") or "").strip()
+	mob = (mobile_no or data.get("mobile_no") or data.get("mobile") or "").strip()
+	pcode = (pass_code or data.get("pass_code") or data.get("code") or "").strip()
+
+	if not reg_id and not mob and not pcode:
+		frappe.local.response["http_status_code"] = 400
+		return {"status": "error", "message": "registration_id, pass_code, or mobile_no is required"}
+
+	return send_visitor_registration_whatsapp(registration_id=reg_id, mobile_no=mob, pass_code=pcode)
 
 
 @frappe.whitelist()
