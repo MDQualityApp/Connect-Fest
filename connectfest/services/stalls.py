@@ -280,9 +280,11 @@ def get_stalls(**kwargs):
 	Cached in Redis with sub-second responsiveness.
 	"""
 	try:
-		# Auto-release any expired holds before returning inventory
+		cache = frappe.cache()
+		# Auto-release expired holds at most once per 15s across workers so cached reads stay DB-free
 		try:
-			release_expired_holds()
+			if cache.set(cache.make_key("cf_hold_cleanup_throttle"), "1", nx=True, ex=15):
+				release_expired_holds()
 		except Exception:
 			pass
 
@@ -307,7 +309,6 @@ def get_stalls(**kwargs):
 			and (limit == 0 or limit >= 220)
 			and page == 1
 		)
-		cache = frappe.cache()
 		cache_key = cache.make_key(STALLS_INVENTORY_CACHE_KEY)
 
 		if is_default:

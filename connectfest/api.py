@@ -378,9 +378,21 @@ def admin_record_cash_payment(**kwargs):
 # ==============================================================================
 # 3. STALL INVENTORY & THEATRE LOCKING APIS
 # ==============================================================================
+def _set_public_cache_headers(max_age=30, swr=120):
+	"""Sets browser/CDN Cache-Control headers on public read-only API responses."""
+	try:
+		resp = getattr(frappe.local, "response", None)
+		if resp is not None:
+			headers = resp.setdefault("headers", {})
+			headers["Cache-Control"] = f"public, max-age={int(max_age)}, stale-while-revalidate={int(swr)}"
+	except Exception:
+		pass
+
+
 @frappe.whitelist(allow_guest=True)
 def get_stalls(**kwargs):
 	"""Returns all 220 stalls with live booking status, blueprint coordinates, and zones."""
+	_set_public_cache_headers(max_age=3, swr=10)
 	return _get_stalls(**kwargs)
 
 
@@ -778,12 +790,14 @@ def edit_profile(**kwargs):
 @frappe.whitelist(allow_guest=True)
 def get_tier_pricing(**kwargs):
 	"""Public API: Returns all active pricing tiers with GST details."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_all_tier_pricing(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_all_tier_pricing(**kwargs):
 	"""Returns all active pricing tiers with Base Price, GST %, GST Amount, Total, and Plan Description."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_all_tier_pricing(**kwargs)
 
 
@@ -954,12 +968,14 @@ def flush_queue():
 @frappe.whitelist(allow_guest=True)
 def get_gallery(**kwargs):
 	"""Public API: Returns published gallery items with multiple images (Pinned items first)."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_gallery(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_gallery_item(gallery_id=None, **kwargs):
 	"""Public API: Returns a single gallery item with all its images."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_gallery_item(gallery_id=gallery_id, **kwargs)
 
 
@@ -1029,12 +1045,14 @@ def admin_upload_gallery_image(**kwargs):
 @frappe.whitelist(allow_guest=True)
 def get_sponsors(**kwargs):
 	"""Public API: Returns active sponsors grouped by category/tier, showing what they sponsored."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_sponsors(**kwargs)
 
 
 @frappe.whitelist(allow_guest=True)
 def get_sponsor_details(sponsor_id=None, **kwargs):
 	"""Public API: Returns single sponsor full profile."""
+	_set_public_cache_headers(max_age=60, swr=300)
 	return _get_sponsor_details(sponsor_id=sponsor_id, **kwargs)
 
 
@@ -1865,6 +1883,23 @@ def admin_settings(**kwargs):
 	if req_method in ["POST", "PUT", "PATCH"]:
 		return _admin_update_settings(**kwargs)
 	return _admin_get_settings(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_frontpage_data(**kwargs):
+	"""
+	Combined Public BFF Endpoint for Frontpage Bootstrap:
+	Returns stalls, tier_pricing, gallery, and sponsors in a single HTTP request.
+	"""
+	_set_public_cache_headers(max_age=5, swr=30)
+	return {
+		"status": "success",
+		"stalls": _get_stalls(),
+		"tier_pricing": _get_all_tier_pricing(),
+		"gallery": _get_gallery(),
+		"sponsors": _get_sponsors(),
+	}
+
 
 
 
