@@ -2410,20 +2410,28 @@ def admin_create_user(
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "A valid email address is mandatory."}
 
-		if not pwd or len(pwd) < 4:
+		existing_name = None
+		if frappe.db.exists("User", clean_email):
+			existing_name = clean_email
+		else:
+			by_email = frappe.db.get_value("User", {"email": clean_email}, "name")
+			if by_email:
+				existing_name = by_email
+
+		if existing_name in ("Administrator", "Guest"):
+			frappe.local.response["http_status_code"] = 403
+			return {"status": "forbidden", "message": "System accounts cannot be modified via this API."}
+
+		if not existing_name and (not pwd or len(pwd) < 4):
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "A password (minimum 4 characters) is required."}
-
-		if frappe.db.exists("User", clean_email) or frappe.db.exists("User", {"email": clean_email}):
-			frappe.local.response["http_status_code"] = 409
-			return {
-				"status": "error",
-				"message": "User with this email already exists.",
-			}
+		if existing_name and pwd and len(pwd) < 4:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Password must be at least 4 characters."}
 
 		if clean_mob:
 			dup_mob_user = frappe.db.get_value("User", {"mobile_no": clean_mob}, "name")
-			if dup_mob_user:
+			if dup_mob_user and dup_mob_user != existing_name:
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
@@ -2455,6 +2463,54 @@ def admin_create_user(
 			or " ".join(p for p in [str(data.get("first_name") or "").strip(), str(data.get("last_name") or "").strip()] if p)
 		)
 		clean_fn = str(raw_fn or "").strip()
+
+		if existing_name:
+			user_doc = frappe.get_doc("User", existing_name)
+			if clean_fn and "@" not in clean_fn:
+				fn_parts = clean_fn.split(" ", 1)
+				user_doc.first_name = fn_parts[0]
+				user_doc.last_name = fn_parts[1] if len(fn_parts) > 1 else ""
+				user_doc.full_name = clean_fn
+			if clean_mob:
+				user_doc.mobile_no = clean_mob
+				user_doc.phone = clean_mob
+			if "enabled" in data:
+				user_doc.enabled = 1 if _truthy_flag(data.get("enabled")) else 0
+
+			# Preserve non-managed roles (e.g. Website User, Exhibitor) so existing OTP/registration flows are untouched
+			non_managed = [
+				r.role for r in (user_doc.roles or [])
+				if r.role not in CONNECTFEST_ALL_MANAGED_ROLES and r.role not in ("All", "Guest")
+			]
+			final_roles = []
+			for r_name in non_managed + list(resolved_roles):
+				if r_name not in final_roles:
+					final_roles.append(r_name)
+
+			user_doc.set("roles", [{"role": r_name} for r_name in final_roles])
+			user_doc.user_type = "System User" if any(r in ("System Manager", "Administrator") for r in final_roles) else "Website User"
+			user_doc.flags.ignore_permissions = True
+			user_doc.flags.ignore_password_policy = True
+			user_doc.save(ignore_permissions=True)
+
+			if pwd:
+				from frappe.utils.password import update_password
+				update_password(user_doc.name, pwd)
+
+			_sync_user_scanner_cache(user_doc.name, final_roles)
+			frappe.clear_cache(user=user_doc.name)
+			frappe.db.commit()
+
+			perm_summary = get_user_permissions_summary(user_doc.name)
+			frappe.local.response["http_status_code"] = 200
+			return {
+				"status": "success",
+				"updated": True,
+				"message": f"User '{clean_email}' updated with new access.",
+				"user": _format_staff_user_response(user_doc, perm_summary),
+				**perm_summary,
+			}
+
 		if not clean_fn or "@" in clean_fn:
 			clean_fn = clean_email.split("@")[0].replace(".", " ").replace("_", " ").title()
 		fn_parts = clean_fn.split(" ", 1)
