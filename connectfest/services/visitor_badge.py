@@ -88,15 +88,19 @@ def _load_badge_image(img_input):
 		except Exception:
 			pass
 
-	# Case 4: Remote HTTP/HTTPS URL
+	# Case 4: Remote HTTP/HTTPS URL (SSRF-safe & TLS-verified)
 	if val.startswith("http://") or val.startswith("https://"):
 		try:
+			from connectfest.services.common import is_safe_public_http_url, MAX_UPLOAD_BYTES
+			if not is_safe_public_http_url(val):
+				return None
 			ctx = ssl.create_default_context()
-			ctx.check_hostname = False
-			ctx.verify_mode = ssl.CERT_NONE
 			req = urllib.request.Request(val, headers={"User-Agent": "ConnectFest/2027"})
 			with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
-				return Image.open(io.BytesIO(resp.read())).convert("RGBA")
+				raw = resp.read(MAX_UPLOAD_BYTES + 1)
+				if len(raw) > MAX_UPLOAD_BYTES:
+					return None
+				return Image.open(io.BytesIO(raw)).convert("RGBA")
 		except Exception:
 			pass
 
@@ -499,6 +503,11 @@ def download_visitor_badge(pass_code=None, registration_id=None, mobile_no=None,
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": "No confirmed visitor registration record found."}
 
+	from connectfest.services.common import verify_record_access_or_pass_code
+	err = verify_record_access_or_pass_code(rec.get("email"), pass_code_used=bool(code), **kwargs)
+	if err:
+		return err
+
 	pdf_bytes = generate_visitor_badge_pdf_bytes(rec)
 	safe_code = re.sub(r"[^A-Za-z0-9_-]", "_", str(rec.get("pass_code") or rec.get("registration_id") or "VISITOR"))
 	filename = f"ConnectFest_Visitor_Pass_{safe_code}.pdf"
@@ -526,6 +535,11 @@ def get_visitor_badge(pass_code=None, registration_id=None, mobile_no=None, emai
 	if not rec:
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": "No confirmed visitor registration record found."}
+
+	from connectfest.services.common import verify_record_access_or_pass_code
+	err = verify_record_access_or_pass_code(rec.get("email"), pass_code_used=bool(code), **kwargs)
+	if err:
+		return err
 
 	from connectfest.services.passes import get_pass_qr_url
 	base_url = get_base_url()

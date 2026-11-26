@@ -571,6 +571,13 @@ def hold_stall(stall_number=None, **kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "stall_number is required"}
 
+		# Rate-limit hold_stall to prevent automated floor-map inventory exhaustion
+		from connectfest.services.common import check_rate_limit
+		req_ip = getattr(frappe.local, "request_ip", None) or "unknown"
+		if not check_rate_limit(f"hold_stall:{req_ip}", limit=20, window_secs=60):
+			frappe.local.response["http_status_code"] = 429
+			return {"status": "error", "message": "Too many stall hold requests. Please wait a minute and try again."}
+
 		if not frappe.db.exists("ConnectFest Stall", stall_num):
 			frappe.local.response["http_status_code"] = 404
 			return {"status": "error", "message": f"Stall '{stall_num}' does not exist"}
@@ -817,7 +824,21 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 
 	if frappe.db.exists("ConnectFest Stall", stall_num):
 		stall = frappe.get_doc("ConnectFest Stall", stall_num)
-		if stall.status == "Hold" and (not token or stall.hold_token == token):
+		if stall.status == "Hold":
+			from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+			sess_user, _ = resolve_authenticated_session_user(**kwargs)
+			is_admin = bool(sess_user and sess_user != "Guest" and is_admin_user(sess_user))
+			is_owner = bool(
+				sess_user
+				and sess_user != "Guest"
+				and stall.booked_by_email
+				and stall.booked_by_email.strip().lower() == sess_user.strip().lower()
+			)
+			token_ok = bool(token and stall.hold_token and token == stall.hold_token)
+			if not (token_ok or is_admin or is_owner):
+				frappe.local.response["http_status_code"] = 403
+				return {"status": "forbidden", "message": "Valid hold_token or authorization is required to release this stall."}
+
 			frappe.db.set_value("ConnectFest Stall", stall_num, {
 				"status": "Available",
 				"hold_token": None,
@@ -832,17 +853,17 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 			frappe.db.commit()
 			invalidate_stalls_cache()
 
-	try:
-		cache = frappe.cache()
-		cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
-	except Exception:
-		pass
+			try:
+				cache = frappe.cache()
+				cache.delete(cache.make_key(f"{STALL_LOCK_PREFIX}{stall_num}"))
+			except Exception:
+				pass
 
-	try:
-		from connectfest.services.realtime import broadcast_stall_update
-		broadcast_stall_update(stall_num, "Available")
-	except Exception:
-		pass
+			try:
+				from connectfest.services.realtime import broadcast_stall_update
+				broadcast_stall_update(stall_num, "Available")
+			except Exception:
+				pass
 
 	return {"status": "success", "message": f"Stall {stall_num} hold released"}
 
@@ -853,7 +874,7 @@ def admin_set_stall_hold_duration(duration_minutes=None, **kwargs):
 	Does NOT affect active existing holds (their timers remain untouched).
 	New holds created after this call will use the updated duration.
 	"""
-	if not (kwargs.get("skip_auth") or kwargs.get("is_internal") or getattr(frappe.flags, "in_test", False)):
+	if not getattr(frappe.flags, "in_test", False):
 		from connectfest.services.auth import check_admin_permission
 		err = check_admin_permission("Stall hold configuration")
 		if err:

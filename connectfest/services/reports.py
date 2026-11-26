@@ -221,30 +221,31 @@ def generate_csv_string(rows):
 	writer = csv.DictWriter(output, fieldnames=fieldnames)
 	writer.writeheader()
 
+	from connectfest.services.common import sanitize_csv_cell
 	for r in rows:
 		writer.writerow({
-			"Registration ID": r["registration_id"],
-			"Attendee Name": r["full_name"],
-			"Email Address": r["email"],
-			"Mobile Number": r["mobile_no"],
-			"Role": r["user_type"],
-			"Company Name": r["company_name"],
-			"Location": r["location"],
-			"BNI Member": r["is_bni_member"],
-			"Region Name": r["region_name"],
-			"Chapter Name": r["chapter_name"],
-			"Industry": r["industry"],
-			"Segment": r["segment"],
-			"Stall Number": r["stall_number"],
-			"Stall Tier": r["stall_category"],
+			"Registration ID": sanitize_csv_cell(r["registration_id"]),
+			"Attendee Name": sanitize_csv_cell(r["full_name"]),
+			"Email Address": sanitize_csv_cell(r["email"]),
+			"Mobile Number": sanitize_csv_cell(r["mobile_no"]),
+			"Role": sanitize_csv_cell(r["user_type"]),
+			"Company Name": sanitize_csv_cell(r["company_name"]),
+			"Location": sanitize_csv_cell(r["location"]),
+			"BNI Member": sanitize_csv_cell(r["is_bni_member"]),
+			"Region Name": sanitize_csv_cell(r["region_name"]),
+			"Chapter Name": sanitize_csv_cell(r["chapter_name"]),
+			"Industry": sanitize_csv_cell(r["industry"]),
+			"Segment": sanitize_csv_cell(r["segment"]),
+			"Stall Number": sanitize_csv_cell(r["stall_number"]),
+			"Stall Tier": sanitize_csv_cell(r["stall_category"]),
 			"Amount (INR)": f"{r['amount']:.2f}",
-			"Payment Status": r["payment_status"],
-			"Payment Mode": r["payment_mode"],
-			"Payment / Receipt ID": r["receipt_id"],
-			"Payment Date": r["payment_date"],
-			"Source of Info": r["source_of_info"],
-			"Status": r["status"],
-			"Registration Date": r["creation"],
+			"Payment Status": sanitize_csv_cell(r["payment_status"]),
+			"Payment Mode": sanitize_csv_cell(r["payment_mode"]),
+			"Payment / Receipt ID": sanitize_csv_cell(r["receipt_id"]),
+			"Payment Date": sanitize_csv_cell(r["payment_date"]),
+			"Source of Info": sanitize_csv_cell(r["source_of_info"]),
+			"Status": sanitize_csv_cell(r["status"]),
+			"Registration Date": sanitize_csv_cell(r["creation"]),
 		})
 
 	return output.getvalue()
@@ -646,6 +647,11 @@ def download_stall_allocation_letter(**kwargs):
 
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": "No confirmed booking registration found for the provided details."}
+
+	from connectfest.services.common import verify_record_access_or_pass_code
+	err = verify_record_access_or_pass_code(alloc_data.get("email"), pass_code_used=False, **kwargs)
+	if err:
+		return err
 
 	pdf_bytes = generate_stall_allocation_pdf_bytes(alloc_data)
 	booth_tag = str(alloc_data.get("stall_number") or alloc_data.get("registration_id") or "allotment").replace(" ", "_")

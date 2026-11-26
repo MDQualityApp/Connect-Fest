@@ -485,6 +485,11 @@ def download_exhibitor_badge(code=None, registration_id=None, stall_number=None,
 		frappe.local.response["http_status_code"] = 404
 		return {"status": "error", "message": "Exhibitor registration not found"}
 
+	from connectfest.services.common import verify_record_access_or_pass_code
+	err = verify_record_access_or_pass_code(rec.get("email"), pass_code_used=bool(pass_code), **kwargs)
+	if err:
+		return err
+
 	badge_rel_path = generate_exhibitor_badge_image(rec, pass_index=p_idx)
 	if not badge_rel_path:
 		frappe.local.response["http_status_code"] = 500

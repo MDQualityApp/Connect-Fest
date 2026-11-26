@@ -2014,18 +2014,39 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 		if otp and mob:
 			from connectfest.services.otp import verify_otp
 			return verify_otp(mobile_no=mob, otp=otp)
+		if otp and usr:
+			from connectfest.services.otp import verify_email_otp
+			return verify_email_otp(email=usr, otp=otp)
 
-		if pwd and usr:
-			user_lookup = _resolve_user_doc_name(usr)
-			if not user_lookup or not frappe.db.exists("User", user_lookup):
-				frappe.local.response["http_status_code"] = 401
-				return {"status": "error", "message": "Invalid email or password"}
-			try:
-				from frappe.utils.password import check_password
-				check_password(user_lookup, pwd)
-			except Exception:
-				frappe.local.response["http_status_code"] = 401
-				return {"status": "error", "message": "Invalid email or password"}
+		if not pwd:
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "unauthorized", "message": "OTP or password is required to log in."}
+
+		if not usr:
+			frappe.local.response["http_status_code"] = 400
+			return {"status": "error", "message": "Email address or Mobile Number is required"}
+
+		pwd_blocked, pwd_mins = _check_password_lockout(f"att:{usr}")
+		if pwd_blocked:
+			frappe.local.response["http_status_code"] = 429
+			return {"status": "error", "message": f"Too many failed login attempts. Try again in {pwd_mins} minute(s)."}
+
+		user_lookup = _resolve_user_doc_name(usr)
+		if not user_lookup or not frappe.db.exists("User", user_lookup):
+			_record_password_failure(f"att:{usr}")
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "error", "message": "Invalid email or password"}
+		try:
+			from frappe.utils.password import check_password
+			check_password(user_lookup, pwd)
+		except Exception:
+			is_now_blocked, mins_left, _ = _record_password_failure(f"att:{usr}")
+			if is_now_blocked:
+				frappe.local.response["http_status_code"] = 429
+				return {"status": "error", "message": f"Too many failed login attempts. Try again in {mins_left} minute(s)."}
+			frappe.local.response["http_status_code"] = 401
+			return {"status": "error", "message": "Invalid email or password"}
+		_clear_password_failures(f"att:{usr}")
 
 		perm_summary = get_user_permissions_summary(usr) if usr else get_user_permissions_summary(None)
 		tok_role = (

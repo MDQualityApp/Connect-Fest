@@ -1613,10 +1613,28 @@ def register_visitor(**kwargs):
 
 @handle_api_errors("ConnectFest Check Booking Status Error")
 def check_user_booking_status(email=None, mobile_no=None, **kwargs):
-	"""Check if an email or mobile has an existing stall booking or visitor pass."""
+	"""Check if an authenticated user's email or mobile has an existing stall booking or visitor pass."""
+	from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {"status": "unauthorized", "message": "Authentication required."}
+
 	data = extract_request_data(kwargs)
 	em = (email or data.get("email") or "").strip().lower()
 	mb = (mobile_no or data.get("mobile_no") or data.get("phone") or "").strip()
+
+	if not is_admin_user(sess_user):
+		if em and em != sess_user.strip().lower():
+			frappe.local.response["http_status_code"] = 403
+			return {"status": "forbidden", "message": "Access Denied."}
+		if mb:
+			user_mob = (frappe.db.get_value("User", sess_user, "mobile_no") or frappe.db.get_value("User", sess_user, "phone") or "").strip()
+			if user_mob and mb != user_mob:
+				frappe.local.response["http_status_code"] = 403
+				return {"status": "forbidden", "message": "Access Denied."}
+		if not em:
+			em = sess_user.strip().lower()
 
 	stall_booking = None
 	stall_bookings = []

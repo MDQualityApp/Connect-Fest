@@ -1870,6 +1870,16 @@ def get_pass_qr_image(code=None, pass_code=None, registration_id=None, pass_numb
 	reg_id = (registration_id or req_data.get("registration_id") or "").strip()
 
 	if not clean_code and reg_id:
+		from connectfest.services.common import verify_record_access_or_pass_code
+		reg_email = (
+			frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")
+			or frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id}, "email")
+			or frappe.db.get_value("ConnectFest BNI Event Registration", {"registration_id": reg_id}, "email")
+			or ""
+		)
+		err = verify_record_access_or_pass_code(reg_email, pass_code_used=False, **kwargs)
+		if err:
+			return err
 		p_num = cint(pass_number or req_data.get("pass_number") or 1)
 		field = "pass_2_pass_code" if p_num == 2 else "pass_code"
 		clean_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, field) or ""
@@ -2059,6 +2069,16 @@ def download_pass_qr(code=None, pass_code=None, registration_id=None, pass_numbe
 	reg_id = (registration_id or req_data.get("registration_id") or "").strip()
 
 	if not clean_code and reg_id:
+		from connectfest.services.common import verify_record_access_or_pass_code
+		reg_email = (
+			frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email")
+			or frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": reg_id}, "email")
+			or frappe.db.get_value("ConnectFest BNI Event Registration", {"registration_id": reg_id}, "email")
+			or ""
+		)
+		err = verify_record_access_or_pass_code(reg_email, pass_code_used=False, **kwargs)
+		if err:
+			return err
 		p_num = cint(pass_number or req_data.get("pass_number") or 1)
 		field = "pass_2_pass_code" if p_num == 2 else "pass_code"
 		clean_code = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, field) or ""

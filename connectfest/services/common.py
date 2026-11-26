@@ -706,5 +706,69 @@ def generate_secure_pass_code(prefix="CF"):
 	return f"{prefix}-{p1}-{p2}"
 
 
+def sanitize_csv_cell(val):
+	"""Neutralizes CSV/Excel formula injection on user-supplied strings."""
+	if val is None:
+		return ""
+	s = str(val)
+	if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+		return "'" + s
+	return s
+
+
+def is_safe_public_http_url(url):
+	"""Validates that an outbound HTTP/HTTPS URL resolves only to public non-internal IP addresses."""
+	import ipaddress
+	import socket
+	import urllib.parse
+
+	try:
+		parsed = urllib.parse.urlparse(str(url or "").strip())
+		if parsed.scheme not in ("http", "https") or not parsed.hostname:
+			return False
+		host = parsed.hostname.strip().lower()
+		if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "169.254.169.254"):
+			return False
+		infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+		if not infos:
+			return False
+		for info in infos:
+			ip_str = info[4][0]
+			ip_obj = ipaddress.ip_address(ip_str)
+			if (
+				ip_obj.is_private
+				or ip_obj.is_loopback
+				or ip_obj.is_link_local
+				or ip_obj.is_multicast
+				or ip_obj.is_reserved
+				or ip_obj.is_unspecified
+			):
+				return False
+		return True
+	except Exception:
+		return False
+
+
+def verify_record_access_or_pass_code(record_email, pass_code_used=False, **kwargs):
+	"""
+	Allows public access when an unguessable pass_code is supplied directly (email/WhatsApp links),
+	but enforces authenticated session + ownership/Admin check for sequential registration_id, email, or mobile lookups.
+	Returns None if allowed, or an error response dict if denied.
+	"""
+	if pass_code_used:
+		return None
+	from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
+	if not sess_user or sess_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {"status": "unauthorized", "message": "Authentication required."}
+	if is_admin_user(sess_user):
+		return None
+	if record_email and record_email.strip().lower() == sess_user.strip().lower():
+		return None
+	frappe.local.response["http_status_code"] = 403
+	return {"status": "forbidden", "message": "Access Denied."}
+
+
 
 
