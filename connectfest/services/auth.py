@@ -173,7 +173,7 @@ def ensure_frappe_user(email, full_name, mobile_no=None, role="Website User"):
 		return clean_email
 
 
-CONNECTFEST_SUPER_ADMIN_ROLES = ("Administrator", "System Manager", "ConnectFest Admin")
+CONNECTFEST_SUPER_ADMIN_ROLES = ("Administrator", "System Manager")
 
 CONNECTFEST_MODULE_ROLES = {
 	"gallery": "ConnectFest Gallery Admin",
@@ -731,11 +731,11 @@ def is_admin_user(user=None):
 		user_names = frappe.db.get_values("User", {"email": clean_u}, "name", pluck=True) or [u]
 		for un in user_names:
 			roles = frappe.get_roles(un)
-			if "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles:
+			if "System Manager" in roles or "Administrator" in roles:
 				return True
 		return False
 	roles = frappe.get_roles(u)
-	return "System Manager" in roles or "Administrator" in roles or "ConnectFest Admin" in roles
+	return "System Manager" in roles or "Administrator" in roles
 
 
 def is_scanner_user(user=None):
@@ -3477,7 +3477,6 @@ def admin_get_all_users(**kwargs):
 			email_key == "administrator"
 			or "Administrator" in user_roles
 			or "System Manager" in user_roles
-			or "ConnectFest Admin" in user_roles
 		)
 		perm_summary = _summarize_roles_fast(user_roles, super_admin_override=is_admin)
 		is_sub_admin = (not is_admin) and perm_summary["is_sub_admin"]
