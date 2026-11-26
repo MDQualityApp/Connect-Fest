@@ -2221,7 +2221,7 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
-				"message": "Access Denied: Admin login is restricted to Administrators only."
+				"message": "Access Denied. Please log in using the Staff Login option."
 			}
 
 		from connectfest.services.otp import is_otp_blocked, increment_failed_attempts, clear_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
