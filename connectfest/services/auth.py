@@ -2185,19 +2185,22 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			if admin_email:
 				try:
 					expires_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=120)
+					admin_mob = frappe.db.get_value("User", usr, "mobile_no") or frappe.db.get_value("User", usr, "phone") or ""
 					otp_doc = frappe.get_doc({
 						"doctype": "ConnectFest OTP",
 						"email": admin_email,
+						"mobile_no": admin_mob,
 						"registered_user": usr,
 						"otp": otp_code,
 						"status": "Pending",
 						"expires_at": expires_at,
 					})
 					otp_doc.flags.ignore_permissions = True
-					otp_doc.insert()
+					otp_doc.flags.ignore_mandatory = True
+					otp_doc.insert(ignore_permissions=True)
 					frappe.db.commit()
 				except Exception:
-					pass
+					frappe.log_error("ConnectFest Admin OTP Save Error", frappe.get_traceback())
 
 			# Send OTP directly to Admin Email (synchronously with now=True so delivery errors are never silently swallowed)
 			if not admin_email:
