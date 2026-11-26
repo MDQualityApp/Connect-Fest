@@ -2216,13 +2216,12 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid admin email or password"}
 
-		# Step 2: Verify Staff / Admin Role Privilege
-		roles = frappe.get_roles(usr)
-		if not is_staff_user(usr):
+		# Step 2: Strictly allow Super Admins only (block sub-admins/staff/scanners even with all module access)
+		if not is_admin_user(usr):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
-				"message": "Access Denied: This administrative portal is restricted to Administrators, Module Admins, and Gate Scanners!"
+				"message": "Access Denied: Admin login is restricted to Administrators only."
 			}
 
 		from connectfest.services.otp import is_otp_blocked, increment_failed_attempts, clear_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
