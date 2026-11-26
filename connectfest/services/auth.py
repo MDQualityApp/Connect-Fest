@@ -2199,30 +2199,71 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				except Exception:
 					pass
 
-			# Send OTP directly to Admin Email (Fast non-blocking background dispatch)
-			if admin_email:
-				from connectfest.services.otp import (
-					build_admin_2fa_html,
-					_email_executor,
-					_background_send_email_task,
-				)
-				email_subject = f"{otp_code} is your ConnectFest Admin verification code"
-				email_content = build_admin_2fa_html(otp_code, admin_user=usr, admin_email=admin_email, expiry_seconds=120)
-				site_name = getattr(getattr(frappe, "local", None), "site", "connectfest.localhost") or "connectfest.localhost"
-				try:
-					_email_executor.submit(_background_send_email_task, site_name, admin_email, email_subject, email_content)
-				except Exception:
-					try:
-						frappe.sendmail(
-							recipients=[admin_email],
-							subject=email_subject,
-							message=email_content,
-							now=False,
-							delayed=True,
+			# Send OTP directly to Admin Email (synchronously with now=True so delivery errors are never silently swallowed)
+			if not admin_email:
+				frappe.local.response["http_status_code"] = 400
+				return {
+					"status": "error",
+					"message": "No email address is configured for this admin account.",
+				}
+
+			from connectfest.services.otp import build_admin_2fa_html
+			email_subject = f"{otp_code} is your ConnectFest Admin verification code"
+			email_content = build_admin_2fa_html(otp_code, admin_user=usr, admin_email=admin_email, expiry_seconds=120)
+
+			outgoing_acc = frappe.db.get_value(
+				"Email Account",
+				{"default_outgoing": 1},
+				["email_id", "email_account_name", "name"],
+				as_dict=True,
+			) or frappe.db.get_value(
+				"Email Account",
+				{"enable_outgoing": 1},
+				["email_id", "email_account_name", "name"],
+				as_dict=True,
+			)
+			sender_str = None
+			if outgoing_acc and outgoing_acc.get("email_id"):
+				s_name = outgoing_acc.get("email_account_name") or outgoing_acc.get("name") or "ConnectFest"
+				sender_str = f"{s_name} <{outgoing_acc.get('email_id')}>"
+
+			try:
+				sendmail_args = {
+					"recipients": [admin_email],
+					"subject": email_subject,
+					"message": email_content,
+					"now": True,
+					"delayed": False,
+					"x_priority": 1,
+					"send_priority": 1,
+				}
+				if sender_str:
+					sendmail_args["sender"] = sender_str
+
+				q = frappe.sendmail(**sendmail_args)
+				frappe.db.commit()
+
+				if q and getattr(q, "name", None):
+					q_info = frappe.db.get_value("Email Queue", q.name, ["status", "error"], as_dict=True)
+					if q_info and q_info.get("status") == "Error":
+						frappe.log_error(
+							title=f"ConnectFest Admin 2FA Email Failed ({admin_email})",
+							message=q_info.get("error") or "SMTP transmission error",
 						)
 						frappe.db.commit()
-					except Exception:
-						pass
+						frappe.local.response["http_status_code"] = 500
+						return {
+							"status": "error",
+							"message": "Unable to send verification email. Please try again.",
+						}
+			except Exception:
+				frappe.log_error("ConnectFest Admin 2FA Email Error", frappe.get_traceback())
+				frappe.db.commit()
+				frappe.local.response["http_status_code"] = 500
+				return {
+					"status": "error",
+					"message": "Unable to send verification email. Please try again.",
+				}
 
 			return {
 				"status": "otp_required",
