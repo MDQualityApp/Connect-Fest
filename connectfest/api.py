@@ -379,12 +379,12 @@ def admin_record_cash_payment(**kwargs):
 # 3. STALL INVENTORY & THEATRE LOCKING APIS
 # ==============================================================================
 def _set_public_cache_headers(max_age=30, swr=120):
-	"""Sets browser/CDN Cache-Control headers on public read-only API responses."""
+	"""Sets browser/CDN HTTP Cache-Control headers on public read-only API responses."""
 	try:
-		resp = getattr(frappe.local, "response", None)
-		if resp is not None:
-			headers = resp.setdefault("headers", {})
-			headers["Cache-Control"] = f"public, max-age={int(max_age)}, stale-while-revalidate={int(swr)}"
+		if hasattr(frappe.local, "response_headers"):
+			frappe.local.response_headers["Cache-Control"] = (
+				f"public, max-age={int(max_age)}, stale-while-revalidate={int(swr)}"
+			)
 	except Exception:
 		pass
 
