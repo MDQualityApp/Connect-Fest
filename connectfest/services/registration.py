@@ -1529,36 +1529,34 @@ def register_visitor(**kwargs):
 		frappe.db.commit()
 		set_cached_record(cache, f"{VISITOR_CACHE_PREFIX}{reg_id}", record)
 
-		# Dispatch visitor confirmation email directly
+		# Dispatch visitor confirmation email in background (non-blocking for fast <500ms API response)
 		try:
 			from connectfest.services.notifications import send_visitor_confirmation_email
-			send_visitor_confirmation_email(
+			frappe.enqueue(
+				send_visitor_confirmation_email,
+				queue="short",
+				enqueue_after_commit=True,
 				registration_id=reg_id,
 				email=email,
 				pass_code=pass_code,
 			)
-		except Exception as notif_err:
-			frappe.log_error(title="ConnectFest Visitor Notification Error", message=frappe.get_traceback())
-			try:
-				frappe.db.commit()
-			except Exception:
-				pass
+		except Exception:
+			frappe.log_error(title="ConnectFest Visitor Notification Queue Error", message=frappe.get_traceback())
 
-		# Trigger WhatsApp Confirmation via WATI for visitor registration
+		# Trigger WhatsApp Confirmation via WATI in background (non-blocking)
 		try:
 			from connectfest.services.wati import send_visitor_registration_whatsapp
-			send_visitor_registration_whatsapp(
+			frappe.enqueue(
+				send_visitor_registration_whatsapp,
+				queue="short",
+				enqueue_after_commit=True,
 				registration_id=reg_id,
 				mobile_no=mobile_no,
 				pass_code=pass_code,
 				reg_data=record,
 			)
 		except Exception as wati_err:
-			frappe.log_error(title="ConnectFest Visitor WhatsApp Error in Registration", message=str(wati_err))
-			try:
-				frappe.db.commit()
-			except Exception:
-				pass
+			frappe.log_error(title="ConnectFest Visitor WhatsApp Queue Error", message=str(wati_err))
 
 		# Pure stateless X-Auth-Token for visitors
 		logged_in = True
