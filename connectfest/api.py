@@ -749,6 +749,12 @@ def admin_delete_user(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def delete_user(**kwargs):
+	"""Alias for admin_delete_user."""
+	return _admin_delete_user(**kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
 def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 	"""Initiates phone number or email address update with 2-minute OTP verification."""
 	return _request_contact_update(new_mobile_no=new_mobile_no, new_email=new_email, **kwargs)

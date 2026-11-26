@@ -2630,7 +2630,7 @@ def admin_book_stall(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"This exhibitor is already registered with Registration ID '{ex.registration_id}'! To book stall for this existing user, do not pass 'register_user'.",
+					"message": f"Already registered! Exhibitor already exists with Registration ID '{ex.registration_id}'.",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,

@@ -1672,7 +1672,7 @@ def admin_confirm_payment(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": f"This exhibitor is already registered with Registration ID '{ex.registration_id}'! To record payment for this existing user, do not pass 'register_user' (or set 'register_user': 0).",
+					"message": f"Already registered! Exhibitor already exists with Registration ID '{ex.registration_id}'.",
 					"details": {
 						"registration_id": ex.registration_id,
 						"full_name": ex.full_name,
@@ -1751,7 +1751,7 @@ def admin_confirm_payment(**kwargs):
 				return {
 					"status": "error",
 					"error_type": "already_registered",
-					"message": "A user account with these contact details already exists in the system! To book a stall for this user, do not pass 'register_user' (or set 'register_user': 0).",
+					"message": "Already registered! A user with these contact details already exists.",
 					"details": {
 						"full_name": found_user.get("full_name"),
 					}
@@ -1763,7 +1763,7 @@ def admin_confirm_payment(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "user_not_found",
-				"message": "Exhibitor record was not found in records! To register a new exhibitor, pass 'register_user': 1 with full_name and company_name."
+				"message": "Exhibitor not found! Please provide full_name and company_name to register a new exhibitor."
 			}
 
 		clean_name = clean_name or (f"Exhibitor {clean_mob[-4:]}" if len(clean_mob) >= 4 else "Exhibitor")

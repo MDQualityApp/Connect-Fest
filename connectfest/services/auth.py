@@ -368,6 +368,7 @@ RESOURCE_MODULE_MAP = {
 	"user directory access": "user_directory",
 	"user status controls": "user_directory",
 	"user details access": "user_directory",
+	"scanner users directory": "user_directory",
 }
 
 
@@ -947,9 +948,9 @@ def extract_token_from_request(data=None, **kwargs):
 			or req_data.get("admin_token")
 		)
 
-	# Check cookies (backward compatibility fallback)
+	# Check cookies (explicit ConnectFest token cookie only; never auto-login via Frappe Desk 'sid' cookie)
 	if not token and hasattr(frappe, "request") and frappe.request and hasattr(frappe.request, "cookies"):
-		token = frappe.request.cookies.get("sid") or frappe.request.cookies.get("token")
+		token = frappe.request.cookies.get("token")
 
 	if token:
 		token = str(token).strip()
@@ -1215,7 +1216,7 @@ def revoke_auth_token(token_or_sid=None, user=None):
 
 
 def resolve_authenticated_session_user(**kwargs):
-	"""Resolves authenticated user identity from request token or active Frappe session."""
+	"""Resolves authenticated user identity from explicit API token (never from Frappe Desk sid cookie on HTTP requests)."""
 	data = extract_request_data(kwargs) if hasattr(frappe, "local") else {}
 	req_token = extract_token_from_request(data=data, **kwargs)
 	if req_token:
@@ -1224,9 +1225,11 @@ def resolve_authenticated_session_user(**kwargs):
 			return None, True
 		return resolved, True
 
+	# On HTTP requests without an explicit API token, never fall back to Frappe Desk session user
+	if hasattr(frappe, "request") and frappe.request:
+		return None, False
+
 	sess_user = getattr(frappe.session, "user", None)
-	if not sess_user or sess_user == "Guest":
-		sess_user = authenticate_token_request(**kwargs)
 	if not sess_user or sess_user == "Guest":
 		return None, False
 	return sess_user, False
@@ -1387,10 +1390,11 @@ def get_current_user_profile(**kwargs):
 			}
 		sess_user = resolved
 		frappe.set_user(resolved)
+	elif hasattr(frappe, "request") and frappe.request:
+		# Never auto-login to website /me using Frappe Desk browser session
+		sess_user = None
 	else:
 		sess_user = getattr(frappe.session, "user", None)
-		if not sess_user or sess_user == "Guest":
-			sess_user = authenticate_token_request(data=data, **kwargs)
 
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
@@ -2086,7 +2090,7 @@ def staff_login(email=None, password=None, **kwargs):
 			"token": auth_token,
 			"role_type": role_type,
 			"is_admin": perm_summary["is_super_admin"],
-			**perm_summary,
+			"roles": perm_summary["roles"],
 		}
 	except Exception as e:
 		return log_and_return_error("ConnectFest Staff Login Error", e)
@@ -2763,7 +2767,8 @@ def admin_get_user_access(email=None, **kwargs):
 				"mobile_no": u_doc.get("mobile_no") or "",
 				"enabled": cint(u_doc.get("enabled", 1)),
 				"frappe_roles": frappe_roles,
-				**perm,
+				"roles": perm["roles"],
+				"access": perm["access"],
 			}
 		else:
 			import math
@@ -2798,7 +2803,8 @@ def admin_get_user_access(email=None, **kwargs):
 					"full_name": u.full_name or "",
 					"mobile_no": u.mobile_no or "",
 					"enabled": cint(u.enabled),
-					**perm,
+					"roles": perm["roles"],
+					"access": perm["access"],
 				})
 			return {
 				"status": "success",
@@ -2879,8 +2885,7 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 			"account_status": action_text.capitalize()
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Toggle User Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Toggle User Error", e)
 
 
 def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full_name=None, enable=None, **kwargs):
@@ -3675,8 +3680,7 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 			"expires_in_seconds": 120,
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Contact Update Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Contact Update Error", e)
 
 
 def verify_and_update_contact(otp=None, **kwargs):
@@ -3685,7 +3689,7 @@ def verify_and_update_contact(otp=None, **kwargs):
 	"""
 	import json
 	try:
-		sess_user = getattr(frappe.session, "user", None)
+		sess_user, _ = resolve_authenticated_session_user(**kwargs)
 		if not sess_user or sess_user == "Guest":
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "unauthorized", "message": "Authentication required to update contact details."}
@@ -3753,8 +3757,7 @@ def verify_and_update_contact(otp=None, **kwargs):
 			"updated_fields": updated_fields
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Contact Verify Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Contact Verify Error", e)
 
 
 def update_profile(**kwargs):
@@ -4297,6 +4300,28 @@ def cleanup_user_registrations_and_stalls(user_email=None, user_mobile=None):
 			frappe.db.sql("DELETE FROM `tabConnectFest Visitor Registration` WHERE name = %s", (vr.name,))
 			deleted_visitors += 1
 
+	deleted_bni_events = 0
+	bni_regs = frappe.db.sql(f"""
+		SELECT name, registration_id
+		FROM `tabConnectFest BNI Event Registration`
+		WHERE {where_str}
+	""", params, as_dict=True)
+
+	for br in bni_regs:
+		try:
+			frappe.delete_doc("ConnectFest BNI Event Registration", br.name, ignore_permissions=True, force=True)
+			deleted_bni_events += 1
+		except Exception:
+			frappe.db.sql("DELETE FROM `tabConnectFest BNI Event Registration` WHERE name = %s", (br.name,))
+			deleted_bni_events += 1
+
+	if released_stalls:
+		try:
+			from connectfest.services.stalls import invalidate_stalls_cache
+			invalidate_stalls_cache()
+		except Exception:
+			pass
+
 	try:
 		if not getattr(frappe.db, "_disable_transaction_control", 0):
 			frappe.db.commit()
@@ -4317,6 +4342,7 @@ def cleanup_user_registrations_and_stalls(user_email=None, user_mobile=None):
 		"released_stalls": list(set(released_stalls)),
 		"deleted_exhibitors": deleted_exhibitors,
 		"deleted_visitors": deleted_visitors,
+		"deleted_bni_events": deleted_bni_events,
 	}
 
 
@@ -4349,38 +4375,43 @@ def admin_delete_user(**kwargs):
 		return err
 
 	data = extract_request_data(kwargs)
-	target_user = (data.get("email") or data.get("user") or data.get("user_id") or data.get("name") or "").strip().lower()
+	target_user = (data.get("email") or data.get("user_email") or data.get("user") or data.get("user_id") or data.get("name") or "").strip().lower()
 	mobile_no = (data.get("mobile_no") or data.get("phone") or "").strip()
 
 	if not target_user and not mobile_no:
+		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "User email or mobile number is required for deletion."}
 
 	if target_user in ("administrator", "guest"):
+		frappe.local.response["http_status_code"] = 403
 		return {"status": "error", "message": "System user accounts cannot be deleted!"}
 
-	# Resolve user details if user exists in tabUser
-	user_deleted = False
-	if target_user and frappe.db.exists("User", target_user):
-		u_doc = frappe.get_doc("User", target_user)
-		if not mobile_no:
-			mobile_no = (u_doc.mobile_no or u_doc.phone or "").strip()
-		revoke_auth_token(user=target_user)
-		_sync_user_scanner_cache(target_user, [])
-		frappe.delete_doc("User", target_user, ignore_permissions=True, force=True)
-		user_deleted = True
+	resolved_user = _resolve_user_doc_name(target_user) if target_user else None
 
-	# Cascade cleanup registrations & stalls
-	cleanup_res = cleanup_user_registrations_and_stalls(user_email=target_user, user_mobile=mobile_no)
+	# Resolve mobile_no before deleting User doc
+	if resolved_user and frappe.db.exists("User", resolved_user) and not mobile_no:
+		mobile_no = (frappe.db.get_value("User", resolved_user, "mobile_no") or frappe.db.get_value("User", resolved_user, "phone") or "").strip()
+
+	# Cascade cleanup registrations & stalls BEFORE delete_doc (so counts & released_stalls are returned accurately even if on_user_trash hook runs)
+	cleanup_res = cleanup_user_registrations_and_stalls(user_email=target_user or resolved_user, user_mobile=mobile_no)
+
+	user_deleted = False
+	if resolved_user and frappe.db.exists("User", resolved_user):
+		revoke_auth_token(user=resolved_user)
+		_sync_user_scanner_cache(resolved_user, [])
+		frappe.delete_doc("User", resolved_user, ignore_permissions=True, force=True)
+		user_deleted = True
 
 	frappe.db.commit()
 
 	return {
 		"status": "success",
 		"message": f"User '{target_user or mobile_no}' and all associated bookings have been successfully deleted.",
-		"user": target_user,
+		"user": target_user or resolved_user,
 		"user_account_deleted": user_deleted,
 		"exhibitors_deleted": cleanup_res["deleted_exhibitors"],
 		"visitors_deleted": cleanup_res["deleted_visitors"],
+		"bni_events_deleted": cleanup_res.get("deleted_bni_events", 0),
 		"released_stalls": cleanup_res["released_stalls"],
 	}
 

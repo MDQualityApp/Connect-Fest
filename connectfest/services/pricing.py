@@ -11,7 +11,7 @@ ConnectFest 2027 - Dynamic Stall Tier Pricing & GST Service
 import json
 import frappe
 from frappe.utils import flt
-from connectfest.services.common import extract_request_data
+from connectfest.services.common import extract_request_data, log_and_return_error
 from connectfest.services.auth import is_admin_user, check_admin_permission
 
 PRICING_CACHE_DICT_KEY = "connectfest:tier_pricing:dict"
@@ -333,8 +333,7 @@ def admin_create_tier_pricing(tier_name=None, price=None, gst_percent=18.0, desc
 			}
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Create Tier Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Create Tier Error", e)
 
 
 def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, description=None, is_active=None, **kwargs):
@@ -407,8 +406,7 @@ def admin_update_tier_pricing(tier_name=None, price=None, gst_percent=None, desc
 			}
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Update Tier Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Update Tier Error", e)
 
 
 def admin_delete_tier_pricing(tier_name=None, **kwargs):
@@ -454,8 +452,7 @@ def admin_delete_tier_pricing(tier_name=None, **kwargs):
 			"deleted_tier": doc_name,
 		}
 	except Exception as e:
-		frappe.log_error("ConnectFest Delete Tier Error", frappe.get_traceback())
-		return {"status": "error", "message": str(e)}
+		return log_and_return_error("ConnectFest Delete Tier Error", e)
 
 
 def restore_default_pricing():
