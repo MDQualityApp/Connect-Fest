@@ -2197,7 +2197,7 @@ def admin_clear_all_bookings(**kwargs):
 	if not confirmed:
 		return {
 			"status": "error",
-			"message": "Please pass 'confirm': true to confirm wiping test event registrations and bookings.",
+			"message": "Confirmation is required to clear bookings.",
 		}
 
 	if not is_admin and not is_dev:
@@ -2542,7 +2542,7 @@ def admin_book_stall(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "already_booked",
-				"message": f"Stall '{st_num}' is already booked and confirmed by {booked_by}!",
+				"message": f"Stall '{st_num}' is already booked.",
 				"details": {
 					"stall_number": st_num,
 					"status": "Booked",

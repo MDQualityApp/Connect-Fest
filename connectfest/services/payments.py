@@ -171,7 +171,7 @@ def handle_razorpay_webhook(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": f"Malformed JSON in webhook request: {str(e)}"
+			"message": "Invalid JSON in webhook request."
 		}
 
 	event = event_payload.get("event")
@@ -356,7 +356,7 @@ def validate_stall_hold_for_user(stall_doc, reg_id=None, user_email=None, user_m
 				return False, {
 					"http_status_code": 409,
 					"status": "error",
-					"message": f"Stall '{stall_num}' is currently on hold by {holder_desc}. Only the attendee who placed the hold can preview payment or complete purchase."
+					"message": f"Stall '{stall_num}' is currently on hold by another user."
 				}
 
 	return True, None
@@ -1550,7 +1550,7 @@ def admin_confirm_payment(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "already_booked",
-				"message": f"Stall '{chosen_stall}' is already booked and confirmed by {booked_by}!",
+				"message": f"Stall '{chosen_stall}' is already booked.",
 				"details": {
 					"stall_number": chosen_stall,
 					"status": "Booked",
@@ -1763,7 +1763,7 @@ def admin_confirm_payment(**kwargs):
 			return {
 				"status": "error",
 				"error_type": "user_not_found",
-				"message": "Exhibitor not found! Please provide full_name and company_name to register a new exhibitor."
+				"message": "Exhibitor not found. Please provide full name and company name."
 			}
 
 		clean_name = clean_name or (f"Exhibitor {clean_mob[-4:]}" if len(clean_mob) >= 4 else "Exhibitor")
@@ -1811,7 +1811,7 @@ def admin_confirm_payment(**kwargs):
 		frappe.local.response["http_status_code"] = 409
 		return {
 			"status": "error",
-			"message": f"Stall '{chosen_stall}' is already booked by another exhibitor ({stall_doc.booked_by_name or stall_doc.booked_by_registration})!"
+			"message": f"Stall '{chosen_stall}' is already booked by another exhibitor."
 		}
 
 	# IMPORTANT: If stall was blocked by admin, Admin is booking it now, so unblock it!

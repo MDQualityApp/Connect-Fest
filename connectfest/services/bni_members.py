@@ -516,7 +516,7 @@ def admin_get_bni_member(mobile_no=None, **kwargs):
 		frappe.local.response["http_status_code"] = 404
 		return {
 			"status": "error",
-			"message": f"BNI Member with mobile number '{raw_mob}' not found",
+			"message": "Member not found.",
 		}
 
 	return {
@@ -549,7 +549,7 @@ def admin_update_bni_member(mobile_no=None, **kwargs):
 		frappe.local.response["http_status_code"] = 404
 		return {
 			"status": "error",
-			"message": f"BNI Member '{raw_mob}' not found",
+			"message": "Member not found.",
 		}
 
 	doc = frappe.get_doc("ConnectFest CNR Member", doc_name)

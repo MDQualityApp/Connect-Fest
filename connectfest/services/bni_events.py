@@ -360,7 +360,7 @@ def send_bni_event_confirmation_email(registration_id=None, email=None, **kwargs
 		)
 
 	if not doc:
-		return {"status": "error", "message": f"No BNI Event registration found for {registration_id or email}"}
+		return {"status": "error", "message": "Event registration not found."}
 
 	full_name = doc.full_name or "BNI Member"
 	target_email = email or doc.email
@@ -661,7 +661,7 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 		frappe.local.response["http_status_code"] = 404
 		return {
 			"status": "error",
-			"message": f"BNI Event Pass not found for identifier '{reg_id or mob or mail or code}'"
+			"message": "Event pass not found."
 		}
 
 	# If matching only by mobile or email without code/registration_id, ensure session matches or is admin/event-scanner

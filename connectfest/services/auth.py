@@ -1295,7 +1295,7 @@ def logout(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "No active authentication token or session was provided to log out! Please pass the 'X-Auth-Token' header or token in the request body.",
+			"message": "No active session found to log out.",
 			"logged_out_user": None,
 		}
 
@@ -2374,7 +2374,7 @@ def admin_create_user(
 			frappe.local.response["http_status_code"] = 409
 			return {
 				"status": "error",
-				"message": f"User with email '{clean_email}' already exists. Use admin_update_user to update roles or password.",
+				"message": "User with this email already exists.",
 			}
 
 		if clean_mob:
@@ -2383,7 +2383,7 @@ def admin_create_user(
 				frappe.local.response["http_status_code"] = 409
 				return {
 					"status": "error",
-					"message": f"Mobile number '{clean_mob}' is already linked to another user ({dup_mob_user}).",
+					"message": "This mobile number is already linked to another user.",
 				}
 
 		raw_roles_input = roles if roles is not None else data.get("roles")
@@ -2498,7 +2498,7 @@ def admin_update_user(
 		target_name = _resolve_user_doc_name(raw_target)
 		if not target_name or not frappe.db.exists("User", target_name):
 			frappe.local.response["http_status_code"] = 404
-			return {"status": "error", "message": f"User '{raw_target}' not found."}
+			return {"status": "error", "message": "User not found."}
 		if target_name in ("Administrator", "Guest"):
 			frappe.local.response["http_status_code"] = 403
 			return {"status": "forbidden", "message": "System core accounts cannot be modified via this API."}
@@ -2545,7 +2545,7 @@ def admin_update_user(
 					frappe.local.response["http_status_code"] = 409
 					return {
 						"status": "error",
-						"message": f"Mobile number '{clean_mob}' is already linked to another user ({dup}).",
+						"message": "This mobile number is already linked to another user.",
 					}
 				user_doc.mobile_no = clean_mob
 				user_doc.phone = clean_mob
@@ -2711,7 +2711,7 @@ def admin_change_user_password(email=None, user_email=None, new_password=None, p
 		resolved = _resolve_user_doc_name(target)
 		if not resolved or not frappe.db.exists("User", resolved):
 			frappe.local.response["http_status_code"] = 404
-			return {"status": "error", "message": f"User '{target}' not found."}
+			return {"status": "error", "message": "User not found."}
 		if resolved in ("Administrator", "Guest"):
 			frappe.local.response["http_status_code"] = 403
 			return {"status": "forbidden", "message": "System accounts cannot be modified via this API."}
@@ -2750,7 +2750,7 @@ def admin_get_user_access(email=None, **kwargs):
 			resolved = _resolve_user_doc_name(target)
 			if not resolved or not frappe.db.exists("User", resolved):
 				frappe.local.response["http_status_code"] = 404
-				return {"status": "error", "message": f"User '{target}' not found."}
+				return {"status": "error", "message": "User not found."}
 			perm = get_user_permissions_summary(resolved)
 			u_doc = frappe.db.get_value("User", resolved, ["full_name", "mobile_no", "enabled", "email"], as_dict=True) or {}
 			raw_has_roles = frappe.db.sql("""
@@ -3851,7 +3851,7 @@ def update_profile(**kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {
 				"status": "error",
-				"message": "Direct mobile number updates are blocked for security! Please use the OTP-verified contact update API (connectfest.api.request_contact_update).",
+				"message": "Mobile number can only be updated after OTP verification.",
 			}
 
 		# 5. Extract and Sanitize Whitelisted Profile Fields
