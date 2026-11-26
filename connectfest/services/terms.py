@@ -460,8 +460,11 @@ def admin_delete_terms_and_conditions(terms_id=None, terms_ids=None, **kwargs):
 def setup_default_terms(**kwargs):
 	"""
 	Sets up realistic default Terms and Conditions for ConnectFest 2027.
-	Safe to run multiple times: updates existing terms or creates if missing.
+	Strictly restricted to Administrators / Terms Admin.
 	"""
+	err = check_admin_permission("terms and conditions")
+	if err:
+		return err
 	default_terms_list = [
 		{
 			"title": "Exhibitor Stall Agreement & Guidelines 2027",

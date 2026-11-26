@@ -238,12 +238,15 @@ def detect_and_validate_file_type(raw_bytes: bytes, filename: str = ""):
 	return False, "", "Unsupported file type. Only JPG, PNG, WEBP, GIF, and PDF files are allowed."
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB hard upload limit
+
+
 def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allowed_extensions=None):
 	"""
 	Safely saves images/files with Zero-Trust validation:
 	1. Direct werkzeug FileStorage object, or checks frappe.request.files (multipart/form-data).
 	2. Base64 data URLs as public files in Frappe and returns the file_url (/files/...).
-	3. Pre-existing valid public URL or path, validates against XSS (no javascript:) and returns sanitized URL.
+	3. Pre-existing valid public URL or path, validates against XSS/SSRF schemes and returns sanitized URL.
 	"""
 	import base64
 	import uuid
@@ -263,14 +266,16 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 
 	if uploaded_file:
 		try:
-			raw_bytes = uploaded_file.read()
+			raw_bytes = uploaded_file.read(MAX_UPLOAD_BYTES + 1)
+			if len(raw_bytes) > MAX_UPLOAD_BYTES:
+				return ""
 			is_valid, ext, _ = detect_and_validate_file_type(raw_bytes, getattr(uploaded_file, "filename", ""))
 			if is_valid:
 				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
 				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
 				return format_full_url(saved.file_url)
 			return ""
-		except Exception as e:
+		except Exception:
 			frappe.log_error("Uploaded Image Save Error", frappe.get_traceback())
 			return ""
 
@@ -281,24 +286,32 @@ def save_image_from_base64_or_url(image_data=None, file_name_prefix="logo", allo
 		return ""
 
 	lower_val = val.lower()
-	if lower_val.startswith("javascript:") or lower_val.startswith("vbscript:") or "<script" in lower_val:
+	if any(bad in lower_val for bad in ("javascript:", "vbscript:", "data:text/html", "<script", "file://", "ftp://")):
 		return ""
 
 	if val.startswith("data:image/") or val.startswith("data:application/pdf"):
 		try:
+			if len(val) > (MAX_UPLOAD_BYTES * 4 // 3) + 256:
+				return ""
 			header, encoded = val.split(",", 1)
+			if "svg" in header.lower():
+				return ""
 			raw_bytes = base64.b64decode(encoded)
+			if len(raw_bytes) > MAX_UPLOAD_BYTES:
+				return ""
 			is_valid, ext, _ = detect_and_validate_file_type(raw_bytes)
 			if is_valid:
 				fname = f"{file_name_prefix}_{uuid.uuid4().hex[:10]}.{ext}"
 				saved = save_file(fname, raw_bytes, dt=None, dn=None, is_private=0)
 				return format_full_url(saved.file_url)
 			return ""
-		except Exception as e:
+		except Exception:
 			frappe.log_error("Image Save Error", frappe.get_traceback())
 			return ""
 
 	if len(val) > 500:
+		return ""
+	if not (val.startswith("/files/") or val.startswith("http://") or val.startswith("https://")):
 		return ""
 	return format_full_url(val)
 
@@ -578,38 +591,39 @@ def before_request():
 	# Static files handler for /files/
 	if req.path.startswith("/files/"):
 		filename = req.path[len("/files/"):].lstrip("/")
-		if not filename or ".." in filename:
+		if not filename or ".." in filename or "\x00" in filename:
 			raise NotFound()
 
-		candidate_paths = []
+		base_dirs = []
 		try:
-			candidate_paths.append(frappe.get_site_path("public", "files", filename))
+			base_dirs.append(frappe.get_site_path("public", "files"))
 		except Exception:
 			pass
 
 		sites_path = getattr(frappe.local, "sites_path", None) or "sites"
 		current_site = getattr(frappe.local, "site", None)
 		if current_site:
-			candidate_paths.append(os.path.join(sites_path, current_site, "public", "files", filename))
-		candidate_paths.append(os.path.join(sites_path, "connectfest", "public", "files", filename))
-		candidate_paths.append(os.path.join(sites_path, "connectfest.localhost", "public", "files", filename))
+			base_dirs.append(os.path.join(sites_path, current_site, "public", "files"))
 
-		for p in candidate_paths:
-			if os.path.isfile(p):
-				raise ServeStaticFile(p)
+		for base_dir in base_dirs:
+			real_base = os.path.realpath(base_dir)
+			real_target = os.path.realpath(os.path.join(real_base, filename))
+			if real_target.startswith(real_base + os.sep) and os.path.isfile(real_target):
+				raise ServeStaticFile(real_target)
 
-		raise NotFound(f"File {filename} not found")
+		raise NotFound("File not found")
 
 	# Static files handler for /assets/
 	if req.path.startswith("/assets/"):
 		asset_rel = req.path[len("/assets/"):].lstrip("/")
-		if not asset_rel or ".." in asset_rel:
+		if not asset_rel or ".." in asset_rel or "\x00" in asset_rel:
 			raise NotFound()
 		sites_path = getattr(frappe.local, "sites_path", None) or "sites"
-		asset_path = os.path.join(sites_path, "assets", asset_rel)
-		if os.path.isfile(asset_path):
-			raise ServeStaticFile(asset_path)
-		raise NotFound(f"Asset {asset_rel} not found")
+		real_assets = os.path.realpath(os.path.join(sites_path, "assets"))
+		real_target = os.path.realpath(os.path.join(real_assets, asset_rel))
+		if real_target.startswith(real_assets + os.sep) and os.path.isfile(real_target):
+			raise ServeStaticFile(real_target)
+		raise NotFound("Asset not found")
 
 	if req.path.startswith("/api/method/connectfest") or req.path.startswith("/api/v2"):
 		if hasattr(frappe.local, "conf") and frappe.local.conf:

@@ -1011,16 +1011,16 @@ admin_get_check_in_list = get_scanned_users
 
 def get_registration(registration_id):
 	"""Universal lookup by Registration ID for both Stalls and Visitors."""
-	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+	sess_user, _ = resolve_authenticated_session_user(registration_id=registration_id)
 	if not sess_user or sess_user == "Guest":
 		frappe.local.response["http_status_code"] = 401
-		return {"status": "unauthorized", "message": "Authentication required. Please log in via OTP to view registration details."}
+		return {"status": "unauthorized", "message": "Authentication required."}
 
 	if not registration_id:
 		frappe.local.response["http_status_code"] = 400
 		return {"status": "error", "message": "registration_id is required"}
 
-	from connectfest.services.auth import is_admin_user
 	is_admin = is_admin_user(sess_user)
 
 	cache = frappe.cache()
@@ -1098,16 +1098,16 @@ def get_my_dashboard(email=None, mobile_no=None, security_pin=None, registration
 		pin = (security_pin or data.get("security_pin") or data.get("pin") or "").strip()
 		req_reg_id = (registration_id or data.get("registration_id") or "").strip()
 
-		sess_user = getattr(frappe.session, "user", None)
+		from connectfest.services.auth import resolve_authenticated_session_user
+		sess_user, _ = resolve_authenticated_session_user(**kwargs)
 		is_admin = is_admin_user(sess_user) if sess_user and sess_user != "Guest" else False
 
 		if not sess_user or sess_user == "Guest":
-			if not em and not mb and not req_reg_id:
-				frappe.local.response["http_status_code"] = 401
-				return {
-					"status": "unauthorized",
-					"message": "Authentication required. Please log in using your registered mobile number or email via OTP to access your dashboard.",
-				}
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"message": "Authentication required.",
+			}
 		else:
 			if not is_admin:
 				if em and em != sess_user.lower():
@@ -1432,12 +1432,12 @@ def get_exhibitor_badge(registration_id=None, stall_number=None, **kwargs):
 	req_pass_index = cint(data.get("pass_index") or data.get("slot") or kwargs.get("pass_index") or 0)
 	req_code = (data.get("pass_code") or kwargs.get("pass_code") or "").strip()
 
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, get_authenticated_user
-	auth_user = get_authenticated_user(data, **kwargs)
-	if not auth_user and sess_user and sess_user != "Guest":
-		auth_user = sess_user
-	is_admin = is_admin_user(auth_user) if auth_user else False
+	from connectfest.services.auth import is_admin_user, resolve_authenticated_session_user
+	auth_user, _ = resolve_authenticated_session_user(**kwargs)
+	if not auth_user or auth_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {"status": "unauthorized", "message": "Authentication required."}
+	is_admin = is_admin_user(auth_user)
 
 	where_clauses = []
 	params = {}
@@ -1661,16 +1661,16 @@ def update_co_exhibitor_pass(registration_id=None, stall_number=None, name=None,
 	- Requires confirmed payment (Paid).
 	- Saves friend/staff member's photo and generates secure QR pass payload.
 	"""
-	sess_user = getattr(frappe.session, "user", None)
-	from connectfest.services.auth import is_admin_user, get_authenticated_user
+	from connectfest.services.auth import is_admin_user, resolve_authenticated_session_user
 	from connectfest.services.common import save_image_from_base64_or_url
 	data = extract_request_data(kwargs)
 
-	auth_user = get_authenticated_user(data, **kwargs)
-	if not auth_user and sess_user and sess_user != "Guest":
-		auth_user = sess_user
+	auth_user, _ = resolve_authenticated_session_user(**kwargs)
+	if not auth_user or auth_user == "Guest":
+		frappe.local.response["http_status_code"] = 401
+		return {"status": "unauthorized", "message": "Authentication required."}
 
-	is_admin = is_admin_user(auth_user) if auth_user else False
+	is_admin = is_admin_user(auth_user)
 
 	p2_name = (name or full_name or data.get("name") or data.get("full_name") or data.get("co_exhibitor_name") or data.get("second_person_name") or data.get("friend_name") or "").strip()
 	p2_mobile = (mobile_no or data.get("mobile_no") or data.get("mobile") or data.get("phone") or "").strip()

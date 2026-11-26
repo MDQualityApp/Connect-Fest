@@ -144,7 +144,10 @@ def handle_razorpay_webhook(**kwargs):
 		webhook_secret = cfg.get("key_secret")
 
 	is_valid_sig = False
-	if signature == "mock_signature_valid" or (getattr(frappe.flags, "in_test", False) and not webhook_secret):
+	cfg = get_razorpay_config()
+	if cfg.get("mock_mode") and signature == "mock_signature_valid":
+		is_valid_sig = True
+	elif getattr(frappe.flags, "in_test", False) and not webhook_secret and signature == "mock_signature_valid":
 		is_valid_sig = True
 	elif webhook_secret and signature:
 		expected_sig = hmac.new(
@@ -202,15 +205,18 @@ def handle_razorpay_webhook(**kwargs):
 				"message": f"No registration matching order_id '{order_id}' found."
 			}
 
-		# Execute payment verification
-		res = verify_razorpay_payment(
-			registration_id=reg_id,
-			razorpay_order_id=order_id,
-			razorpay_payment_id=payment_id,
-			razorpay_signature="webhook_verified",
-			stall_number=stall_num,
-			is_webhook=True
-		)
+		# Execute payment verification via unforgeable internal server flag
+		frappe.flags._razorpay_webhook_verified = True
+		try:
+			res = verify_razorpay_payment(
+				registration_id=reg_id,
+				razorpay_order_id=order_id,
+				razorpay_payment_id=payment_id,
+				razorpay_signature="webhook_verified",
+				stall_number=stall_num,
+			)
+		finally:
+			frappe.flags._razorpay_webhook_verified = False
 		return {
 			"status": "success",
 			"event": event,
@@ -371,7 +377,7 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 	data = extract_request_data(kwargs)
 	reg_id = safe_str(registration_id or data.get("registration_id"))
 	stall_num = safe_str(kwargs.get("stall_number") or data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no"))
-	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
+	is_internal = bool(kwargs.get("is_internal") or kwargs.get("skip_auth"))
 
 	from connectfest.services.auth import get_authenticated_user
 	sess_user = get_authenticated_user(data, **kwargs) or getattr(frappe.session, "user", None)
@@ -692,7 +698,8 @@ def verify_razorpay_payment(**kwargs):
 	signature = safe_str(data.get("razorpay_signature"))
 	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number") or kwargs.get("stall_numbers"))
 
-	sess_user = getattr(frappe.session, "user", None)
+	from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
 	# Auto-resolve registration_id for logged-in exhibitor or order_id if omitted
 	if not reg_id and order_id:
@@ -709,7 +716,8 @@ def verify_razorpay_payment(**kwargs):
 				or frappe.db.get_value("ConnectFest Registration", {"email": sess_user}, "registration_id", order_by="creation desc")
 			)
 
-	is_webhook = bool(kwargs.get("is_webhook") or data.get("is_webhook"))
+	# Never accept is_webhook from client payload; only trust internal flag set after webhook HMAC validation
+	is_webhook = bool(getattr(frappe.flags, "_razorpay_webhook_verified", False))
 	if is_webhook and not signature:
 		signature = "webhook_verified"
 
@@ -717,7 +725,7 @@ def verify_razorpay_payment(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": "Missing required payment verification parameters: registration_id, razorpay_order_id, razorpay_payment_id, razorpay_signature",
+			"message": "Missing required payment verification parameters.",
 		}
 
 	# Check visitor restriction
@@ -725,11 +733,10 @@ def verify_razorpay_payment(**kwargs):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls. To book a stall, please register as an Exhibitor.",
+			"message": "Visitors are registered for Free Entry passes only and cannot select or purchase exhibitor stalls.",
 		}
 
 	# IDOR Prevention: If logged in as non-admin, ensure user owns the registration
-	from connectfest.services.auth import is_admin_user
 	if sess_user and sess_user != "Guest" and not is_admin_user(sess_user) and not is_webhook:
 		reg_email = frappe.db.get_value("ConnectFest Registration", {"registration_id": reg_id}, "email") or frappe.db.get_value("ConnectFest Registration", reg_id, "email")
 		if reg_email and reg_email.lower() != sess_user.lower():
@@ -745,7 +752,7 @@ def verify_razorpay_payment(**kwargs):
 		frappe.local.response["http_status_code"] = 400
 		return {
 			"status": "error",
-			"message": f"Payment has already been verified and processed for registration '{reg_id}'. Multiple payments are strictly prohibited!",
+			"message": "Payment has already been verified for this registration.",
 			"payment_status": "Paid",
 		}
 
@@ -754,11 +761,9 @@ def verify_razorpay_payment(**kwargs):
 
 	if is_webhook:
 		is_verified = True
-	elif signature == "mock_signature_valid":
-		is_verified = True
 	elif not cfg["mock_mode"]:
 		if not razorpay:
-			frappe.throw("Python package 'razorpay' is not installed. Please install it on the server using 'bench pip install razorpay'.")
+			frappe.throw("Python package 'razorpay' is not installed.")
 		try:
 			client = razorpay.Client(auth=(cfg["key_id"], cfg["key_secret"]))
 			client.utility.verify_payment_signature(
@@ -782,7 +787,7 @@ def verify_razorpay_payment(**kwargs):
 			f"{order_id}|{payment_id}".encode(),
 			hashlib.sha256,
 		).hexdigest()
-		is_verified = (signature == expected_mock_sig or signature == "mock_signature_valid")
+		is_verified = hmac.compare_digest(signature, expected_mock_sig) or signature == "mock_signature_valid"
 
 	if not is_verified:
 		try:
@@ -1083,7 +1088,7 @@ def preview_payment(**kwargs):
 	Stall Number is STRICTLY MANDATORY!
 	"""
 	data = extract_request_data(kwargs)
-	is_internal = kwargs.get("is_internal") or kwargs.get("skip_auth") or parse_boolean(data.get("is_internal", 0))
+	is_internal = bool(kwargs.get("is_internal") or kwargs.get("skip_auth"))
 	docname = safe_str(data.get("reference_docname") or data.get("registration_id") or data.get("docname"))
 	doctype = safe_str(data.get("reference_doctype") or data.get("doctype"), "ConnectFest Registration")
 	stall_num = safe_str(data.get("stall_number") or data.get("stall_numbers") or data.get("stall_no") or kwargs.get("stall_number"))

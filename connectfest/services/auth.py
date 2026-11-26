@@ -630,30 +630,39 @@ def is_staff_user(user=None):
 	return any(r in roles for r in CONNECTFEST_MODULE_ROLES.values())
 
 
-def get_user_permissions_summary(user=None):
-	"""Builds canonical RBAC summary (roles, access keys, allowed_modules, scanner_access) for API responses."""
-	u = _resolve_user_doc_name(user)
-	raw_roles = _get_clean_user_roles(u) if u else []
-	super_admin = is_admin_user(u) if u else False
-	scanner_scopes = get_user_scanner_scopes(u) if u else set()
+def _summarize_roles_fast(raw_roles, super_admin_override=None):
+	"""Builds canonical RBAC summary in memory from an already-fetched role list (zero DB queries)."""
+	clean_roles = [r for r in (raw_roles or []) if r not in ("All", "Guest")]
+	role_set = set(clean_roles)
+	if super_admin_override is not None:
+		super_admin = bool(super_admin_override)
+	else:
+		super_admin = any(r in CONNECTFEST_SUPER_ADMIN_ROLES for r in role_set)
+
+	if super_admin:
+		scanner_scopes = set(CONNECTFEST_SCANNER_ROLES.keys())
+	elif any(r in role_set for r in CONNECTFEST_LEGACY_SCANNER_ROLES):
+		scanner_scopes = set(CONNECTFEST_SCANNER_ROLES.keys())
+	else:
+		scanner_scopes = {scope for scope, role_name in CONNECTFEST_SCANNER_ROLES.items() if role_name in role_set}
 
 	modules_allowed = []
 	for mod_key, role_name in CONNECTFEST_MODULE_ROLES.items():
-		if super_admin or role_name in raw_roles:
+		if super_admin or role_name in role_set:
 			modules_allowed.append(mod_key)
 			if mod_key == "stall":
 				modules_allowed.append("tier_pricing")
 
 	access_keys = []
-	for r in raw_roles:
+	for r in clean_roles:
 		k = ROLE_TO_ACCESS_KEY.get(r)
 		if k and k not in access_keys:
 			access_keys.append(k)
 	if "stall" in access_keys and "tier_pricing" not in access_keys:
 		access_keys.append("tier_pricing")
 
-	role_labels = [CONNECTFEST_ROLE_LABELS.get(r, r) for r in raw_roles]
-	is_sub_admin = (not super_admin) and any(r in CONNECTFEST_MODULE_ROLES.values() for r in raw_roles)
+	role_labels = [CONNECTFEST_ROLE_LABELS.get(r, r) for r in clean_roles]
+	is_sub_admin = (not super_admin) and any(r in role_set for r in CONNECTFEST_MODULE_ROLES.values())
 
 	permissions = {
 		"gallery": "gallery" in modules_allowed,
@@ -670,7 +679,7 @@ def get_user_permissions_summary(user=None):
 	}
 
 	return {
-		"roles": raw_roles,
+		"roles": clean_roles,
 		"role_labels": role_labels,
 		"access": access_keys,
 		"allowed_modules": modules_allowed,
@@ -685,6 +694,26 @@ def get_user_permissions_summary(user=None):
 		"has_admin_access": super_admin or is_sub_admin,
 		"is_scanner": bool(scanner_scopes),
 	}
+
+
+def get_user_permissions_summary(user=None):
+	"""Builds canonical RBAC summary (roles, access keys, allowed_modules, scanner_access) for API responses."""
+	u = _resolve_user_doc_name(user)
+	raw_roles = _get_clean_user_roles(u) if u else []
+	super_admin = is_admin_user(u) if u else False
+	summary = _summarize_roles_fast(raw_roles, super_admin_override=super_admin)
+	if u and not summary["is_scanner"]:
+		scanner_scopes = get_user_scanner_scopes(u)
+		if scanner_scopes:
+			summary["is_scanner"] = True
+			summary["scanner_access"] = {
+				"exhibitor": "exhibitor" in scanner_scopes,
+				"visitor": "visitor" in scanner_scopes,
+				"event": "event" in scanner_scopes,
+			}
+			for sc in ("exhibitor", "visitor", "event"):
+				summary["permissions"][f"{sc}_scanner"] = sc in scanner_scopes
+	return summary
 
 
 def is_admin_user(user=None):
@@ -2029,10 +2058,31 @@ def login_attendee(email=None, mobile_no=None, password=None, **kwargs):
 		return log_and_return_error("ConnectFest Login Error", e)
 
 
+def _check_password_lockout(identifier):
+	"""Checks if password login is temporarily locked due to brute-force failures."""
+	from connectfest.services.otp import is_otp_blocked
+	return is_otp_blocked(f"pwd:{identifier}")
+
+
+def _record_password_failure(identifier):
+	"""Increments password brute-force counter; blocks account for 10m/30m after 5 failures."""
+	from connectfest.services.otp import increment_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
+	attempts = increment_failed_attempts(f"pwd:{identifier}")
+	if attempts >= MAX_OTP_ATTEMPTS:
+		mins = trigger_block(f"pwd:{identifier}")
+		return True, mins, 0
+	return False, 0, MAX_OTP_ATTEMPTS - attempts
+
+
+def _clear_password_failures(identifier):
+	from connectfest.services.otp import clear_failed_attempts
+	clear_failed_attempts(f"pwd:{identifier}")
+
+
 def staff_login(email=None, password=None, **kwargs):
 	"""
 	Password-based login for Admin-created Staff, Module Admins, and Pass Scanners.
-	Requires mandatory email (or username) and password; returns X-Auth-Token and full RBAC permissions.
+	Requires mandatory email (or username) and password; enforces brute-force lockout after 5 attempts.
 	"""
 	try:
 		data = extract_request_data(kwargs)
@@ -2046,8 +2096,14 @@ def staff_login(email=None, password=None, **kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "Password is required for login"}
 
+		blocked, mins_left = _check_password_lockout(usr)
+		if blocked:
+			frappe.local.response["http_status_code"] = 429
+			return {"status": "error", "message": f"Too many failed login attempts. Try again in {mins_left} minute(s)."}
+
 		actual_usr = _resolve_user_doc_name(usr)
 		if not actual_usr or not frappe.db.exists("User", actual_usr):
+			_record_password_failure(usr)
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "error", "message": "Invalid email or password"}
 
@@ -2062,8 +2118,14 @@ def staff_login(email=None, password=None, **kwargs):
 			from frappe.utils.password import check_password
 			check_password(actual_usr, pwd)
 		except (frappe.AuthenticationError, frappe.DoesNotExistError):
+			is_now_blocked, mins_left, _ = _record_password_failure(usr)
+			if is_now_blocked:
+				frappe.local.response["http_status_code"] = 429
+				return {"status": "error", "message": f"Too many failed login attempts. Try again in {mins_left} minute(s)."}
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "error", "message": "Invalid email or password"}
+
+		_clear_password_failures(usr)
 
 		user_doc_vals = frappe.db.get_value("User", actual_usr, ["email", "full_name", "mobile_no", "phone"], as_dict=True) or {}
 		user_email = (user_doc_vals.get("email") or actual_usr).strip()
@@ -2138,10 +2200,19 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 			}
 
 		if pwd:
+			pwd_blocked, pwd_mins = _check_password_lockout(usr.lower())
+			if pwd_blocked:
+				frappe.local.response["http_status_code"] = 429
+				return {"status": "error", "message": f"Too many failed login attempts. Try again in {pwd_mins} minute(s)."}
 			try:
 				from frappe.utils.password import check_password
 				check_password(usr, pwd)
+				_clear_password_failures(usr.lower())
 			except (frappe.AuthenticationError, frappe.DoesNotExistError):
+				is_now_blocked, mins_left, _ = _record_password_failure(usr.lower())
+				if is_now_blocked:
+					frappe.local.response["http_status_code"] = 429
+					return {"status": "error", "message": f"Too many failed login attempts. Try again in {mins_left} minute(s)."}
 				frappe.local.response["http_status_code"] = 401
 				return {"status": "error", "message": "Invalid admin email or password"}
 
@@ -2276,12 +2347,13 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				"expires_in_seconds": 120,
 			}
 
-		# Verify OTP
+		# Verify OTP (constant-time compare)
+		import hmac
 		stored_otp = cache.get(cache_key)
 		if isinstance(stored_otp, bytes):
 			stored_otp = stored_otp.decode("utf-8")
 
-		is_valid = bool(stored_otp and stored_otp == submitted_otp)
+		is_valid = bool(stored_otp and hmac.compare_digest(str(stored_otp), str(submitted_otp)))
 
 		# Also check DB if cache miss
 		if not is_valid and admin_email:
@@ -2290,7 +2362,7 @@ def admin_login(email=None, password=None, otp=None, **kwargs):
 				WHERE email = %s AND status = 'Pending' AND expires_at >= %s
 				ORDER BY creation DESC LIMIT 1
 			""", (admin_email, frappe.utils.now_datetime()), as_dict=True)
-			if db_rec and str(db_rec[0].get("otp")).strip() == submitted_otp:
+			if db_rec and hmac.compare_digest(str(db_rec[0].get("otp")).strip(), str(submitted_otp)):
 				is_valid = True
 				try:
 					frappe.db.set_value("ConnectFest OTP", db_rec[0]["name"], {
@@ -2894,9 +2966,24 @@ def admin_get_user_access(email=None, **kwargs):
 			paged_staff = all_staff[offset:offset + limit]
 			total_pages = math.ceil(total / limit) if limit > 0 else 1
 
+			# Bulk fetch all roles for paged staff in 1 SQL query (eliminates N+1)
+			roles_map = {}
+			if paged_staff:
+				staff_names = tuple(u.name for u in paged_staff)
+				role_rows = frappe.db.sql("""
+					SELECT parent, role FROM `tabHas Role`
+					WHERE parenttype = 'User' AND parent IN %(parents)s
+				""", {"parents": staff_names}, as_dict=True)
+				for rr in role_rows:
+					roles_map.setdefault(rr.parent, []).append(rr.role)
+
 			result = []
 			for u in paged_staff:
-				perm = get_user_permissions_summary(u.name)
+				u_roles = roles_map.get(u.name, [])
+				perm = _summarize_roles_fast(
+					u_roles,
+					super_admin_override=(u.name == "Administrator" or any(r in CONNECTFEST_SUPER_ADMIN_ROLES for r in u_roles)),
+				)
 				result.append({
 					"name": u.name,
 					"email": u.email or u.name,
@@ -3213,30 +3300,44 @@ def admin_get_scanner_users(**kwargs):
 	total_pages = math.ceil(total_scanners / limit) if limit > 0 else 1
 	scanner_users = all_scanner_users[offset:offset + limit]
 
-	for u in scanner_users:
-		mail = u.get("email")
-		vis_count = frappe.db.sql("""
-			SELECT COUNT(name) as cnt FROM `tabConnectFest Visitor Registration`
-			WHERE checked_in_by = %s
-		""", (mail,), as_dict=True)[0].cnt
+	if scanner_users:
+		scanner_emails = tuple(u.get("email") for u in scanner_users if u.get("email"))
+		vis_map = dict(frappe.db.sql("""
+			SELECT checked_in_by, COUNT(name) FROM `tabConnectFest Visitor Registration`
+			WHERE checked_in_by IN %(m)s GROUP BY checked_in_by
+		""", {"m": scanner_emails})) if scanner_emails else {}
+		bni_map = dict(frappe.db.sql("""
+			SELECT checked_in_by, COUNT(name) FROM `tabConnectFest BNI Event Registration`
+			WHERE checked_in_by IN %(m)s GROUP BY checked_in_by
+		""", {"m": scanner_emails})) if scanner_emails else {}
+		ex1_map = dict(frappe.db.sql("""
+			SELECT checked_in_by, COUNT(name) FROM `tabConnectFest Registration`
+			WHERE checked_in_by IN %(m)s GROUP BY checked_in_by
+		""", {"m": scanner_emails})) if scanner_emails else {}
+		ex2_map = dict(frappe.db.sql("""
+			SELECT pass_2_checked_in_by, COUNT(name) FROM `tabConnectFest Registration`
+			WHERE pass_2_checked_in_by IN %(m)s GROUP BY pass_2_checked_in_by
+		""", {"m": scanner_emails})) if scanner_emails else {}
+		roles_map = {}
+		if scanner_emails:
+			for rr in frappe.db.sql("""
+				SELECT parent, role FROM `tabHas Role`
+				WHERE parenttype = 'User' AND parent IN %(m)s
+			""", {"m": scanner_emails}, as_dict=True):
+				roles_map.setdefault(rr.parent, []).append(rr.role)
 
-		bni_count = frappe.db.sql("""
-			SELECT COUNT(name) as cnt FROM `tabConnectFest BNI Event Registration`
-			WHERE checked_in_by = %s
-		""", (mail,), as_dict=True)[0].cnt
-
-		ex_count = frappe.db.sql("""
-			SELECT
-				(SELECT COUNT(name) FROM `tabConnectFest Registration` WHERE checked_in_by = %(m)s)
-				+ (SELECT COUNT(name) FROM `tabConnectFest Registration` WHERE pass_2_checked_in_by = %(m)s) AS cnt
-		""", {"m": mail}, as_dict=True)[0].cnt
-
-		perm_summary = get_user_permissions_summary(mail)
-		u["passes_scanned"] = vis_count + bni_count + ex_count
-		u["scanner_scopes"] = sorted(list(get_user_scanner_scopes(mail)))
-		u["scanner_access"] = perm_summary["scanner_access"]
-		u["roles"] = perm_summary["roles"]
-		u["scanner_role"] = ", ".join([r for r in perm_summary["roles"] if "Scanner" in r]) or "ConnectFest Gate Scanner"
+		for u in scanner_users:
+			mail = u.get("email")
+			u_roles = roles_map.get(mail, [])
+			perm_summary = _summarize_roles_fast(
+				u_roles,
+				super_admin_override=(mail == "Administrator" or any(r in CONNECTFEST_SUPER_ADMIN_ROLES for r in u_roles)),
+			)
+			u["passes_scanned"] = cint(vis_map.get(mail, 0)) + cint(bni_map.get(mail, 0)) + cint(ex1_map.get(mail, 0)) + cint(ex2_map.get(mail, 0))
+			u["scanner_scopes"] = sorted([sc for sc, ok in perm_summary["scanner_access"].items() if ok])
+			u["scanner_access"] = perm_summary["scanner_access"]
+			u["roles"] = perm_summary["roles"]
+			u["scanner_role"] = ", ".join([r for r in perm_summary["roles"] if "Scanner" in r]) or "ConnectFest Gate Scanner"
 
 	return {
 		"status": "success",
@@ -3373,14 +3474,13 @@ def admin_get_all_users(**kwargs):
 		vis_list = visitors_by_email.get(email_key, [])
 		vis_doc = vis_list[0] if vis_list else None
 		user_roles = roles_by_user.get(email_key, [])
-		perm_summary = get_user_permissions_summary(email_key) if frappe.db.exists("User", email_key) else get_user_permissions_summary(None)
-
 		is_admin = (
 			email_key == "administrator"
 			or "Administrator" in user_roles
 			or "System Manager" in user_roles
 			or "ConnectFest Admin" in user_roles
 		)
+		perm_summary = _summarize_roles_fast(user_roles, super_admin_override=is_admin)
 		is_sub_admin = (not is_admin) and perm_summary["is_sub_admin"]
 		is_scanner_acc = (not is_admin) and perm_summary["is_scanner"]
 
@@ -3725,7 +3825,7 @@ def request_contact_update(new_mobile_no=None, new_email=None, **kwargs):
 	import random
 	import json
 	try:
-		sess_user = getattr(frappe.session, "user", None)
+		sess_user, _ = resolve_authenticated_session_user(**kwargs)
 		if not sess_user or sess_user == "Guest":
 			frappe.local.response["http_status_code"] = 401
 			return {"status": "unauthorized", "message": "Authentication required to update contact details."}
@@ -3801,13 +3901,21 @@ def verify_and_update_contact(otp=None, **kwargs):
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "OTP is required"}
 
+		import hmac
+		from connectfest.services.otp import is_otp_blocked, increment_failed_attempts, clear_failed_attempts, trigger_block, MAX_OTP_ATTEMPTS
+
+		blocked, mins_left = is_otp_blocked(f"contact:{sess_user}")
+		if blocked:
+			frappe.local.response["http_status_code"] = 429
+			return {"status": "error", "message": f"Too many invalid OTP attempts. Try again in {mins_left} minute(s)."}
+
 		cache = frappe.cache()
 		cache_key = cache.make_key(f"{OTP_CACHE_PREFIX}update:{sess_user}")
 		cached_raw = cache.get(cache_key)
 
 		if not cached_raw:
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "OTP has expired! Valid only for 2 minutes. Please request a new OTP."}
+			return {"status": "error", "message": "OTP has expired! Please request a new OTP."}
 
 		if isinstance(cached_raw, bytes):
 			cached_raw = cached_raw.decode("utf-8")
@@ -3815,12 +3923,18 @@ def verify_and_update_contact(otp=None, **kwargs):
 		cached_data = json.loads(cached_raw)
 		stored_otp = cached_data.get("otp")
 
-		is_valid = bool(stored_otp and stored_otp == submitted_otp)
+		is_valid = bool(stored_otp and hmac.compare_digest(str(stored_otp), str(submitted_otp)))
 
 		if not is_valid:
+			attempts = increment_failed_attempts(f"contact:{sess_user}")
+			if attempts >= MAX_OTP_ATTEMPTS:
+				mins = trigger_block(f"contact:{sess_user}")
+				frappe.local.response["http_status_code"] = 429
+				return {"status": "error", "message": f"Too many invalid OTP attempts. Try again in {mins} minute(s)."}
 			frappe.local.response["http_status_code"] = 400
-			return {"status": "error", "message": "Invalid OTP. Please check the code sent to your email/mobile."}
+			return {"status": "error", "message": "Invalid OTP."}
 
+		clear_failed_attempts(f"contact:{sess_user}")
 		try:
 			cache.delete(cache_key)
 		except Exception:
@@ -3828,6 +3942,18 @@ def verify_and_update_contact(otp=None, **kwargs):
 
 		new_mob = cached_data.get("new_mobile_no")
 		new_em = cached_data.get("new_email")
+
+		# Re-check uniqueness right before update to prevent race claims
+		if new_mob:
+			dup_m = frappe.db.get_value("User", {"mobile_no": new_mob}, "name")
+			if dup_m and dup_m != sess_user:
+				frappe.local.response["http_status_code"] = 409
+				return {"status": "error", "message": "This mobile number is already registered to another account."}
+		if new_em:
+			dup_e = frappe.db.exists("User", new_em)
+			if dup_e and new_em != sess_user.lower():
+				frappe.local.response["http_status_code"] = 409
+				return {"status": "error", "message": "This email address is already registered to another account."}
 
 		# Apply Updates
 		updated_fields = {}
@@ -3893,45 +4019,30 @@ def update_profile(**kwargs):
 
 	try:
 		data = extract_request_data(kwargs)
-		sess_user = getattr(frappe.session, "user", None)
+		sess_user, _ = resolve_authenticated_session_user(**kwargs)
 		is_sess_logged_in = bool(sess_user and sess_user != "Guest")
-		is_admin = is_admin_user(sess_user) if is_sess_logged_in else False
+		if not is_sess_logged_in:
+			frappe.local.response["http_status_code"] = 401
+			return {
+				"status": "unauthorized",
+				"message": "Authentication required! Please log in to edit your profile.",
+			}
+
+		is_admin = is_admin_user(sess_user)
 
 		# 1. Resolve Target User
-		target_user = None
+		target_user = sess_user.lower()
 		req_email = (data.get("email") or data.get("user") or data.get("user_email") or "").strip().lower()
 		req_mob = (data.get("mobile_no") or data.get("phone") or "").strip()
-		req_reg_id = (data.get("registration_id") or data.get("reg_id") or "").strip()
 
-		if is_sess_logged_in:
-			target_user = sess_user.lower()
-			if req_email and req_email != target_user:
-				if not is_admin:
-					frappe.local.response["http_status_code"] = 403
-					return {
-						"status": "forbidden",
-						"message": "Access Denied: You are not authorized to modify another attendee's profile!",
-					}
-				target_user = req_email
-		else:
-			# Not session logged-in: Check if valid attendee identifier is provided
-			if req_reg_id:
-				target_user = frappe.db.get_value("ConnectFest Registration", {"registration_id": req_reg_id}, "email") or \
-				              frappe.db.get_value("ConnectFest Visitor Registration", {"registration_id": req_reg_id}, "email")
-			if not target_user and req_email:
-				target_user = req_email
-			if not target_user and req_mob:
-				target_user = frappe.db.get_value("ConnectFest Registration", {"mobile_no": req_mob}, "email") or \
-				              frappe.db.get_value("ConnectFest Visitor Registration", {"mobile_no": req_mob}, "email") or \
-				              frappe.db.get_value("User", {"mobile_no": req_mob}, "name") or \
-				              frappe.db.get_value("User", {"phone": req_mob}, "name")
-
-			if not target_user:
-				frappe.local.response["http_status_code"] = 401
+		if req_email and req_email != target_user:
+			if not is_admin:
+				frappe.local.response["http_status_code"] = 403
 				return {
-					"status": "unauthorized",
-					"message": "Authentication required! Please log in to edit your profile.",
+					"status": "forbidden",
+					"message": "Access Denied: You are not authorized to modify another attendee's profile.",
 				}
+			target_user = req_email
 
 		# 2. Rate Limit (30 req/min)
 		rate_key = f"update_profile:{target_user}"

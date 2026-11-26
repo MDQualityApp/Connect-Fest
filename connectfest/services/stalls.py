@@ -2189,21 +2189,16 @@ def admin_clear_all_bookings(**kwargs):
 	"""
 	data = extract_request_data(kwargs)
 
-	sess_user = getattr(frappe.session, "user", None)
-	is_admin = (sess_user and sess_user != "Guest" and check_admin_permission("clear all bookings") is None)
-	is_dev = bool(frappe.conf.get("developer_mode", False))
-
-	confirmed = parse_boolean(data.get("confirm", True))
+	confirmed = parse_boolean(data.get("confirm", False))
 	if not confirmed:
 		return {
 			"status": "error",
 			"message": "Confirmation is required to clear bookings.",
 		}
 
-	if not is_admin and not is_dev:
-		err = check_admin_permission("clear all bookings")
-		if err:
-			return err
+	err = check_admin_permission("clear all bookings")
+	if err:
+		return err
 
 	clear_ex = parse_boolean(data.get("clear_exhibitors", True))
 	clear_vis = parse_boolean(data.get("clear_visitors", True))

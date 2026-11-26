@@ -289,18 +289,12 @@ def upload_image(**kwargs):
 def cleanup_loadtest_data(secret_key=None, **kwargs):
 	"""
 	Secure cleanup endpoint for load test dummy data (@loadtest.connectfest.local and STALL-TEST-%).
-	Can be triggered locally or via live HTTP request with secret_key.
+	Strictly restricted to authenticated Super Admins.
 	"""
-	from connectfest.services.auth import is_admin_user
-	from connectfest.services.common import extract_request_data
-	data = extract_request_data(kwargs)
-	key = (secret_key or data.get("secret_key") or "").strip()
-	sess_user = getattr(frappe.session, "user", None)
-	valid_key = "cf_loadtest_cleanup_2027"
-
-	if not is_admin_user(sess_user) and key != valid_key:
-		frappe.local.response["http_status_code"] = 403
-		return {"status": "forbidden", "message": "Admin authorization or valid secret_key required."}
+	from connectfest.services.auth import check_admin_permission
+	err = check_admin_permission("cleanup test data", **kwargs)
+	if err:
+		return err
 
 	pattern = "%@loadtest.connectfest.local"
 	stall_pattern = "STALL-TEST-%"
