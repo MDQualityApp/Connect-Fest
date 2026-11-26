@@ -1885,22 +1885,6 @@ def admin_settings(**kwargs):
 	return _admin_get_settings(**kwargs)
 
 
-@frappe.whitelist(allow_guest=True)
-def get_frontpage_data(**kwargs):
-	"""
-	Combined Public BFF Endpoint for Frontpage Bootstrap:
-	Returns stalls, tier_pricing, gallery, and sponsors in a single HTTP request.
-	"""
-	_set_public_cache_headers(max_age=5, swr=30)
-	return {
-		"status": "success",
-		"stalls": _get_stalls(),
-		"tier_pricing": _get_all_tier_pricing(),
-		"gallery": _get_gallery(),
-		"sponsors": _get_sponsors(),
-	}
-
-
 
 
 
