@@ -825,9 +825,9 @@ def release_stall_hold(stall_number=None, hold_token=None, **kwargs):
 	if frappe.db.exists("ConnectFest Stall", stall_num):
 		stall = frappe.get_doc("ConnectFest Stall", stall_num)
 		if stall.status == "Hold":
-			from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user
+			from connectfest.services.auth import resolve_authenticated_session_user, is_admin_user, has_module_access
 			sess_user, _ = resolve_authenticated_session_user(**kwargs)
-			is_admin = bool(sess_user and sess_user != "Guest" and is_admin_user(sess_user))
+			is_admin = bool(sess_user and sess_user != "Guest" and (is_admin_user(sess_user) or has_module_access(sess_user, "stall")))
 			is_owner = bool(
 				sess_user
 				and sess_user != "Guest"

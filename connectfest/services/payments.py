@@ -263,9 +263,9 @@ def validate_stall_hold_for_user(stall_doc, reg_id=None, user_email=None, user_m
 	Validates that the stall is on active Hold for the requesting attendee.
 	Returns: (is_valid: bool, error_dict: dict or None)
 	"""
-	from connectfest.services.auth import is_admin_user
+	from connectfest.services.auth import is_admin_user, has_module_access
 	is_admin = False
-	if sess_user and sess_user != "Guest" and is_admin_user(sess_user):
+	if sess_user and sess_user != "Guest" and (is_admin_user(sess_user) or has_module_access(sess_user, "stall")):
 		is_admin = True
 
 	stall_num = stall_doc.stall_number or stall_doc.name
@@ -477,9 +477,9 @@ def create_razorpay_order(registration_id=None, stall_number=None, stall_categor
 			"stall_number": record.get("stall_number"),
 		}
 
-	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin or internal creation)
-	from connectfest.services.auth import is_admin_user
-	if not is_internal and not is_admin_user(sess_user):
+	# IDOR Prevention: Ensure logged-in user owns this registration (unless Admin / Stall Admin or internal creation)
+	from connectfest.services.auth import is_admin_user, has_module_access
+	if not is_internal and not is_admin_user(sess_user) and not has_module_access(sess_user, "stall"):
 		rec_email = (record.get("email") or "").strip().lower()
 		rec_mob = (record.get("mobile_no") or "").strip()
 		sess_lower = sess_user.strip().lower()
