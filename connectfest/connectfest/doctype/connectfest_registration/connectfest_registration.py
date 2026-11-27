@@ -79,8 +79,8 @@ class ConnectFestRegistration(Document):
 
 		if self.payment_mode and self.payment_mode.lower() in ("cash", "cheque", "bank transfer"):
 			sess_user = getattr(frappe.session, "user", None)
-			from connectfest.services.auth import is_admin_user
-			if sess_user and sess_user != "Administrator" and not is_admin_user(sess_user):
+			from connectfest.services.auth import is_admin_user, has_module_access
+			if sess_user and sess_user != "Administrator" and not is_admin_user(sess_user) and not has_module_access(sess_user, "stall"):
 				frappe.throw(frappe._("Cash payments can only be processed and recorded by Event Administration at the venue desk. Exhibitors must pay online via Razorpay."))
 
 		if self.payment_status == "Paid":
@@ -93,8 +93,8 @@ class ConnectFestRegistration(Document):
 
 			stall = frappe.get_doc("ConnectFest Stall", self.stall_number)
 			sess_u = getattr(frappe.session, "user", None)
-			from connectfest.services.auth import is_admin_user
-			if stall.is_blocked_by_admin and not is_admin_user(sess_u):
+			from connectfest.services.auth import is_admin_user, has_module_access
+			if stall.is_blocked_by_admin and not is_admin_user(sess_u) and not has_module_access(sess_u, "stall"):
 				frappe.throw(frappe._("Stall '{0}' is blocked by administration ({1})").format(self.stall_number, stall.blocked_reason or "Reserved"))
 
 			if stall.status == "Booked" and stall.booked_by_registration and stall.booked_by_registration != (self.registration_id or self.name):

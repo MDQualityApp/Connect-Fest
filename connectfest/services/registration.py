@@ -418,9 +418,9 @@ def register_stall(**kwargs):
 
 	raw_pay_mode = (data.get("payment_mode") or "").strip().capitalize()
 	if raw_pay_mode.lower() in ("cash", "cheque", "bank transfer"):
-		from connectfest.services.auth import is_admin_user
+		from connectfest.services.auth import is_admin_user, has_module_access
 		sess_user = getattr(frappe.session, "user", None)
-		if not is_admin_user(sess_user):
+		if not is_admin_user(sess_user) and not has_module_access(sess_user, "stall"):
 			frappe.local.response["http_status_code"] = 403
 			return {
 				"status": "forbidden",
