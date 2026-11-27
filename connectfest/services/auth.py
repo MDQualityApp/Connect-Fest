@@ -345,6 +345,8 @@ RESOURCE_MODULE_MAP = {
 	"bulk stall creation": "stall",
 	"admin stall inventory": "stall",
 	"admin stall details": "stall",
+	"admin book stall": "stall",
+	"record payment": "stall",
 	"tier pricing creation": "stall",
 	"tier pricing updates": "stall",
 	"tier pricing deletion": "stall",
@@ -2727,6 +2729,8 @@ def admin_update_user(
 					"message": "At least one valid role/access must remain assigned when updating roles.",
 				}
 			_apply_user_roles_and_cache(user_doc, resolved_roles)
+			# Expire all active tokens/sessions for this user when their roles change
+			revoke_auth_token(user=target_name)
 
 		if mobile_no is not None or any(k in data or k in kwargs for k in ("mobile_no", "phone", "mobile")):
 			raw_mob = mobile_no if mobile_no is not None else (data.get("mobile_no") if "mobile_no" in data else (data.get("phone") if "phone" in data else data.get("mobile")))
@@ -2754,9 +2758,15 @@ def admin_update_user(
 
 		raw_en = enabled if enabled is not None else (data.get("enabled") if "enabled" in data else None)
 		if raw_en is not None:
-			user_doc.enabled = 1 if _truthy_flag(raw_en) else 0
-			if user_doc.enabled == 0:
+			new_en_val = 1 if _truthy_flag(raw_en) else 0
+			if new_en_val == 0:
+				sess_user, _ = resolve_authenticated_session_user(**kwargs)
+				resolved_sess = _resolve_user_doc_name(sess_user) or sess_user or ""
+				if resolved_sess and target_name.lower() == resolved_sess.lower():
+					frappe.local.response["http_status_code"] = 400
+					return {"status": "error", "message": "You cannot disable your own account."}
 				revoke_auth_token(user=target_name)
+			user_doc.enabled = new_en_val
 
 		user_doc.flags.ignore_permissions = True
 		user_doc.flags.ignore_password_policy = True
@@ -3068,11 +3078,24 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 			frappe.local.response["http_status_code"] = 400
 			return {"status": "error", "message": "Target user_email or mobile_no is required"}
 
-		if not frappe.db.exists("User", target_email):
+		target_name = _resolve_user_doc_name(target_email) or target_email
+		if not frappe.db.exists("User", target_name):
 			frappe.local.response["http_status_code"] = 404
 			return {"status": "error", "message": "User not found. Please check your entered email address."}
 
-		frappe.db.set_value("User", target_email, "enabled", new_enabled)
+		if new_enabled == 0:
+			if target_name in ("Administrator", "Guest"):
+				frappe.local.response["http_status_code"] = 403
+				return {"status": "forbidden", "message": "System core accounts cannot be disabled."}
+			sess_user, _ = resolve_authenticated_session_user(**kwargs)
+			resolved_sess = _resolve_user_doc_name(sess_user) or sess_user or ""
+			if resolved_sess and target_name.lower() == resolved_sess.lower():
+				frappe.local.response["http_status_code"] = 400
+				return {"status": "error", "message": "You cannot disable your own account."}
+
+		frappe.db.set_value("User", target_name, "enabled", new_enabled)
+		if new_enabled == 0:
+			revoke_auth_token(user=target_name)
 
 		# Also update registration doc if exists
 		new_status = "Registered" if new_enabled else "Cancelled"
@@ -3086,8 +3109,8 @@ def admin_toggle_user_status(user_email=None, mobile_no=None, enabled=None, **kw
 		action_text = "enabled" if new_enabled else "disabled"
 		return {
 			"status": "success",
-			"message": f"User {target_email} has been {action_text} successfully.",
-			"user": target_email,
+			"message": f"User {target_name} has been {action_text} successfully.",
+			"user": target_name,
 			"enabled": new_enabled,
 			"account_status": action_text.capitalize()
 		}
@@ -3257,6 +3280,7 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 			doc.db_insert()
 			frappe.clear_cache(user=target_email)
 			cache.hdel("roles", target_email)
+			revoke_auth_token(user=target_email)
 		try:
 			cache.sadd("connectfest:scanner_users", target_email)
 			if target_mob or u_data.get("mobile_no"):
@@ -3270,6 +3294,7 @@ def admin_grant_scanner_access(email=None, user_email=None, mobile_no=None, full
 			frappe.db.sql("DELETE FROM `tabHas Role` WHERE parent = %s AND role = 'ConnectFest Gate Scanner'", (target_email,))
 			frappe.clear_cache(user=target_email)
 			cache.hdel("roles", target_email)
+			revoke_auth_token(user=target_email)
 		try:
 			cache.srem("connectfest:scanner_users", target_email)
 			if target_mob or u_data.get("mobile_no"):

@@ -2283,9 +2283,16 @@ def admin_clear_all_bookings(**kwargs):
 				except Exception:
 					pass
 
-			quoted = ", ".join(frappe.db.escape(e) for e in exclude_emails)
-			u_cnt = frappe.db.sql(f"SELECT COUNT(*) FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({quoted})")[0][0]
-			frappe.db.sql(f"DELETE FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({quoted})")
+			exclude_list = list(exclude_emails)
+			placeholders = ", ".join(["%s"] * len(exclude_list))
+			u_cnt = frappe.db.sql(
+				f"SELECT COUNT(*) FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({placeholders})",
+				tuple(exclude_list)
+			)[0][0]
+			frappe.db.sql(
+				f"DELETE FROM `tabUser` WHERE user_type = 'Website User' AND LOWER(name) NOT IN ({placeholders})",
+				tuple(exclude_list)
+			)
 			frappe.db.sql("DELETE FROM `tabHas Role` WHERE parent NOT IN (SELECT name FROM `tabUser`)")
 			frappe.db.sql("DELETE FROM `tabSessions` WHERE user != 'Administrator'")
 			frappe.db.commit()
