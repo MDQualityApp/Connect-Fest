@@ -1587,7 +1587,7 @@ def get_current_user_profile(**kwargs):
 	non_bni_extra_percentage = 0.0 if user_is_bni else admin_extra_pct
 	region_name = (primary_reg.region_name if primary_reg else (primary_event.region_name if primary_event else "")) or ""
 	chapter_name = (primary_reg.chapter_name if primary_reg else (primary_event.chapter_name if primary_event else "")) or ""
-	source_of_info = (primary_reg.source_of_info if primary_reg else (primary_visitor.get("source_of_info") if primary_visitor else "")) or ""
+	source_of_info = (primary_reg.source_of_info if primary_reg else (visitors_raw[0].get("source_of_info") if visitors_raw else "")) or ""
 	bill = (primary_reg.get("bill") if primary_reg else "") or ""
 	gst = (primary_reg.get("gst") if primary_reg else "") or ""
 
