@@ -1484,7 +1484,8 @@ def get_current_user_profile(**kwargs):
 
 	# Fetch visitor pass details (Visitor)
 	has_pass_col = frappe.db.has_column("ConnectFest Visitor Registration", "visitor_image_pass") if hasattr(frappe, "db") and frappe.db else True
-	pass_col_sql = ", visitor_image_pass" if has_pass_col else ""
+	has_vis_src_col = frappe.db.has_column("ConnectFest Visitor Registration", "source_of_info") if hasattr(frappe, "db") and frappe.db else True
+	pass_col_sql = (", visitor_image_pass" if has_pass_col else "") + (", source_of_info" if has_vis_src_col else "")
 	visitors_raw = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, visitor_image {pass_col_sql}, email, mobile_no, which_day, pass_code,
 		       qr_payload, status, checked_in, checked_in_at, creation, area_of_interest
@@ -1586,7 +1587,7 @@ def get_current_user_profile(**kwargs):
 	non_bni_extra_percentage = 0.0 if user_is_bni else admin_extra_pct
 	region_name = (primary_reg.region_name if primary_reg else (primary_event.region_name if primary_event else "")) or ""
 	chapter_name = (primary_reg.chapter_name if primary_reg else (primary_event.chapter_name if primary_event else "")) or ""
-	source_of_info = (primary_reg.source_of_info if primary_reg else "") or ""
+	source_of_info = (primary_reg.source_of_info if primary_reg else (primary_visitor.get("source_of_info") if primary_visitor else "")) or ""
 	bill = (primary_reg.get("bill") if primary_reg else "") or ""
 	gst = (primary_reg.get("gst") if primary_reg else "") or ""
 
@@ -1833,6 +1834,7 @@ def get_current_user_profile(**kwargs):
 			"visitor_pass_url": pass_img_url,
 			"which_day": v.which_day,
 			"area_of_interest": v.get("area_of_interest") or "",
+			"source_of_info": v.get("source_of_info") or "",
 			"access": "BOTH DAYS" if v.which_day == "Both days" else str(v.which_day).upper(),
 			"status": v.status or "Registered",
 			"checked_in": int(v.checked_in or 0),
@@ -1904,12 +1906,7 @@ def get_current_user_profile(**kwargs):
 		"full_name": user_full_name,
 		"mobile_no": user_mobile,
 		"user_image": format_full_url(raw_user_img),
-		"roles": user_roles,
-		"role_labels": perm_summary["role_labels"],
 		"access": perm_summary["access"],
-		"allowed_modules": perm_summary["allowed_modules"],
-		"scanner_access": perm_summary["scanner_access"],
-		"permissions": perm_summary["permissions"],
 		"role_type": role_type,
 		"is_admin": is_admin,
 		"is_super_admin": is_admin,

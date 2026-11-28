@@ -666,10 +666,10 @@ def get_bni_event_pass(pass_code=None, registration_id=None, mobile_no=None, ema
 
 	# If matching only by mobile or email without code/registration_id, ensure session matches or is admin/event-scanner
 	if not code and not reg_id:
-		from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
+		from connectfest.services.auth import has_scanner_scope, has_module_access, resolve_authenticated_session_user
 		sess_u, _ = resolve_authenticated_session_user(**kwargs)
 		rec_email = (record.get("email") or "").lower()
-		if not sess_u or sess_u == "Guest" or (sess_u.lower() != rec_email and not has_scanner_scope(sess_u, "event")):
+		if not sess_u or sess_u == "Guest" or (sess_u.lower() != rec_email and not has_scanner_scope(sess_u, "event") and not has_module_access(sess_u, "cnr")):
 			frappe.local.response["http_status_code"] = 401
 			return {
 				"status": "unauthorized",
@@ -715,7 +715,7 @@ def admin_get_bni_event_registrations(**kwargs):
 	Admin & Scanner API: List BNI Event registrations with search, filter, and check-in stats.
 	Restricted strictly to Event Administrators and authorized Gate Scanners.
 	"""
-	from connectfest.services.auth import has_scanner_scope, resolve_authenticated_session_user
+	from connectfest.services.auth import has_scanner_scope, has_module_access, resolve_authenticated_session_user
 
 	sess_user, _ = resolve_authenticated_session_user(**kwargs)
 
@@ -726,11 +726,11 @@ def admin_get_bni_event_registrations(**kwargs):
 			"message": "Authentication required! Please log in as an Administrator or authorized Event Scanner.",
 		}
 
-	if not has_scanner_scope(sess_user, "event"):
+	if not has_scanner_scope(sess_user, "event") and not has_module_access(sess_user, "cnr"):
 		frappe.local.response["http_status_code"] = 403
 		return {
 			"status": "forbidden",
-			"message": "Access Denied: Your account does not have BNI Event Pass Scanner privileges!",
+			"message": "Access Denied: Your account does not have BNI Event Pass Scanner or CNR Admin privileges!",
 		}
 
 	data = extract_request_data(kwargs)
