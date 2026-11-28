@@ -1495,7 +1495,8 @@ def get_current_user_profile(**kwargs):
 
 	# Fetch event pass details (BNI Event)
 	has_event_col = frappe.db.has_column("ConnectFest BNI Event Registration", "event_pass_url") if hasattr(frappe, "db") and frappe.db else True
-	event_col_sql = ", event_pass_url" if has_event_col else ""
+	has_event_photo_col = frappe.db.has_column("ConnectFest BNI Event Registration", "photo") if hasattr(frappe, "db") and frappe.db else True
+	event_col_sql = (", event_pass_url" if has_event_col else "") + (", photo" if has_event_photo_col else "")
 	events_raw = frappe.db.sql(f"""
 		SELECT name, registration_id, full_name, company_name, email, mobile_no,
 		       event_name, chapter_name, region_name, location, industry, segment,
@@ -1869,6 +1870,7 @@ def get_current_user_profile(**kwargs):
 			"location": e.location or "",
 			"industry": e.industry or "",
 			"segment": e.segment or "",
+			"photo": format_full_url(e.get("photo")) if e.get("photo") else "",
 			"event_pass_url": ev_pass_url,
 			"status": e.status or ("Checked In" if chk_in else "Registered"),
 			"checked_in": chk_in,
