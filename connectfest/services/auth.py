@@ -299,8 +299,8 @@ ROLE_ALIASES = {
 }
 
 ROLE_TO_ACCESS_KEY = {
-	"ConnectFest Admin": "super_admin",
-	"System Manager": "system_manager",
+	"ConnectFest Admin": "administrator",
+	"System Manager": "administrator",
 	"Administrator": "administrator",
 	"ConnectFest Gallery Admin": "gallery",
 	"ConnectFest Stall Admin": "stall",
@@ -627,6 +627,8 @@ def _summarize_roles_fast(raw_roles, super_admin_override=None):
 				modules_allowed.append("tier_pricing")
 
 	access_keys = []
+	if super_admin:
+		access_keys.append("administrator")
 	for r in clean_roles:
 		k = ROLE_TO_ACCESS_KEY.get(r)
 		if k and k not in access_keys:
