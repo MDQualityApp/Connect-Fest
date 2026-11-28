@@ -110,11 +110,18 @@ def admin_verify_gate_pass(pass_code=None, day=None, **kwargs):
 
 	def _deny_scan_scope(pass_type_key, label):
 		frappe.local.response["http_status_code"] = 403
+		if allowed_scopes == {"exhibitor"}:
+			msg = "Invalid pass: This is not an Exhibitor pass."
+		elif allowed_scopes == {"visitor"}:
+			msg = "Invalid pass: This is not a Visitor pass."
+		elif allowed_scopes == {"event"}:
+			msg = "Invalid pass: This is not a BNI Event pass."
+		else:
+			msg = "Invalid pass: This pass is not valid for your scanner access."
 		return {
 			"status": "forbidden",
 			"verified": False,
-			"pass_type": pass_type_key,
-			"message": f"Access Denied: Your account is not authorized to scan {label} passes.",
+			"message": msg,
 		}
 
 	# =========================================================================
